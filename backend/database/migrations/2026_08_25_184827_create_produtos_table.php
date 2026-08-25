@@ -11,20 +11,20 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('produtos', function (Blueprint $table) {
-            $table->id();
+        Schema::table('produtos', function (Blueprint $table) {
+            // Remove o estoque geral (pois agora o estoque fica na Variação)
+            $table->dropColumn('quantidade_estoque');
             
-            // Relacionamento (Chave Estrangeira)
-            $table->foreignId('categoria_id')->constrained('categorias')->onDelete('cascade');
+            // Renomeia as colunas para o padrão exato do diagrama
+            $table->renameColumn('preco', 'preco_base');
+            $table->renameColumn('imagem', 'imagem_url');
             
-            // Dados do produto
-            $table->string('nome');
-            $table->text('descricao')->nullable();
-            $table->decimal('preco', 10, 2); // Formato de moeda (ex: 150.50)
-            $table->integer('quantidade_estoque')->default(0);
-            $table->string('imagem')->nullable(); // Para salvar o caminho da foto da roupa
+            // Adiciona os novos atributos
+            $table->boolean('disponivel')->default(true);
+            $table->string('colecao')->nullable();
             
-            $table->timestamps();
+            // Conecta o Produto à Devoção
+            $table->foreignId('devocao_id')->nullable()->constrained('devocaos')->onDelete('cascade');
         });
     }
 
