@@ -11,20 +11,28 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('produtos', function (Blueprint $table) {
-            // Remove o estoque geral (pois agora o estoque fica na Variação)
-            $table->dropColumn('quantidade_estoque');
+        Schema::create('produtos', function (Blueprint $table) {
+            $table->id();
             
-            // Renomeia as colunas para o padrão exato do diagrama
-            $table->renameColumn('preco', 'preco_base');
-            $table->renameColumn('imagem', 'imagem_url');
+            // Colunas básicas do produto
+            $table->string('nome');
+            $table->text('descricao')->nullable();
             
-            // Adiciona os novos atributos
+            // Colunas com os nomes atualizados conforme o seu diagrama
+            $table->decimal('preco_base', 10, 2);
+            $table->string('imagem_url')->nullable();
+            
+            // Novos atributos
             $table->boolean('disponivel')->default(true);
             $table->string('colecao')->nullable();
             
-            // Conecta o Produto à Devoção
+            // Relacionamento com a tabela categorias (que foi criada no passo anterior)
+            $table->foreignId('categoria_id')->constrained('categorias')->onDelete('cascade');
+            
+            // Relacionamento com a tabela devocaos
             $table->foreignId('devocao_id')->nullable()->constrained('devocaos')->onDelete('cascade');
+            
+            $table->timestamps();
         });
     }
 
