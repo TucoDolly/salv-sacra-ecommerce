@@ -43,7 +43,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await signIn(form);
-      navigate('/');
+      navigate('/admin/produtos');
     } catch (err) {
       const msg =
         err.response?.data?.errors?.email?.[0] ||
