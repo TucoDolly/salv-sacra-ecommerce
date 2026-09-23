@@ -42,8 +42,13 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await signIn(form);
-      navigate('/admin/produtos');
+      const data = await signIn(form);
+      // Redireciona com base no papel do usuário retornado pela API
+      if (data?.user?.papel === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/');
+      }
     } catch (err) {
       const msg =
         err.response?.data?.errors?.email?.[0] ||

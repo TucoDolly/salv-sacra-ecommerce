@@ -1,32 +1,41 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminLayout from './components/AdminLayout';
-import { useAuth } from './contexts/AuthContext';
+import PublicLayout from './components/PublicLayout';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import Home from './pages/public/Home';
 import ProdutosList from './pages/admin/ProdutosList';
 import ProdutoForm from './pages/admin/ProdutoForm';
 import './App.css';
 
 /**
- * Redireciona / para o destino certo conforme o estado de autenticação.
+ * Redireciona a rota `/admin` para o destino correto:
+ * - Admin autenticado → /admin/produtos
+ * - Qualquer outro → / (vitrine)
  * Aguarda o loading do AuthContext para não redirecionar antes de saber o estado.
  */
-function HomeRedirect() {
-  const { isAuthenticated, loading } = useAuth();
+function AdminRedirect() {
+  const { user, isAuthenticated, loading } = useAuth();
   if (loading) return null;
-  return <Navigate to={isAuthenticated ? '/admin/produtos' : '/login'} replace />;
+  if (isAuthenticated && user?.papel === 'admin') {
+    return <Navigate to="/admin/produtos" replace />;
+  }
+  return <Navigate to="/" replace />;
 }
 
 function App() {
   return (
     <Routes>
-      {/* Rotas públicas */}
+      {/* ── Vitrine Pública ── */}
+      <Route element={<PublicLayout />}>
+        <Route path="/" element={<Home />} />
+      </Route>
+
+      {/* ── Autenticação ── */}
       <Route path="/login"    element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-
-      {/* Rota raiz — redireciona para o destino correto */}
-      <Route path="/" element={<HomeRedirect />} />
 
       {/* ── Painel Administrativo (layout compartilhado) ── */}
       <Route
@@ -37,8 +46,8 @@ function App() {
           </ProtectedRoute>
         }
       >
-        {/* /admin → redireciona para /admin/produtos por enquanto */}
-        <Route index element={<Navigate to="/admin/produtos" replace />} />
+        {/* /admin → redireciona para /admin/produtos */}
+        <Route index element={<AdminRedirect />} />
 
         {/* UC03 — Produtos */}
         <Route path="produtos"            element={<ProdutosList />} />
@@ -46,7 +55,7 @@ function App() {
         <Route path="produtos/editar/:id" element={<ProdutoForm />} />
       </Route>
 
-      {/* Qualquer outra rota redireciona para home */}
+      {/* Qualquer rota não mapeada → vitrine */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
