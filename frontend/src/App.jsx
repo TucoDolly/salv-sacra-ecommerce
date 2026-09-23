@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminLayout from './components/AdminLayout';
 import { useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -27,31 +28,23 @@ function App() {
       {/* Rota raiz — redireciona para o destino correto */}
       <Route path="/" element={<HomeRedirect />} />
 
-      {/* ── UC03 — Admin: Produtos ── */}
+      {/* ── Painel Administrativo (layout compartilhado) ── */}
       <Route
-        path="/admin/produtos"
+        path="/admin"
         element={
           <ProtectedRoute>
-            <ProdutosList />
+            <AdminLayout />
           </ProtectedRoute>
         }
-      />
-      <Route
-        path="/admin/produtos/novo"
-        element={
-          <ProtectedRoute>
-            <ProdutoForm />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/produtos/editar/:id"
-        element={
-          <ProtectedRoute>
-            <ProdutoForm />
-          </ProtectedRoute>
-        }
-      />
+      >
+        {/* /admin → redireciona para /admin/produtos por enquanto */}
+        <Route index element={<Navigate to="/admin/produtos" replace />} />
+
+        {/* UC03 — Produtos */}
+        <Route path="produtos"            element={<ProdutosList />} />
+        <Route path="produtos/novo"       element={<ProdutoForm />} />
+        <Route path="produtos/editar/:id" element={<ProdutoForm />} />
+      </Route>
 
       {/* Qualquer outra rota redireciona para home */}
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -60,4 +53,3 @@ function App() {
 }
 
 export default App;
-

@@ -1,4 +1,4 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 
 /**
  * Instância base do axios configurada para a API do back-end.
@@ -17,7 +17,7 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('sanctum_token');
   if (token) {
-    config.headers.Authorization = Bearer ;
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });

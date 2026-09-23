@@ -1,0 +1,287 @@
+/* ================================================================
+   ADMIN LAYOUT — Sidebar + TopBar + Content
+   Paleta: Sidebar #1a1a1a  |  Accent #D4AC0D  |  Content #f3f4f6
+   ================================================================ */
+
+/* ── Variáveis de tema ──────────────────────────────────────── */
+:root {
+  --sidebar-w:      220px;
+  --topbar-h:       60px;
+  --sidebar-bg:     #1c1c1c;
+  --sidebar-border: rgba(255,255,255,0.06);
+  --accent:         #D4AC0D;
+  --accent-dim:     rgba(212, 172, 13, 0.12);
+  --content-bg:     #f3f4f6;
+  --text-muted:     rgba(255,255,255,0.45);
+  --text-nav:       rgba(255,255,255,0.72);
+  --topbar-bg:      #232323;
+}
+
+/* ── Wrapper raiz ────────────────────────────────────────────── */
+.al-root {
+  display: flex;
+  height: 100svh;
+  overflow: hidden;
+  background: var(--content-bg);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* ================================================================
+   SIDEBAR
+   ================================================================ */
+.al-sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 100;
+  border-right: 1px solid var(--sidebar-border);
+}
+
+/* ── Logo ───────────────────────────────────────────────────── */
+.al-logo {
+  padding: 22px 20px 18px;
+  border-bottom: 1px solid var(--sidebar-border);
+  flex-shrink: 0;
+}
+
+.al-logo img {
+  height: 36px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+}
+
+/* ── Navegação ──────────────────────────────────────────────── */
+.al-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 0;
+  scrollbar-width: none;
+}
+
+.al-nav::-webkit-scrollbar { display: none; }
+
+.al-nav-section {
+  margin-bottom: 4px;
+}
+
+.al-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 20px;
+  color: var(--text-nav);
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  border-radius: 0;
+  transition: background 0.15s, color 0.15s;
+  position: relative;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+
+.al-nav-link:hover {
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+}
+
+/* Item ativo */
+.al-nav-link.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.al-nav-link.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+}
+
+/* Ícones SVG dentro dos links */
+.al-nav-link svg {
+  flex-shrink: 0;
+  opacity: 0.75;
+  transition: opacity 0.15s;
+}
+
+.al-nav-link:hover svg,
+.al-nav-link.active svg {
+  opacity: 1;
+}
+
+/* ── Rodapé da sidebar ──────────────────────────────────────── */
+.al-sidebar-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--sidebar-border);
+  flex-shrink: 0;
+}
+
+/* ================================================================
+   COLUNA DIREITA (TopBar + Content)
+   ================================================================ */
+.al-main-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ================================================================
+   TOP BAR
+   ================================================================ */
+.al-topbar {
+  height: var(--topbar-h);
+  background: var(--topbar-bg);
+  border-bottom: 1px solid var(--sidebar-border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 16px;
+  flex-shrink: 0;
+  z-index: 50;
+}
+
+/* ── Barra de busca ─────────────────────────────────────────── */
+.al-search {
+  flex: 1;
+  position: relative;
+  max-width: 520px;
+}
+
+.al-search svg {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255,255,255,0.3);
+  pointer-events: none;
+}
+
+.al-search input {
+  width: 100%;
+  height: 36px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 0 14px 0 38px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.85);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.al-search input::placeholder {
+  color: rgba(255,255,255,0.3);
+}
+
+.al-search input:focus {
+  border-color: var(--accent);
+  background: rgba(255,255,255,0.1);
+}
+
+/* ── Perfil do usuário ──────────────────────────────────────── */
+.al-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.al-user-info {
+  text-align: right;
+  line-height: 1.3;
+}
+
+.al-user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  display: block;
+}
+
+.al-user-email {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: block;
+}
+
+.al-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #1c1c1c;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 0 2px rgba(212,172,13,0.25);
+}
+
+/* ================================================================
+   ÁREA DE CONTEÚDO
+   ================================================================ */
+.al-content {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--content-bg);
+  /* Scrollbar discreta */
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+
+.al-content::-webkit-scrollbar {
+  width: 5px;
+}
+
+.al-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.al-content::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 99px;
+}
+
+/* ================================================================
+   RESPONSIVIDADE — colapsa a sidebar em telas pequenas
+   ================================================================ */
+@media (max-width: 768px) {
+  .al-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 200;
+  }
+
+  .al-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .al-topbar {
+    padding: 0 16px;
+  }
+
+  .al-user-info {
+    display: none;
+  }
+}
