@@ -1,4 +1,7 @@
+import { useState, useEffect } from "react";
 import { Link, NavLink } from "react-router-dom";
+import { useCart } from "../contexts/CartContext";
+import CarrinhoDrawer from "../components/CarrinhoDrawer";
 import logoImg from "../assets/logo.webp";
 import "./MainLayout.css";
 
@@ -57,6 +60,8 @@ const IconMapPin = () => (
 
 /* ── Header ─────────────────────────────────────────────── */
 function SiteHeader() {
+  const { totalItens, openCart } = useCart();
+
   return (
     <header>
       {/* Topbar */}
@@ -85,9 +90,39 @@ function SiteHeader() {
             <Link to="/login" className="header-action-item">
               <IconUser /> Minha conta
             </Link>
-            <a href="#" className="header-action-item">
+            <button
+              type="button"
+              onClick={openCart}
+              className="header-action-item"
+              style={{
+                position: 'relative',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                font: 'inherit',
+                color: 'inherit',
+              }}
+            >
               <IconCart /> Meu carrinho
-            </a>
+              {totalItens > 0 && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '-6px',
+                    left: '12px',
+                    background: '#c4953a',
+                    color: '#fff',
+                    borderRadius: '10px',
+                    padding: '1px 6px',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
+                  }}
+                >
+                  {totalItens}
+                </span>
+              )}
+            </button>
           </nav>
         </div>
       </div>
@@ -212,6 +247,9 @@ export default function MainLayout({ children, breadcrumbs }) {
       </main>
 
       <SiteFooter />
+
+      {/* Gaveta lateral do Carrinho de Compras */}
+      <CarrinhoDrawer />
     </div>
   );
 }
