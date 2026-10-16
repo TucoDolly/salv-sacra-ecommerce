@@ -3,8 +3,44 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Pedido extends Model
 {
-    //
+    protected $fillable = [
+        'user_id',
+        'email_contato',
+        'telefone',
+        'data_pedido',
+        'status',
+        'metodo_pagamento',
+        'tipo_frete',
+        'observacoes',
+        'cep',
+        'logradouro',
+        'numero',
+        'complemento',
+        'bairro',
+        'cidade',
+        'estado',
+        'valor_frete',
+        'valor_total',
+    ];
+
+    protected $casts = [
+        'data_pedido' => 'datetime',
+        'valor_frete' => 'decimal:2',
+        'valor_total' => 'decimal:2',
+    ];
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function itens(): HasMany
+    {
+        return $this->hasMany(ItemPedido::class);
+    }
 }

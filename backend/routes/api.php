@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoriaController;
 use App\Http\Controllers\DevocaoController;
+use App\Http\Controllers\PedidoController;
 use App\Http\Controllers\ProdutoController;
 use Illuminate\Support\Facades\Route;
 
@@ -18,13 +19,17 @@ Route::prefix('auth')->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| Rotas Públicas — Catálogo (sem autenticação, leitura apenas)
+| Rotas Públicas — Catálogo e Checkout
 |--------------------------------------------------------------------------
 */
 Route::get('produtos',           [ProdutoController::class, 'index']);
 Route::get('produtos/{produto}', [ProdutoController::class, 'show']);
 Route::get('categorias',         [CategoriaController::class, 'index']);
 Route::get('devocaos',           [DevocaoController::class,   'index']);
+
+// Pedidos / Checkout público
+Route::post('pedidos',           [PedidoController::class, 'store']);
+Route::get('pedidos/{pedido}',   [PedidoController::class, 'show']);
 
 /*
 |--------------------------------------------------------------------------

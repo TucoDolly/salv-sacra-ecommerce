@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import Home from './pages/public/Home';
 import ProdutoDetalhe from './pages/public/ProdutoDetalhe';
+import CheckoutPage from './pages/public/CheckoutPage';
 import ProdutosList from './pages/admin/ProdutosList';
 import ProdutoForm from './pages/admin/ProdutoForm';
 import './App.css';
@@ -34,6 +35,9 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/produto/:id" element={<ProdutoDetalhe />} />
       </Route>
+
+      {/* ── Fluxo de Checkout ── */}
+      <Route path="/checkout" element={<CheckoutPage />} />
 
       {/* ── Autenticação ── */}
       <Route path="/login"    element={<LoginPage />} />

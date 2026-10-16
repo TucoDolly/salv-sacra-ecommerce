@@ -108,21 +108,27 @@
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #d4ccc0;
+  color: #d4ccc0 !important;
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.15s;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  transition: color 0.15s, opacity 0.15s;
 }
 
 .header-action-item:hover {
-  color: #e5dfd5;
+  color: #ffffff !important;
 }
 
 .header-action-item svg {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
+  stroke: currentColor;
+  color: inherit;
 }
 
 /* ============================================================

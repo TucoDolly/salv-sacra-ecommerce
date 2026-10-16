@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { useCart } from '../contexts/CartContext';
 import '../styles/carrinho-drawer.css';
 
@@ -40,6 +41,7 @@ const IconRotate = () => (
 );
 
 export default function CarrinhoDrawer() {
+  const navigate = useNavigate();
   const {
     items,
     isCartOpen,
@@ -284,7 +286,10 @@ export default function CarrinhoDrawer() {
             <button
               type="button"
               className="cart-checkout-btn"
-              onClick={() => alert('Direcionando para o Checkout de Pagamento...')}
+              onClick={() => {
+                closeCart();
+                navigate('/checkout');
+              }}
             >
               INICIAR COMPRA
             </button>

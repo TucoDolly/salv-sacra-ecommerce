@@ -94,14 +94,7 @@ function SiteHeader() {
               type="button"
               onClick={openCart}
               className="header-action-item"
-              style={{
-                position: 'relative',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                font: 'inherit',
-                color: 'inherit',
-              }}
+              style={{ position: 'relative' }}
             >
               <IconCart /> Meu carrinho
               {totalItens > 0 && (

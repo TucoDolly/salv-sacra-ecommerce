@@ -1,0 +1,668 @@
+/* ═══════════════════════════════════════════════════════════════
+   TELA DE CHECKOUT / PAGAMENTO — FIDELIDADE AO FIGMA
+   Paleta: #1e1e1e, #2c2c2c, #ededed, #ffffff, #c4953a
+   ═══════════════════════════════════════════════════════════════ */
+
+.checkout-page {
+  background-color: #ededed;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: inherit;
+  color: #222;
+}
+
+/* ── 1. Topo Seguro ── */
+.checkout-header {
+  background-color: #2c2c2c;
+  padding: 16px 32px;
+}
+
+.checkout-header-inner {
+  max-width: 1140px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.checkout-logo-link {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.checkout-logo-img {
+  height: 44px;
+  width: auto;
+  object-fit: contain;
+}
+
+.checkout-safe-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.checkout-safe-icon {
+  width: 24px;
+  height: 24px;
+  background: #2e7d32;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+/* ── 2. Stepper de Progresso (Carrinho - Entrega - Pagamento) ── */
+.checkout-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 580px;
+  margin: 28px auto 24px;
+  position: relative;
+  width: 100%;
+  padding: 0 20px;
+}
+
+.checkout-step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  z-index: 2;
+  background: #ededed;
+  padding: 0 10px;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+}
+
+.checkout-step-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid #888;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #444;
+  transition: all 0.2s;
+}
+
+.checkout-step-item.completed .checkout-step-circle {
+  border-color: #1e1e1e;
+  background: #fff;
+  color: #1e1e1e;
+  font-weight: bold;
+}
+
+.checkout-step-item.active .checkout-step-circle {
+  border-color: #1e1e1e;
+  background: #1e1e1e;
+  color: #fff;
+  font-weight: bold;
+}
+
+.checkout-step-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+}
+
+.checkout-step-item.active .checkout-step-label {
+  color: #1e1e1e;
+  font-weight: 800;
+}
+
+.checkout-step-line {
+  flex: 1;
+  height: 1.5px;
+  background-color: #bbb;
+  margin: 0 -10px 18px;
+  z-index: 1;
+}
+
+/* ── 3. Grid Principal (2 colunas) ── */
+.checkout-container {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 0 24px 60px;
+  width: 100%;
+}
+
+.checkout-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 0.85fr;
+  gap: 36px;
+  align-items: start;
+}
+
+/* ── 4. Coluna Esquerda: Formulários ── */
+.checkout-main-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Card Branco Container */
+.checkout-box {
+  background: #fff;
+  border: 1px solid #dcdcdc;
+  border-radius: 8px;
+  padding: 22px 24px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+}
+
+.checkout-section-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #1e1e1e;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Alerta Prioridade */
+.checkout-priority-box {
+  background: #e2e2e2;
+  border-radius: 6px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+  color: #444;
+  line-height: 1.4;
+  margin-bottom: 16px;
+}
+
+.checkout-priority-box svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* Formulário de Entrega */
+.checkout-form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.checkout-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.checkout-input-group label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #555;
+  letter-spacing: 0.03em;
+}
+
+.checkout-input {
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.checkout-input:focus {
+  border-color: #1e1e1e;
+}
+
+.checkout-input-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.checkout-input-row-3 {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 12px;
+}
+
+/* Seleção de Frete na Etapa de Entrega */
+.checkout-shipping-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.checkout-shipping-option-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background-color: #fbfbfb;
+  border: 1.5px solid #d5d5d5;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.checkout-shipping-option-card.selected {
+  background-color: #2b2b2b;
+  color: #fff;
+  border-color: #2b2b2b;
+}
+
+.checkout-shipping-option-card .shipping-radio {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #888;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.checkout-shipping-option-card.selected .shipping-radio {
+  border-color: #fff;
+  background: #fff;
+}
+
+.checkout-shipping-option-card.selected .shipping-radio-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2b2b2b;
+}
+
+.checkout-shipping-option-card .shipping-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.checkout-shipping-option-card .shipping-name {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.checkout-shipping-option-card .shipping-deadline {
+  font-size: 11px;
+  color: #777;
+}
+
+.checkout-shipping-option-card.selected .shipping-deadline {
+  color: #ccc;
+}
+
+.checkout-shipping-option-card .shipping-price {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+/* Linhas de resumo no Pagamento (ex: E-mail, Endereço, Frete) */
+.checkout-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-bottom: 1px solid #eee;
+  font-size: 13px;
+}
+
+.checkout-info-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.checkout-info-content {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  color: #333;
+}
+
+.checkout-info-content svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #555;
+}
+
+.checkout-info-text strong {
+  display: block;
+  color: #1e1e1e;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.checkout-info-text span {
+  display: block;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.checkout-action-link {
+  background: none;
+  border: none;
+  color: #1e1e1e;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.checkout-action-link:hover {
+  color: #c4953a;
+}
+
+/* Título Formas de Pagamento */
+.checkout-payment-heading {
+  font-size: 24px;
+  font-weight: 800;
+  color: #1e1e1e;
+  margin: 10px 0 6px;
+}
+
+/* Accordion de Formas de Pagamento */
+.checkout-payment-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.checkout-payment-card {
+  background: #fff;
+  border: 1.5px solid #dcdcdc;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.checkout-payment-card.selected {
+  border-color: #1e1e1e;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.checkout-payment-header {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  background: #fff;
+}
+
+.checkout-payment-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e1e1e;
+}
+
+.checkout-payment-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e1e1e;
+}
+
+.checkout-payment-arrow {
+  color: #888;
+  font-size: 18px;
+  transition: transform 0.2s;
+}
+
+.checkout-payment-card.selected .checkout-payment-arrow {
+  transform: rotate(90deg);
+}
+
+.checkout-payment-body {
+  padding: 16px 20px;
+  border-top: 1px solid #eee;
+  background: #fafafa;
+  font-size: 13px;
+  color: #444;
+}
+
+/* Formulário de Cartão */
+.checkout-card-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Card Salvar Dados Nuvem */
+.checkout-save-data-card {
+  background: #fff;
+  border: 1px solid #dcdcdc;
+  border-radius: 8px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.checkout-save-data-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.checkout-nuvem-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #444;
+}
+
+/* Botão Principal */
+.checkout-submit-btn {
+  height: 52px;
+  background: #2b2b2b;
+  color: #fff;
+  border: none;
+  border-radius: 26px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  width: 100%;
+  max-width: 320px;
+  margin: 12px auto 0;
+  display: block;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  transition: all 0.2s ease;
+}
+
+.checkout-submit-btn:hover:not(:disabled) {
+  background: #111;
+  transform: translateY(-1px);
+}
+
+.checkout-submit-btn:disabled {
+  background: #999;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ── 5. Coluna Direita: Resumo do Pedido ── */
+.checkout-summary-col {
+  background: #fff;
+  border: 1px solid #dcdcdc;
+  border-radius: 10px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.checkout-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.checkout-summary-item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.checkout-summary-thumb {
+  width: 50px;
+  height: 60px;
+  border-radius: 6px;
+  background: #f7f7f7;
+  overflow: hidden;
+  border: 1px solid #eee;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.checkout-summary-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.checkout-summary-details {
+  flex: 1;
+}
+
+.checkout-summary-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e1e1e;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.checkout-summary-qty {
+  font-size: 11px;
+  color: #777;
+}
+
+.checkout-summary-price {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e1e1e;
+}
+
+/* Totais */
+.checkout-totals-block {
+  padding: 18px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+  color: #555;
+  border-bottom: 1px solid #eee;
+}
+
+.checkout-total-line {
+  display: flex;
+  justify-content: space-between;
+}
+
+.checkout-total-line.final {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1e1e1e;
+  margin-top: 6px;
+}
+
+/* Botão Cupom */
+.checkout-coupon-btn {
+  margin-top: 18px;
+  width: 100%;
+  height: 42px;
+  border: 1.5px solid #bbb;
+  border-radius: 20px;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.checkout-coupon-btn:hover {
+  border-color: #1e1e1e;
+}
+
+/* Modal / Sucesso */
+.checkout-success-wrap {
+  max-width: 600px;
+  margin: 60px auto;
+  background: #fff;
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+}
+
+.checkout-success-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: #e8f5e9;
+  color: #2e7d32;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  margin: 0 auto 18px;
+}
+
+.checkout-pix-box {
+  background: #fdfbf7;
+  border: 1px dashed #c4953a;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 20px 0;
+  text-align: center;
+}
+
+/* ── Responsivo ── */
+@media (max-width: 860px) {
+  .checkout-grid {
+    grid-template-columns: 1fr;
+  }
+  .checkout-summary-col {
+    order: -1;
+  }
+}
