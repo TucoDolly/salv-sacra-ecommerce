@@ -1,0 +1,356 @@
+/* ═══════════════════════════════════════════════════════════════
+   CATÁLOGO / LISTAGEM DE PRODUTOS — FIDELIDADE AO FIGMA
+   Paleta: #1e1e1e, #2c2c2c, #e8e8e8, #ffffff, #c4953a
+   ═══════════════════════════════════════════════════════════════ */
+
+.catalogo-page {
+  background-color: #e8e8e8;
+  min-height: calc(100vh - 120px);
+  padding: 24px 0 60px;
+}
+
+.catalogo-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ── 1. Topo: Breadcrumb + Seletor de Ordenação ── */
+.catalogo-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.catalogo-breadcrumb {
+  font-size: 11px;
+  font-weight: 600;
+  color: #777;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.catalogo-breadcrumb a {
+  color: #555;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.catalogo-breadcrumb a:hover {
+  color: #1e1e1e;
+}
+
+.catalogo-breadcrumb span.current {
+  color: #1e1e1e;
+  font-weight: 700;
+}
+
+/* Dropdown de Ordenação (Figma exato) */
+.catalogo-sort-wrap {
+  position: relative;
+  min-width: 200px;
+}
+
+.catalogo-sort-trigger {
+  width: 100%;
+  height: 38px;
+  background-color: #d8d8d8;
+  border: 1px solid #c0c0c0;
+  border-radius: 6px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e1e1e;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.2s;
+}
+
+.catalogo-sort-trigger:hover {
+  background-color: #cecece;
+}
+
+.catalogo-sort-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: 100%;
+  min-width: 220px;
+  background: #fff;
+  border: 1px solid #c0c0c0;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+  margin-top: 4px;
+  z-index: 50;
+  overflow: hidden;
+}
+
+.catalogo-sort-option {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.catalogo-sort-option:hover {
+  background-color: #f2f2f2;
+}
+
+.catalogo-sort-option.active {
+  background-color: #1e1e1e;
+  color: #fff;
+  font-weight: 700;
+}
+
+/* ── 2. Grid de Conteúdo: Filtros na Esquerda + Produtos na Direita ── */
+.catalogo-layout {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  gap: 36px;
+  align-items: start;
+}
+
+/* ── 3. Barra Lateral de Filtros (Figma) ── */
+.catalogo-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.catalogo-sidebar-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1e1e1e;
+  margin-bottom: 4px;
+}
+
+.catalogo-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.catalogo-filter-heading {
+  font-size: 12px;
+  font-weight: 700;
+  color: #333;
+  text-transform: capitalize;
+}
+
+.catalogo-filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.catalogo-filter-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #444;
+  cursor: pointer;
+}
+
+.catalogo-filter-checkbox-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.catalogo-checkbox {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid #888;
+  accent-color: #1e1e1e;
+  cursor: pointer;
+}
+
+.catalogo-color-circle {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(0,0,0,0.15);
+}
+
+/* Filtro de Preço (De / Até) */
+.catalogo-price-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.catalogo-price-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.catalogo-price-field label {
+  font-size: 10px;
+  color: #777;
+}
+
+.catalogo-price-field input {
+  width: 100%;
+  height: 30px;
+  border: 1px solid #bbb;
+  border-radius: 15px;
+  padding: 0 10px;
+  font-size: 11px;
+  background: #fff;
+  outline: none;
+  text-align: center;
+}
+
+.catalogo-price-submit-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #bbb;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #555;
+  margin-top: 14px;
+  transition: all 0.2s;
+}
+
+.catalogo-price-submit-btn:hover {
+  background: #1e1e1e;
+  color: #fff;
+  border-color: #1e1e1e;
+}
+
+/* ── 4. Grid de Produtos (Figma com 4 colunas) ── */
+.catalogo-products-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.catalogo-product-card {
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+
+.catalogo-product-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+}
+
+.catalogo-product-img-wrap {
+  width: 100%;
+  height: 260px;
+  background-color: #f4f4f4;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.catalogo-product-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Dots de cores no rodapé da imagem */
+.catalogo-card-dots {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+}
+
+.catalogo-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background-color: #222;
+  border: 1px solid #fff;
+}
+
+.catalogo-dot.gold {
+  background-color: #c4953a;
+}
+
+.catalogo-dot.white {
+  background-color: #fff;
+  border-color: #ccc;
+}
+
+.catalogo-product-info {
+  padding: 14px 10px;
+  text-align: center;
+  background: #e8e8e8;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.catalogo-product-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #222;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 5. Estado Vazio (Imagem 5 do usuário: Acessórios) ── */
+.catalogo-empty-box {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 80px 20px;
+  color: #333;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ── Responsivo ── */
+@media (max-width: 1024px) {
+  .catalogo-products-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 800px) {
+  .catalogo-layout {
+    grid-template-columns: 1fr;
+  }
+  .catalogo-products-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

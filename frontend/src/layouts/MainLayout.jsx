@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useCart } from "../contexts/CartContext";
 import CarrinhoDrawer from "../components/CarrinhoDrawer";
 import logoImg from "../assets/logo.webp";
@@ -61,6 +61,17 @@ const IconMapPin = () => (
 /* ── Header ─────────────────────────────────────────────── */
 function SiteHeader() {
   const { totalItens, openCart } = useCart();
+  const [termoBusca, setTermoBusca] = useState('');
+  const [dropdownCamisetas, setDropdownCamisetas] = useState(false);
+  const [dropdownAcessorios, setDropdownAcessorios] = useState(false);
+  const navigate = useNavigate();
+
+  const handleBuscar = (e) => {
+    e.preventDefault();
+    if (termoBusca.trim()) {
+      navigate(`/produtos?busca=${encodeURIComponent(termoBusca.trim())}`);
+    }
+  };
 
   return (
     <header>
@@ -76,12 +87,17 @@ function SiteHeader() {
             <img src={logoImg} alt="Salv Sacra" className="logo-img" />
           </Link>
 
-          <div className="header-search">
-            <input type="search" placeholder="O que você está buscando?" />
-            <button type="button" aria-label="Buscar">
+          <form onSubmit={handleBuscar} className="header-search">
+            <input
+              type="search"
+              placeholder="O que você está buscando?"
+              value={termoBusca}
+              onChange={(e) => setTermoBusca(e.target.value)}
+            />
+            <button type="submit" aria-label="Buscar">
               <IconSearch />
             </button>
-          </div>
+          </form>
 
           <nav className="header-actions">
             <a href="#" className="header-action-item">
@@ -120,15 +136,53 @@ function SiteHeader() {
         </div>
       </div>
 
-      {/* Navbar */}
+      {/* Navbar com Dropdowns Fiéis às Imagens 3, 4 e 5 */}
       <nav className="site-navbar">
         <div className="navbar-inner">
-          <NavLink to="/"           className="nav-link">Início</NavLink>
-          <NavLink to="/produtos"   className="nav-link">Mais vendidos</NavLink>
-          <a href="#"               className="nav-link">Camisetas ▾</a>
-          <a href="#"               className="nav-link">Acessórios ▾</a>
-          <a href="#"               className="nav-link">Contato</a>
-          <a href="#"               className="nav-link">Guia de medidas</a>
+          <NavLink to="/" className="nav-link">Início</NavLink>
+          <NavLink to="/produtos" className="nav-link">Mais vendidos</NavLink>
+
+          {/* Menu Camisetas com Dropdown */}
+          <div
+            className="nav-dropdown-wrapper"
+            onMouseEnter={() => setDropdownCamisetas(true)}
+            onMouseLeave={() => setDropdownCamisetas(false)}
+          >
+            <NavLink to="/produtos?categoria=camisetas" className="nav-link">
+              Camisetas ▾
+            </NavLink>
+            {dropdownCamisetas && (
+              <div className="nav-dropdown-menu">
+                <Link to="/produtos?categoria=camisetas&colecao=regular-fit" className="nav-dropdown-item">
+                  Regular Fit
+                </Link>
+                <Link to="/produtos?categoria=camisetas&colecao=oversized" className="nav-dropdown-item">
+                  Oversized
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {/* Menu Acessórios com Dropdown */}
+          <div
+            className="nav-dropdown-wrapper"
+            onMouseEnter={() => setDropdownAcessorios(true)}
+            onMouseLeave={() => setDropdownAcessorios(false)}
+          >
+            <NavLink to="/produtos?categoria=acessorios" className="nav-link">
+              Acessórios ▾
+            </NavLink>
+            {dropdownAcessorios && (
+              <div className="nav-dropdown-menu">
+                <Link to="/produtos?categoria=acessorios&item=bone" className="nav-dropdown-item">
+                  Boné
+                </Link>
+              </div>
+            )}
+          </div>
+
+          <a href="#" className="nav-link">Contato</a>
+          <a href="#" className="nav-link">Guia de medidas</a>
         </div>
       </nav>
     </header>

@@ -11,11 +11,44 @@ class ProdutoController extends Controller
 {
     // ─── GET /api/produtos ───────────────────────────────────────────────────
     /**
-     * Lista todos os produtos com suas relações (categoria, devoção e variações).
+     * Lista todos os produtos com suas relações (categoria, devoção e variações),
+     * aceitando filtros por busca, categoria_id, colecao e ordenação.
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        $produtos = Produto::with(['categoria', 'devocao', 'variacoes'])->get();
+        $query = Produto::with(['categoria', 'devocao', 'variacoes']);
+
+        // Filtro por termo de busca
+        if ($request->filled('busca')) {
+            $termo = $request->input('busca');
+            $query->where(function ($q) use ($termo) {
+                $q->where('nome', 'like', "%{$termo}%")
+                  ->orWhere('descricao', 'like', "%{$termo}%")
+                  ->orWhereHas('devocao', function ($d) use ($termo) {
+                      $d->where('nome', 'like', "%{$termo}%");
+                  })
+                  ->orWhereHas('categoria', function ($c) use ($termo) {
+                      $c->where('nome', 'like', "%{$termo}%");
+                  });
+            });
+        }
+
+        // Filtro por categoria (slug ou ID)
+        if ($request->filled('categoria')) {
+            $cat = $request->input('categoria');
+            $query->whereHas('categoria', function ($c) use ($cat) {
+                $c->where('nome', 'like', "%{$cat}%")
+                  ->orWhere('id', $cat);
+            });
+        }
+
+        // Filtro por coleção (ex: 'regular-fit', 'oversized')
+        if ($request->filled('colecao')) {
+            $col = $request->input('colecao');
+            $query->where('colecao', 'like', "%{$col}%");
+        }
+
+        $produtos = $query->get();
 
         return response()->json($produtos);
     }

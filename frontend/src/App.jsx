@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import Home from './pages/public/Home';
 import ProdutoDetalhe from './pages/public/ProdutoDetalhe';
+import CatalogoPage from './pages/public/CatalogoPage';
 import CheckoutPage from './pages/public/CheckoutPage';
 import ProdutosList from './pages/admin/ProdutosList';
 import ProdutoForm from './pages/admin/ProdutoForm';
@@ -33,6 +34,7 @@ function App() {
       {/* ── Vitrine Pública ── */}
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
+        <Route path="/produtos" element={<CatalogoPage />} />
         <Route path="/produto/:id" element={<ProdutoDetalhe />} />
       </Route>
 
