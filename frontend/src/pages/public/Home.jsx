@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import '../../styles/home.css';
+import bannerSaoJose from '../../assets/banner-sao-jose.jpg';
+import bannerDesatadora from '../../assets/banner-desatadora.jpg';
+import bannerPorVoce from '../../assets/banner-por-voce.jpg';
 
 // ── Ícones inline ──────────────────────────────────────────────────────────────
 const IconTruck = () => (
@@ -45,27 +48,30 @@ const IconInstagram = () => (
 const BANNER_SLIDES = [
   {
     id: 1,
-    tag:     'Camiseta Regular Fit',
-    title:   'São José',
-    subtitle:'Conforto e devoção em cada detalhe.',
-    cta:     'Saiba mais',
-    bg:      'linear-gradient(135deg, #1a1a1a 0%, #2c2c2c 50%, #3a3a3a 100%)',
+    tag:   'Camiseta Regular Fit',
+    title: 'São José',
+    cta:   'Saiba mais',
+    image: bannerSaoJose,
+    tema:  'claro',
+    link:  '/produtos?categoria=camisetas',
   },
   {
     id: 2,
-    tag:     'Nova Coleção',
-    title:   'Nossa Senhora',
-    subtitle:'Fé expressa com estilo e qualidade.',
-    cta:     'Ver coleção',
-    bg:      'linear-gradient(135deg, #1e1810 0%, #2e2418 50%, #3c3020 100%)',
+    tag:   'Camiseta Regular Fit',
+    title: 'Desatadora',
+    cta:   'Saiba mais',
+    image: bannerDesatadora,
+    tema:  'escuro',
+    link:  '/produtos?categoria=camisetas',
   },
   {
     id: 3,
-    tag:     'Edição Limitada',
-    title:   'Divino Pai Eterno',
-    subtitle:'Peças exclusivas para quem vive a fé.',
-    cta:     'Conhecer',
-    bg:      'linear-gradient(135deg, #0d1a10 0%, #162510 50%, #1e3015 100%)',
+    tag:   'Camiseta Oversized',
+    title: 'Por Você',
+    cta:   'Saiba mais',
+    image: bannerPorVoce,
+    tema:  'claro',
+    link:  '/produtos?categoria=camisetas',
   },
 ];
 
@@ -151,22 +157,25 @@ function HeroBanner() {
   const [current, setCurrent] = useState(0);
   const total = BANNER_SLIDES.length;
 
-  // Auto-play a cada 5s
+  // Auto-play a cada 7s (tempo mais confortável para leitura)
   useEffect(() => {
-    const t = setInterval(() => setCurrent((c) => (c + 1) % total), 5000);
+    const t = setInterval(() => setCurrent((c) => (c + 1) % total), 7000);
     return () => clearInterval(t);
   }, [total]);
 
   const slide = BANNER_SLIDES[current];
 
   return (
-    <section className="hero-banner" style={{ background: slide.bg }} aria-label="Banner principal">
-      {/* Conteúdo do slide */}
-      <div className="hero-content">
+    <section
+      className={`hero-banner hero-banner--${slide.tema}`}
+      style={{ backgroundImage: `url(${slide.image})` }}
+      aria-label="Banner principal"
+    >
+      {/* Conteúdo do slide (centralizado) */}
+      <div className="hero-content" key={slide.id}>
         <span className="hero-tag">{slide.tag}</span>
         <h1 className="hero-title">{slide.title}</h1>
-        <p className="hero-subtitle">{slide.subtitle}</p>
-        <button className="hero-cta">{slide.cta}</button>
+        <Link to={slide.link} className="hero-cta">{slide.cta}</Link>
       </div>
 
       {/* Setas */}
@@ -285,3 +294,4 @@ export default function Home() {
     </>
   );
 }
+

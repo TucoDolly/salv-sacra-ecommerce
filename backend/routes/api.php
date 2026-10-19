@@ -31,6 +31,9 @@ Route::get('devocaos',           [DevocaoController::class,   'index']);
 Route::post('pedidos',           [PedidoController::class, 'store']);
 Route::get('pedidos/{pedido}',   [PedidoController::class, 'show']);
 
+// Formulário de contato (com reCAPTCHA)
+Route::post('contato', [\App\Http\Controllers\ContatoController::class, 'enviar']);
+
 /*
 |--------------------------------------------------------------------------
 | Rotas Protegidas — requerem token Sanctum

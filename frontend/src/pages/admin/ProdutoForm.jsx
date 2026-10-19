@@ -36,6 +36,7 @@ const EMPTY_FORM = {
   imagem_url: '',
   disponivel: true,
   colecao: '',
+  modelo: '',
   categoria_id: '',
   devocao_id: '',
 };
@@ -71,6 +72,7 @@ export default function ProdutoForm() {
         imagem_url:   data.imagem_url   ?? '',
         disponivel:   data.disponivel   ?? true,
         colecao:      data.colecao      ?? '',
+        modelo:       data.modelo       ?? '',
         categoria_id: data.categoria_id ?? '',
         devocao_id:   data.devocao_id   ?? '',
       });
@@ -331,7 +333,13 @@ export default function ProdutoForm() {
         <div className="admin-card">
           <p className="admin-card-title">Classificação</p>
 
-          <div className="admin-grid admin-grid-2">
+          <div className={`admin-grid ${
+            (() => {
+              const catSelecionada = categorias.find((c) => String(c.id) === String(form.categoria_id));
+              const isCamiseta = catSelecionada && catSelecionada.nome.toLowerCase().includes('camiseta');
+              return isCamiseta ? 'admin-grid-3' : 'admin-grid-2';
+            })()
+          }`}>
             {/* Select de Categoria */}
             <div className="admin-field">
               <label htmlFor="categoria_id">Categoria</label>
@@ -365,6 +373,31 @@ export default function ProdutoForm() {
               </select>
               {errors.devocao_id && <span className="admin-field-error">{errors.devocao_id}</span>}
             </div>
+
+            {/* Select de Modelo (apenas se a categoria for Camisetas) */}
+            {(() => {
+              const catSelecionada = categorias.find((c) => String(c.id) === String(form.categoria_id));
+              const isCamiseta = catSelecionada && catSelecionada.nome.toLowerCase().includes('camiseta');
+              if (!isCamiseta) return null;
+
+              return (
+                <div className="admin-field">
+                  <label htmlFor="modelo">Modelo</label>
+                  <select
+                    id="modelo"
+                    name="modelo"
+                    value={form.modelo}
+                    onChange={handleChange}
+                  >
+                    <option value="">— Selecione o modelo —</option>
+                    <option value="Regular Fit">Regular Fit</option>
+                    <option value="Oversized">Oversized</option>
+                    <option value="Ambos">Ambos</option>
+                  </select>
+                  {errors.modelo && <span className="admin-field-error">{errors.modelo}</span>}
+                </div>
+              );
+            })()}
           </div>
         </div>
 

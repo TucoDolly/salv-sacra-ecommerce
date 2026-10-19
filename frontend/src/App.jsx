@@ -9,6 +9,8 @@ import Home from './pages/public/Home';
 import ProdutoDetalhe from './pages/public/ProdutoDetalhe';
 import CatalogoPage from './pages/public/CatalogoPage';
 import CheckoutPage from './pages/public/CheckoutPage';
+import ContatoPage from './pages/public/ContatoPage';
+import GuiaMedidasPage from './pages/public/GuiaMedidasPage';
 import ProdutosList from './pages/admin/ProdutosList';
 import ProdutoForm from './pages/admin/ProdutoForm';
 import './App.css';
@@ -36,6 +38,8 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/produtos" element={<CatalogoPage />} />
         <Route path="/produto/:id" element={<ProdutoDetalhe />} />
+        <Route path="/contato" element={<ContatoPage />} />
+        <Route path="/guia-de-medidas" element={<GuiaMedidasPage />} />
       </Route>
 
       {/* ── Fluxo de Checkout ── */}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useCart } from "../contexts/CartContext";
 import CarrinhoDrawer from "../components/CarrinhoDrawer";
 import logoImg from "../assets/logo.webp";
@@ -62,9 +62,9 @@ const IconMapPin = () => (
 function SiteHeader() {
   const { totalItens, openCart } = useCart();
   const [termoBusca, setTermoBusca] = useState('');
-  const [dropdownCamisetas, setDropdownCamisetas] = useState(false);
   const [dropdownAcessorios, setDropdownAcessorios] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleBuscar = (e) => {
     e.preventDefault();
@@ -100,9 +100,9 @@ function SiteHeader() {
           </form>
 
           <nav className="header-actions">
-            <a href="#" className="header-action-item">
+            <Link to="/contato" className="header-action-item">
               <IconHeadset /> Atendimento
-            </a>
+            </Link>
             <Link to="/login" className="header-action-item">
               <IconUser /> Minha conta
             </Link>
@@ -139,39 +139,50 @@ function SiteHeader() {
       {/* Navbar com Dropdowns Fiéis às Imagens 3, 4 e 5 */}
       <nav className="site-navbar">
         <div className="navbar-inner">
-          <NavLink to="/" className="nav-link">Início</NavLink>
-          <NavLink to="/produtos" className="nav-link">Mais vendidos</NavLink>
+          <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            Início
+          </NavLink>
 
-          {/* Menu Camisetas com Dropdown */}
-          <div
-            className="nav-dropdown-wrapper"
-            onMouseEnter={() => setDropdownCamisetas(true)}
-            onMouseLeave={() => setDropdownCamisetas(false)}
+          {/* Mais vendidos: ativo somente quando na rota /produtos sem categoria específica */}
+          <Link
+            to="/produtos"
+            className={`nav-link ${
+              location.pathname === '/produtos' && !location.search.includes('categoria=') && !location.search.includes('busca=')
+                ? 'active'
+                : ''
+            }`}
           >
-            <NavLink to="/produtos?categoria=camisetas" className="nav-link">
-              Camisetas ▾
-            </NavLink>
-            {dropdownCamisetas && (
-              <div className="nav-dropdown-menu">
-                <Link to="/produtos?categoria=camisetas&colecao=regular-fit" className="nav-dropdown-item">
-                  Regular Fit
-                </Link>
-                <Link to="/produtos?categoria=camisetas&colecao=oversized" className="nav-dropdown-item">
-                  Oversized
-                </Link>
-              </div>
-            )}
-          </div>
+            Mais vendidos
+          </Link>
 
-          {/* Menu Acessórios com Dropdown */}
+          {/* Camisetas: link normal sem dropdown ao passar o mouse */}
+          <Link
+            to="/produtos?categoria=camisetas"
+            className={`nav-link ${
+              location.pathname === '/produtos' && location.search.includes('categoria=camisetas')
+                ? 'active'
+                : ''
+            }`}
+          >
+            Camisetas
+          </Link>
+
+          {/* Menu Acessórios com Dropdown: ativo somente quando categoria=acessorios */}
           <div
             className="nav-dropdown-wrapper"
             onMouseEnter={() => setDropdownAcessorios(true)}
             onMouseLeave={() => setDropdownAcessorios(false)}
           >
-            <NavLink to="/produtos?categoria=acessorios" className="nav-link">
+            <Link
+              to="/produtos?categoria=acessorios"
+              className={`nav-link ${
+                location.pathname === '/produtos' && location.search.includes('categoria=acessorios')
+                  ? 'active'
+                  : ''
+              }`}
+            >
               Acessórios ▾
-            </NavLink>
+            </Link>
             {dropdownAcessorios && (
               <div className="nav-dropdown-menu">
                 <Link to="/produtos?categoria=acessorios&item=bone" className="nav-dropdown-item">
@@ -181,8 +192,8 @@ function SiteHeader() {
             )}
           </div>
 
-          <a href="#" className="nav-link">Contato</a>
-          <a href="#" className="nav-link">Guia de medidas</a>
+          <Link to="/contato" className={`nav-link ${location.pathname === '/contato' ? 'active' : ''}`}>Contato</Link>
+          <Link to="/guia-de-medidas" className={`nav-link ${location.pathname === '/guia-de-medidas' ? 'active' : ''}`}>Guia de medidas</Link>
         </div>
       </nav>
     </header>

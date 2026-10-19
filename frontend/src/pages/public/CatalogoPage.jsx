@@ -19,6 +19,7 @@ export default function CatalogoPage({ modoFixo = null }) {
 
   // Filtros ativos
   const [coresSelecionadas, setCoresSelecionadas] = useState([]);
+  const [modeloSelecionado, setModeloSelecionado] = useState('');
   const [tamanhosSelecionados, setTamanhosSelecionados] = useState([]);
   const [marcasSelecionadas, setMarcasSelecionadas] = useState([]);
   const [precoMin, setPrecoMin] = useState('');
@@ -112,6 +113,12 @@ export default function CatalogoPage({ modoFixo = null }) {
     { nome: 'Marrom', corHex: '#6d4c41', qtd: 1 },
   ];
 
+  const OPCOES_MODELOS = [
+    { nome: 'Regular Fit', qtd: 5 },
+    { nome: 'Oversized', qtd: 3 },
+    { nome: 'Ambos', qtd: 2 },
+  ];
+
   const OPCOES_TAMANHOS = [
     { nome: 'G1', qtd: 4 },
     { nome: 'G2', qtd: 4 },
@@ -147,6 +154,11 @@ export default function CatalogoPage({ modoFixo = null }) {
     }
   };
 
+  // Alternar modelo (seleção única: impede selecionar mais de uma opção)
+  const toggleModelo = (item) => {
+    setModeloSelecionado((prev) => (prev === item ? '' : item));
+  };
+
   // Filtragem e ordenação local
   const produtosFiltrados = produtos
     .filter((prod) => {
@@ -164,6 +176,23 @@ export default function CatalogoPage({ modoFixo = null }) {
       if (coresSelecionadas.length > 0) {
         const temCor = (prod.variacoes || []).some((v) => coresSelecionadas.includes(v.cor));
         if (!temCor) return false;
+      }
+
+      // Filtro de modelo selecionado (Seleção única: Regular Fit, Oversized ou Ambos)
+      if (modeloSelecionado) {
+        const prodMod = (prod.modelo || prod.colecao || '').toLowerCase();
+        const selLower = modeloSelecionado.toLowerCase();
+
+        if (selLower === 'ambos') {
+          // Exibe produtos que atendem a ambos os modelos
+          if (!prodMod.includes('ambos')) return false;
+        } else if (selLower.includes('regular')) {
+          if (!prodMod.includes('regular') && !prodMod.includes('ambos')) return false;
+        } else if (selLower.includes('over')) {
+          if (!prodMod.includes('over') && !prodMod.includes('ambos')) return false;
+        } else {
+          if (!prodMod.includes(selLower)) return false;
+        }
       }
 
       // Filtro de tamanhos selecionados
@@ -258,6 +287,26 @@ export default function CatalogoPage({ modoFixo = null }) {
                       className="catalogo-color-circle"
                       style={{ backgroundColor: cor.corHex }}
                     />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Filtro: Modelo (Exatamente entre Cor e Tamanho, conforme Imagem 2 - Seleção Única) */}
+            <div className="catalogo-filter-group">
+              <span className="catalogo-filter-heading">Modelo</span>
+              <div className="catalogo-filter-list">
+                {OPCOES_MODELOS.map((mod) => (
+                  <label key={mod.nome} className="catalogo-filter-item">
+                    <div className="catalogo-filter-checkbox-wrap">
+                      <input
+                        type="checkbox"
+                        checked={modeloSelecionado === mod.nome}
+                        onChange={() => toggleModelo(mod.nome)}
+                        className="catalogo-checkbox"
+                      />
+                      <span>{mod.nome} ({mod.qtd})</span>
+                    </div>
                   </label>
                 ))}
               </div>

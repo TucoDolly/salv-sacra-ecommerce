@@ -15,6 +15,7 @@ class Produto extends Model
         'imagem_url',
         'disponivel',
         'colecao',
+        'modelo',
         'categoria_id',
         'devocao_id',
     ];

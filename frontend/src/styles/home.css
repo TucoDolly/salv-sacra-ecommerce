@@ -10,67 +10,74 @@
   height: 400px;
   display: flex;
   align-items: center;
+  justify-content: center;
   overflow: hidden;
-  transition: background 0.6s ease;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: #f2f2f2;
 }
+
+.hero-banner--escuro { background-color: #000; }
 
 .hero-content {
   position: relative;
   z-index: 2;
-  max-width: 1200px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 0 80px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  animation: heroFade 0.6s ease;
+}
+
+@keyframes heroFade {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
 }
 
 .hero-tag {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #c4953a;
 }
 
 .hero-title {
-  font-size: 52px;
-  font-weight: 900;
-  color: #fff;
-  letter-spacing: -1px;
+  font-size: 56px;
+  font-weight: 500;
+  letter-spacing: -0.5px;
   line-height: 1.05;
   margin: 0;
-}
-
-.hero-subtitle {
-  font-size: 15px;
-  color: rgba(255,255,255,0.7);
-  margin: 0;
-  max-width: 380px;
 }
 
 .hero-cta {
   margin-top: 8px;
   display: inline-flex;
   align-items: center;
-  padding: 12px 28px;
-  background: #1e1e1e;
-  color: #fff;
-  font-size: 12px;
+  padding: 12px 32px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   border: none;
-  border-radius: 4px;
+  border-radius: 24px;
   cursor: pointer;
-  width: fit-content;
-  transition: background 0.2s;
+  text-decoration: none;
+  transition: opacity 0.2s, transform 0.2s;
 }
 
-.hero-cta:hover {
-  background: #333;
-}
+.hero-cta:hover { opacity: 0.85; transform: translateY(-1px); }
+
+/* Tema claro (fundo claro → texto escuro) */
+.hero-banner--claro .hero-tag,
+.hero-banner--claro .hero-title { color: #1e1e1e; }
+.hero-banner--claro .hero-cta { background: #2a2a2a; color: #fff; }
+
+/* Tema escuro (fundo escuro → texto claro) */
+.hero-banner--escuro .hero-tag,
+.hero-banner--escuro .hero-title { color: #f2f2f2; }
+.hero-banner--escuro .hero-cta { background: #e8e8e8; color: #1e1e1e; }
 
 /* Setas */
 .hero-arrow {
@@ -78,25 +85,24 @@
   top: 50%;
   transform: translateY(-50%);
   z-index: 3;
-  background: rgba(255,255,255,0.12);
-  border: 1px solid rgba(255,255,255,0.2);
+  background: transparent;
+  border: 1px solid currentColor;
   border-radius: 50%;
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #fff;
   transition: background 0.2s;
 }
 
-.hero-arrow:hover {
-  background: rgba(255,255,255,0.25);
-}
+.hero-banner--claro .hero-arrow { color: #1e1e1e; }
+.hero-banner--escuro .hero-arrow { color: #bbb; }
+.hero-arrow:hover { background: rgba(128,128,128,0.25); }
 
-.hero-arrow--prev { left: 20px; }
-.hero-arrow--next { right: 20px; }
+.hero-arrow--prev { left: 14px; }
+.hero-arrow--next { right: 14px; }
 
 /* Dots */
 .hero-dots {
@@ -110,20 +116,18 @@
 }
 
 .hero-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   border: none;
-  background: rgba(255,255,255,0.35);
+  background: rgba(128,128,128,0.45);
   cursor: pointer;
   padding: 0;
-  transition: background 0.2s, transform 0.2s;
+  transition: background 0.2s;
 }
 
-.hero-dot.active {
-  background: #c4953a;
-  transform: scale(1.25);
-}
+.hero-banner--claro .hero-dot.active { background: #1e1e1e; }
+.hero-banner--escuro .hero-dot.active { background: #e8e8e8; }
 
 /* ── 2. FAIXA DE BENEFÍCIOS ─────────────────────────────────── */
 .benefits-bar {

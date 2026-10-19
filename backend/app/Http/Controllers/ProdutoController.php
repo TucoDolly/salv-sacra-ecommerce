@@ -37,15 +37,54 @@ class ProdutoController extends Controller
         if ($request->filled('categoria')) {
             $cat = $request->input('categoria');
             $query->whereHas('categoria', function ($c) use ($cat) {
-                $c->where('nome', 'like', "%{$cat}%")
-                  ->orWhere('id', $cat);
+                $c->where('nome', 'ilike', "%{$cat}%");
+                if (is_numeric($cat)) {
+                    $c->orWhere('id', (int) $cat);
+                }
             });
         }
 
-        // Filtro por coleção (ex: 'regular-fit', 'oversized')
+        // Filtro por coleção
         if ($request->filled('colecao')) {
-            $col = $request->input('colecao');
-            $query->where('colecao', 'like', "%{$col}%");
+            $col = strtolower(trim($request->input('colecao')));
+            $query->where(function ($q) use ($col) {
+                if (str_contains($col, 'regular')) {
+                    $q->where('colecao', 'ilike', '%regular%')
+                      ->orWhere('colecao', 'ilike', '%ambos%')
+                      ->orWhere('modelo', 'ilike', '%regular%')
+                      ->orWhere('modelo', 'ilike', '%ambos%');
+                } elseif (str_contains($col, 'over')) {
+                    $q->where('colecao', 'ilike', '%over%')
+                      ->orWhere('colecao', 'ilike', '%ambos%')
+                      ->orWhere('modelo', 'ilike', '%over%')
+                      ->orWhere('modelo', 'ilike', '%ambos%');
+                } else {
+                    $q->where('colecao', 'ilike', "%{$col}%")
+                      ->orWhere('modelo', 'ilike', "%{$col}%")
+                      ->orWhere('modelo', 'ilike', '%ambos%');
+                }
+            });
+        }
+
+        // Filtro explícito por modelo (ex: 'regular-fit', 'oversized')
+        if ($request->filled('modelo')) {
+            $mod = strtolower(trim($request->input('modelo')));
+            $query->where(function ($q) use ($mod) {
+                if (str_contains($mod, 'regular')) {
+                    $q->where('modelo', 'ilike', '%regular%')
+                      ->orWhere('modelo', 'ilike', '%ambos%')
+                      ->orWhere('colecao', 'ilike', '%regular%')
+                      ->orWhere('colecao', 'ilike', '%ambos%');
+                } elseif (str_contains($mod, 'over')) {
+                    $q->where('modelo', 'ilike', '%over%')
+                      ->orWhere('modelo', 'ilike', '%ambos%')
+                      ->orWhere('colecao', 'ilike', '%over%')
+                      ->orWhere('colecao', 'ilike', '%ambos%');
+                } else {
+                    $q->where('modelo', 'ilike', "%{$mod}%")
+                      ->orWhere('modelo', 'ilike', '%ambos%');
+                }
+            });
         }
 
         $produtos = $query->get();
@@ -67,6 +106,7 @@ class ProdutoController extends Controller
             'imagem_url'   => ['nullable', 'url', 'max:2048'],
             'disponivel'   => ['boolean'],
             'colecao'      => ['nullable', 'string', 'max:255'],
+            'modelo'       => ['nullable', 'string', 'max:255'],
             'categoria_id' => ['nullable', 'integer', 'exists:categorias,id'],
             'devocao_id'   => ['nullable', 'integer', 'exists:devocaos,id'],
 
@@ -123,6 +163,7 @@ class ProdutoController extends Controller
             'imagem_url'   => ['nullable', 'url', 'max:2048'],
             'disponivel'   => ['boolean'],
             'colecao'      => ['nullable', 'string', 'max:255'],
+            'modelo'       => ['nullable', 'string', 'max:255'],
             'categoria_id' => ['nullable', 'integer', 'exists:categorias,id'],
             'devocao_id'   => ['nullable', 'integer', 'exists:devocaos,id'],
 

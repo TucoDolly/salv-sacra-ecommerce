@@ -1,0 +1,42 @@
+.inst-page { background: #e8e8e8; padding: 40px 0 70px; min-height: 60vh; }
+.inst-container { max-width: 900px; margin: 0 auto; padding: 0 24px; color: #333; }
+.inst-title { text-align: center; font-size: 26px; font-weight: 600; margin: 0 0 28px; }
+.inst-title-left { text-align: left; font-size: 24px; margin-bottom: 20px; }
+
+/* Contato */
+.contato-layout { display: grid; grid-template-columns: 1fr 2fr; gap: 40px; }
+.contato-horario { font-size: 13px; margin: 0 0 18px; }
+.contato-info ul { list-style: none; padding: 0; margin: 0; }
+.contato-info li { font-size: 13px; margin-bottom: 14px; display: flex; gap: 10px; align-items: center; }
+.contato-form { display: flex; flex-direction: column; }
+.contato-form label { font-size: 11px; margin: 0 0 6px; color: #444; }
+.contato-form input:not([type='checkbox']),
+.contato-form textarea {
+  border: 1px solid #c4c4c4; border-radius: 10px; background: #e2e2e0;
+  padding: 12px 14px; font: inherit; margin-bottom: 18px; outline: none;
+}
+.contato-form input:focus, .contato-form textarea:focus { border-color: #1e1e1e; }
+.contato-form textarea { resize: vertical; min-height: 100px; }
+.contato-captcha { display: flex; justify-content: center; margin-bottom: 18px; }
+.contato-captcha-box {
+  display: flex; align-items: center; gap: 14px; background: #fafafa; border: 1px solid #d3d3d3;
+  border-radius: 3px; padding: 16px 40px 16px 14px; font-size: 13px !important; cursor: pointer; margin: 0 !important;
+}
+.contato-captcha-box input { width: 22px; height: 22px; }
+.contato-btn {
+  border: none; border-radius: 20px; padding: 14px; font-size: 14px; font-weight: 600;
+  background: #1e1e1e; color: #fff; cursor: pointer; transition: opacity .2s;
+}
+.contato-btn:disabled { background: #dcdcda; color: #fff; cursor: not-allowed; }
+.contato-ok { text-align: center; color: #2e7d32; font-size: 13px; margin-top: 12px; }
+
+/* Guia de medidas */
+.guia-container { max-width: 760px; }
+.guia-section { margin-bottom: 36px; }
+.guia-section h2 { font-size: 11px; font-weight: 700; margin: 0 0 10px; }
+.guia-section p { font-size: 11px; line-height: 1.6; margin: 0 0 10px; }
+.guia-section img { width: 100%; height: auto; display: block; margin-top: 14px; mix-blend-mode: multiply; }
+
+@media (max-width: 700px) {
+  .contato-layout { grid-template-columns: 1fr; gap: 24px; }
+}
