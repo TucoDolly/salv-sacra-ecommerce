@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useCart } from "../contexts/CartContext";
+import { useAuth } from "../contexts/AuthContext";
 import CarrinhoDrawer from "../components/CarrinhoDrawer";
 import logoImg from "../assets/logo.webp";
 import "./MainLayout.css";
@@ -61,6 +62,7 @@ const IconMapPin = () => (
 /* ── Header ─────────────────────────────────────────────── */
 function SiteHeader() {
   const { totalItens, openCart } = useCart();
+  const { isAuthenticated } = useAuth();
   const [termoBusca, setTermoBusca] = useState('');
   const [dropdownAcessorios, setDropdownAcessorios] = useState(false);
   const navigate = useNavigate();
@@ -103,7 +105,7 @@ function SiteHeader() {
             <Link to="/contato" className="header-action-item">
               <IconHeadset /> Atendimento
             </Link>
-            <Link to="/login" className="header-action-item">
+            <Link to={isAuthenticated ? '/minha-conta' : '/login'} className="header-action-item">
               <IconUser /> Minha conta
             </Link>
             <button

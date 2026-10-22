@@ -5,6 +5,7 @@ import AdminLayout from './components/AdminLayout';
 import PublicLayout from './components/PublicLayout';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import MinhaContaPage from './pages/MinhaContaPage';
 import Home from './pages/public/Home';
 import ProdutoDetalhe from './pages/public/ProdutoDetalhe';
 import CatalogoPage from './pages/public/CatalogoPage';
@@ -48,6 +49,7 @@ function App() {
       {/* ── Autenticação ── */}
       <Route path="/login"    element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/minha-conta" element={<MinhaContaPage />} />
 
       {/* ── Painel Administrativo (layout compartilhado) ── */}
       <Route

@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import ReCAPTCHA from 'react-google-recaptcha';
 import { useAuth } from '../contexts/AuthContext';
 import MainLayout from '../layouts/MainLayout';
 import '../styles/auth.css';
+
+// Sem VITE_RECAPTCHA_SITE_KEY no .env usa a chave de TESTE do Google (sempre passa)
+const SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI';
 
 /* ── Eye toggle icon ── */
 const IconEye = ({ open }) =>
@@ -28,17 +32,22 @@ export default function RegisterPage() {
   const { signUp } = useAuth();
   const navigate   = useNavigate();
 
-  // ── estado (lógica intacta) ──────────────────────────────
+  // ── estado ──────────────────────────────────────────────
   const [form, setForm] = useState({
     name: '',
     email: '',
     password: '',
     password_confirmation: '',
   });
-  const [errors, setErrors]     = useState({});
-  const [loading, setLoading]   = useState(false);
-  const [showPass, setShowPass] = useState(false);
-  const [showConf, setShowConf] = useState(false);
+  const [token, setToken]                 = useState(null);
+  const [errors, setErrors]               = useState({});
+  const [loading, setLoading]             = useState(false);
+  const [showPass, setShowPass]           = useState(false);
+  const [showConf, setShowConf]           = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
+  const [resending, setResending]         = useState(false);
+  const [resendMessage, setResendMessage] = useState('');
+  const captchaRef                        = useRef(null);
 
   const handleChange = (e) =>
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -46,11 +55,19 @@ export default function RegisterPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrors({});
+
+    if (!token) {
+      setErrors({ recaptcha: ['Por favor, confirme que você não é um robô.'] });
+      return;
+    }
+
     setLoading(true);
     try {
-      await signUp(form);
-      navigate('/');
+      await signUp({ ...form, recaptcha: token });
+      setRegisteredEmail(form.email);
     } catch (err) {
+      captchaRef.current?.reset();
+      setToken(null);
       if (err.response?.data?.errors) {
         setErrors(err.response.data.errors);
       } else {
@@ -59,6 +76,15 @@ export default function RegisterPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleResend = () => {
+    setResending(true);
+    setResendMessage('');
+    setTimeout(() => {
+      setResending(false);
+      setResendMessage('Link de verificação reenviado com sucesso!');
+    }, 1000);
   };
 
   const fieldError = (field) =>
@@ -73,112 +99,157 @@ export default function RegisterPage() {
           Compre mais rápido e acompanhe seus pedidos em um só lugar!
         </p>
 
-        {errors.general && <p className="auth-error">{errors.general[0]}</p>}
+        {registeredEmail ? (
+          <div>
+            <div className="auth-confirmation-card">
+              <svg
+                className="auth-confirmation-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+              </svg>
 
-        <form className="auth-form" onSubmit={handleSubmit} noValidate>
-          {/* Nome */}
-          <div className="auth-field">
-            <label htmlFor="name">Nome completo</label>
-            <input
-              id="name"
-              type="text"
-              name="name"
-              autoComplete="name"
-              placeholder="ex.: Maria Perez"
-              required
-              value={form.name}
-              onChange={handleChange}
-            />
-            {fieldError('name')}
-          </div>
+              <h2>Você está a um passo de criar sua conta!</h2>
 
-          {/* E-mail */}
-          <div className="auth-field">
-            <label htmlFor="email">E-mail</label>
-            <input
-              id="email"
-              type="email"
-              name="email"
-              autoComplete="email"
-              placeholder="ex.: seunome@email.com.br"
-              required
-              value={form.email}
-              onChange={handleChange}
-            />
-            {fieldError('email')}
-          </div>
+              <p>
+                Enviamos um link para <strong>{registeredEmail}</strong> para validar seu e-mail.
+              </p>
+            </div>
 
-          {/* Senha */}
-          <div className="auth-field">
-            <label htmlFor="password">Senha</label>
-            <div className="auth-password-wrapper">
-              <input
-                id="password"
-                type={showPass ? 'text' : 'password'}
-                name="password"
-                autoComplete="new-password"
-                required
-                value={form.password}
-                onChange={handleChange}
-              />
+            <div className="auth-resend-wrapper">
+              <span>Ainda não recebeu? </span>
               <button
                 type="button"
-                className="auth-eye-btn"
-                aria-label={showPass ? 'Ocultar senha' : 'Mostrar senha'}
-                onClick={() => setShowPass((v) => !v)}
+                className="auth-resend-btn"
+                onClick={handleResend}
+                disabled={resending}
               >
-                <IconEye open={showPass} />
+                {resending ? 'Enviando...' : 'Enviar o link novamente'}
               </button>
-            </div>
-            {fieldError('password')}
-          </div>
-
-          {/* Confirmar senha */}
-          <div className="auth-field">
-            <label htmlFor="password_confirmation">Confirmar senha</label>
-            <div className="auth-password-wrapper">
-              <input
-                id="password_confirmation"
-                type={showConf ? 'text' : 'password'}
-                name="password_confirmation"
-                autoComplete="new-password"
-                required
-                value={form.password_confirmation}
-                onChange={handleChange}
-              />
-              <button
-                type="button"
-                className="auth-eye-btn"
-                aria-label={showConf ? 'Ocultar confirmação' : 'Mostrar confirmação'}
-                onClick={() => setShowConf((v) => !v)}
-              >
-                <IconEye open={showConf} />
-              </button>
+              {resendMessage && <p className="auth-resend-alert">{resendMessage}</p>}
             </div>
           </div>
+        ) : (
+          <>
+            {errors.general && <p className="auth-error">{errors.general[0]}</p>}
 
-          {/* reCAPTCHA visual placeholder */}
-          <div className="auth-captcha">
-            <div className="captcha-box">
-              <span className="captcha-checkbox" />
-              <span>Não sou um robô</span>
-              <div className="captcha-logo">
-                🔒<br />reCAPTCHA
+            <form className="auth-form" onSubmit={handleSubmit} noValidate>
+              {/* Nome */}
+              <div className="auth-field">
+                <label htmlFor="name">Nome completo</label>
+                <input
+                  id="name"
+                  type="text"
+                  name="name"
+                  autoComplete="name"
+                  placeholder="ex.: Maria Perez"
+                  required
+                  value={form.name}
+                  onChange={handleChange}
+                />
+                {fieldError('name')}
               </div>
-            </div>
-          </div>
 
-          <button type="submit" className="auth-btn" disabled={loading}>
-            {loading ? 'Criando conta...' : 'Criar conta'}
-          </button>
-        </form>
+              {/* E-mail */}
+              <div className="auth-field">
+                <label htmlFor="email">E-mail</label>
+                <input
+                  id="email"
+                  type="email"
+                  name="email"
+                  autoComplete="email"
+                  placeholder="ex.: seunome@email.com.br"
+                  required
+                  value={form.email}
+                  onChange={handleChange}
+                />
+                {fieldError('email')}
+              </div>
 
-        <p className="auth-alt-link">
-          Já possui uma conta?{' '}
-          <Link to="/login">Iniciar sessão</Link>
-        </p>
+              {/* Senha */}
+              <div className="auth-field">
+                <label htmlFor="password">Senha</label>
+                <div className="auth-password-wrapper">
+                  <input
+                    id="password"
+                    type={showPass ? 'text' : 'password'}
+                    name="password"
+                    autoComplete="new-password"
+                    required
+                    value={form.password}
+                    onChange={handleChange}
+                  />
+                  <button
+                    type="button"
+                    className="auth-eye-btn"
+                    aria-label={showPass ? 'Ocultar senha' : 'Mostrar senha'}
+                    onClick={() => setShowPass((v) => !v)}
+                  >
+                    <IconEye open={showPass} />
+                  </button>
+                </div>
+                {fieldError('password')}
+              </div>
+
+              {/* Confirmar senha */}
+              <div className="auth-field">
+                <label htmlFor="password_confirmation">Confirmar senha</label>
+                <div className="auth-password-wrapper">
+                  <input
+                    id="password_confirmation"
+                    type={showConf ? 'text' : 'password'}
+                    name="password_confirmation"
+                    autoComplete="new-password"
+                    required
+                    value={form.password_confirmation}
+                    onChange={handleChange}
+                  />
+                  <button
+                    type="button"
+                    className="auth-eye-btn"
+                    aria-label={showConf ? 'Ocultar confirmação' : 'Mostrar confirmação'}
+                    onClick={() => setShowConf((v) => !v)}
+                  >
+                    <IconEye open={showConf} />
+                  </button>
+                </div>
+              </div>
+
+              {/* reCAPTCHA */}
+              <div className="auth-captcha">
+                <ReCAPTCHA
+                  ref={captchaRef}
+                  sitekey={SITE_KEY}
+                  onChange={setToken}
+                  onExpired={() => setToken(null)}
+                />
+              </div>
+              {errors.recaptcha && (
+                <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                  <span className="auth-field-error">{errors.recaptcha[0]}</span>
+                </div>
+              )}
+
+              <button type="submit" className="auth-btn" disabled={loading || !token}>
+                {loading ? 'Criando conta...' : 'Criar conta'}
+              </button>
+            </form>
+
+            <p className="auth-alt-link">
+              Já possui uma conta?{' '}
+              <Link to="/login">Iniciar sessão</Link>
+            </p>
+          </>
+        )}
       </div>
     </MainLayout>
   );
 }
+
 

@@ -19,7 +19,22 @@ class AuthController extends Controller
             'name'                  => ['required', 'string', 'max:255'],
             'email'                 => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password'              => ['required', 'string', 'min:8', 'confirmed'],
+            'recaptcha'             => ['required', 'string'],
         ]);
+
+        $resposta = \Illuminate\Support\Facades\Http::withoutVerifying()
+            ->asForm()
+            ->post('https://www.google.com/recaptcha/api/siteverify', [
+                'secret'   => env('RECAPTCHA_SECRET_KEY', '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe'),
+                'response' => $validated['recaptcha'],
+                'remoteip' => $request->ip(),
+            ]);
+
+        if (! $resposta->json('success')) {
+            return response()->json(['message' => 'Falha na verificação do reCAPTCHA.'], 422);
+        }
+
+        unset($validated['recaptcha']);
 
         $user  = User::create($validated);
         $token = $user->createToken('api-token')->plainTextToken;

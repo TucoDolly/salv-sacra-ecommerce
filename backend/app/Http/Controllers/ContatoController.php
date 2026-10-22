@@ -22,11 +22,13 @@ class ContatoController extends Controller
             'recaptcha' => ['required', 'string'],
         ]);
 
-        $resposta = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
-            'secret'   => env('RECAPTCHA_SECRET_KEY', '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe'),
-            'response' => $dados['recaptcha'],
-            'remoteip' => $request->ip(),
-        ]);
+        $resposta = Http::withoutVerifying()
+            ->asForm()
+            ->post('https://www.google.com/recaptcha/api/siteverify', [
+                'secret'   => env('RECAPTCHA_SECRET_KEY', '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe'),
+                'response' => $dados['recaptcha'],
+                'remoteip' => $request->ip(),
+            ]);
 
         if (! $resposta->json('success')) {
             return response()->json(['message' => 'Falha na verificação do reCAPTCHA.'], 422);

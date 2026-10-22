@@ -1,4 +1,4 @@
-﻿import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { getMe, login as loginService, logout as logoutService, register as registerService } from '../services/authService';
 
 const TOKEN_KEY = 'sanctum_token';
@@ -51,7 +51,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, signIn, signUp, signOut, isAuthenticated: !!user }),
+    () => ({ user, loading, signIn, signUp, signOut, updateUser: setUser, isAuthenticated: !!user }),
     [user, loading, signIn, signUp, signOut],
   );
 

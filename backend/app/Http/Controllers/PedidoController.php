@@ -37,13 +37,8 @@ class PedidoController extends Controller
             'itens.*.preco'      => ['required', 'numeric', 'min:0'],
         ]);
 
-        $userId = $request->user() ? $request->user()->id : null;
-
-        // Se o usuário não estiver logado, vincula ao primeiro cliente ou admin existente
-        if (!$userId) {
-            $primeiroUsuario = DB::table('users')->first();
-            $userId = $primeiroUsuario ? $primeiroUsuario->id : 1;
-        }
+        // A rota exige auth:sanctum, então sempre há um usuário logado
+        $userId = $request->user()->id;
 
         $pedido = DB::transaction(function () use ($validated, $userId) {
             $subtotal = collect($validated['itens'])->sum(function ($item) {
@@ -112,8 +107,11 @@ class PedidoController extends Controller
     /**
      * Consultar pedido por ID.
      */
-    public function show(Pedido $pedido): JsonResponse
+    public function show(Request $request, Pedido $pedido): JsonResponse
     {
+        $user = $request->user();
+        abort_unless($user->papel === 'admin' || $pedido->user_id === $user->id, 403, 'Acesso negado.');
+
         return response()->json($pedido->load(['itens.variacao.produto', 'user']));
     }
 }

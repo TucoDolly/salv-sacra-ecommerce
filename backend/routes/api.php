@@ -27,9 +27,7 @@ Route::get('produtos/{produto}', [ProdutoController::class, 'show']);
 Route::get('categorias',         [CategoriaController::class, 'index']);
 Route::get('devocaos',           [DevocaoController::class,   'index']);
 
-// Pedidos / Checkout público
-Route::post('pedidos',           [PedidoController::class, 'store']);
-Route::get('pedidos/{pedido}',   [PedidoController::class, 'show']);
+// Pedidos / Checkout: exigem usuário autenticado (ver grupo auth:sanctum abaixo)
 
 // Formulário de contato (com reCAPTCHA)
 Route::post('contato', [\App\Http\Controllers\ContatoController::class, 'enviar']);
@@ -42,6 +40,21 @@ Route::post('contato', [\App\Http\Controllers\ContatoController::class, 'enviar'
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me',      [AuthController::class, 'me']);
+
+    // Pedidos / Checkout (somente logado)
+    Route::post('pedidos',         [PedidoController::class, 'store']);
+    Route::get('pedidos/{pedido}', [PedidoController::class, 'show']);
+
+    // ── Minha Conta (cliente autenticado) ─────────────────────────────
+    Route::prefix('conta')->group(function () {
+        Route::put('perfil',               [\App\Http\Controllers\ContaController::class, 'atualizarPerfil']);
+        Route::put('senha',                [\App\Http\Controllers\ContaController::class, 'alterarSenha']);
+        Route::get('pedidos',              [\App\Http\Controllers\ContaController::class, 'pedidos']);
+        Route::get('enderecos',            [\App\Http\Controllers\ContaController::class, 'enderecos']);
+        Route::post('enderecos',           [\App\Http\Controllers\ContaController::class, 'criarEndereco']);
+        Route::put('enderecos/{endereco}', [\App\Http\Controllers\ContaController::class, 'atualizarEndereco']);
+        Route::delete('enderecos/{endereco}', [\App\Http\Controllers\ContaController::class, 'removerEndereco']);
+    });
 
     /*
     |----------------------------------------------------------------------

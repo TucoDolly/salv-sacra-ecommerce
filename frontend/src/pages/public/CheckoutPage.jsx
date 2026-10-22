@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../../contexts/CartContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -77,7 +77,7 @@ const IconBarcode = () => (
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const { items, subtotal, selectedShipping, setSelectedShipping, openCart, clearCart } = useCart();
 
   // Etapa atual do checkout: 'entrega' | 'pagamento'
@@ -127,6 +127,13 @@ export default function CheckoutPage() {
 
   const [loading, setLoading] = useState(false);
   const [pedidoConcluido, setPedidoConcluido] = useState(null);
+
+  // Só usuários logados podem finalizar uma compra
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      navigate('/login', { state: { from: '/checkout' }, replace: true });
+    }
+  }, [authLoading, isAuthenticated, navigate]);
 
   // Cálculos de valor
   const freteAtual = selectedShipping || opcoesFrete[0];
@@ -208,18 +215,22 @@ export default function CheckoutPage() {
       clearCart();
     } catch (err) {
       console.error('Erro ao finalizar pedido:', err);
-      // Fallback gracioso
-      setPedidoConcluido({
-        id: Math.floor(Math.random() * 90000) + 10000,
-        valor_total: totalFinal,
-        metodo_pagamento: metodoPagamento,
-        email_contato: email,
-      });
-      clearCart();
+      if (err.response?.status === 401) {
+        navigate('/login', { state: { from: '/checkout' } });
+      } else {
+        const errs = err.response?.data?.errors;
+        alert(
+          (errs && Object.values(errs)[0]?.[0]) ||
+          err.response?.data?.message ||
+          'Não foi possível finalizar o pedido. Tente novamente.'
+        );
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  if (authLoading || !isAuthenticated) return null;
 
   // Sucesso
   if (pedidoConcluido) {

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../contexts/CartContext';
+import { useAuth } from '../contexts/AuthContext';
 import '../styles/carrinho-drawer.css';
 
 // Ícones SVG inline
@@ -42,6 +43,7 @@ const IconRotate = () => (
 
 export default function CarrinhoDrawer() {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const {
     items,
     isCartOpen,
@@ -288,7 +290,11 @@ export default function CarrinhoDrawer() {
               className="cart-checkout-btn"
               onClick={() => {
                 closeCart();
-                navigate('/checkout');
+                if (isAuthenticated) {
+                  navigate('/checkout');
+                } else {
+                  navigate('/login', { state: { from: '/checkout' } });
+                }
               }}
             >
               INICIAR COMPRA

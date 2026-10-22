@@ -1,0 +1,188 @@
+.conta-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+  width: 100%;
+}
+
+.conta-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 28px;
+  margin-top: 24px;
+  align-items: start;
+}
+
+/* ── Menu lateral ── */
+.conta-menu {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #d6d6d6;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.conta-menu-item {
+  text-align: left;
+  padding: 14px 18px;
+  font-size: 14px;
+  color: #333;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #ececec;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.conta-menu-item:last-child { border-bottom: none; }
+.conta-menu-item:hover { background: #f4f4f4; }
+.conta-menu-item.ativo {
+  background: #1e1e1e;
+  color: #fff;
+  font-weight: 700;
+}
+.conta-menu-item.sair { color: #c0392b; }
+
+/* ── Conteúdo ── */
+.conta-content { min-width: 0; }
+
+.conta-section-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1e1e1e;
+  margin: 0 0 6px;
+}
+
+.conta-section-sub,
+.conta-muted { color: #666; font-size: 13px; }
+.conta-section-sub { margin-bottom: 20px; }
+
+.conta-vazio { color: #555; font-size: 14px; margin-top: 12px; }
+.conta-vazio a { color: #1e1e1e; font-weight: 700; }
+
+.conta-box {
+  background: #fff;
+  border: 1px solid #d6d6d6;
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-top: 16px;
+}
+
+.conta-box h3 { font-size: 15px; margin: 0 0 12px; color: #1e1e1e; }
+
+.conta-lista { display: flex; flex-direction: column; }
+
+/* ── Cards do resumo ── */
+.conta-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.conta-card {
+  background: #fff;
+  border: 1px solid #d6d6d6;
+  border-radius: 8px;
+  padding: 20px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.conta-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.conta-card-num { display: block; font-size: 28px; font-weight: 700; color: #1e1e1e; }
+.conta-card-label { font-size: 13px; color: #555; }
+
+/* ── Pedidos ── */
+.conta-pedido-resumo,
+.conta-pedido-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.conta-pedido-head {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font-size: 14px;
+  color: #1e1e1e;
+}
+
+.conta-pedido-right { display: flex; align-items: center; gap: 12px; }
+.conta-chevron { font-size: 10px; color: #888; }
+
+.conta-status {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: #eee;
+  color: #444;
+}
+.conta-status.pendente  { background: #fff4d6; color: #8a6d00; }
+.conta-status.pago      { background: #dff3e4; color: #1e7a3c; }
+.conta-status.enviado   { background: #dcecfb; color: #1b5fa6; }
+.conta-status.entregue  { background: #dff3e4; color: #1e7a3c; }
+.conta-status.cancelado { background: #fdecea; color: #c0392b; }
+
+.conta-pedido-detalhe { margin-top: 16px; border-top: 1px solid #ececec; padding-top: 14px; }
+
+.conta-tabela { width: 100%; border-collapse: collapse; font-size: 13px; }
+.conta-tabela th,
+.conta-tabela td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #f0f0f0; }
+.conta-tabela th { color: #666; font-weight: 600; }
+
+.conta-pedido-info { margin-top: 12px; font-size: 13px; color: #444; }
+.conta-pedido-info p { margin: 4px 0; }
+
+/* ── Formulários ── */
+.conta-form { margin-top: 16px; }
+.conta-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.conta-ok {
+  background: #e8f6ec;
+  border: 1px solid #bfe3c9;
+  color: #1e7a3c;
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.conta-head-row { display: flex; justify-content: space-between; align-items: center; }
+.conta-actions { display: flex; gap: 10px; align-items: center; }
+
+.conta-btn-sec {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #fff;
+  border: 1.5px solid #1e1e1e;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.conta-btn-sec:hover { background: #f0f0f0; }
+
+.conta-actions .auth-btn { width: auto; padding: 12px 24px; margin-top: 0; }
+
+.conta-endereco { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.conta-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 13px; font-weight: 700; color: #1e1e1e; text-decoration: underline;
+}
+.conta-link.perigo { color: #c0392b; }
+
+@media (max-width: 760px) {
+  .conta-layout { grid-template-columns: 1fr; }
+  .conta-menu { flex-direction: row; overflow-x: auto; }
+  .conta-menu-item { white-space: nowrap; border-bottom: none; border-right: 1px solid #ececec; }
+  .conta-cards { grid-template-columns: 1fr; }
+  .conta-grid-2 { grid-template-columns: 1fr; }
+  .conta-endereco { flex-direction: column; align-items: flex-start; }
+}

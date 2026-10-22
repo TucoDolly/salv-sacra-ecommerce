@@ -11,7 +11,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'papel'])]
+#[Fillable(['name', 'email', 'password', 'papel', 'telefone', 'cpf', 'data_nascimento'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -27,7 +27,18 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'data_nascimento' => 'date:Y-m-d',
             'password' => 'hashed',
         ];
+    }
+
+    public function enderecos(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Endereco::class);
+    }
+
+    public function pedidos(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Pedido::class);
     }
 }

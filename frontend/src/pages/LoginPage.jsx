@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import MainLayout from '../layouts/MainLayout';
 import '../styles/auth.css';
@@ -27,6 +27,8 @@ const BREADCRUMBS = [
 export default function LoginPage() {
   const { signIn } = useAuth();
   const navigate   = useNavigate();
+  const location   = useLocation();
+  const from       = location.state?.from;
 
   // ── estado (lógica intacta) ──────────────────────────────
   const [form, setForm]         = useState({ email: '', password: '' });
@@ -47,7 +49,7 @@ export default function LoginPage() {
       if (data?.user?.papel === 'admin') {
         navigate('/admin');
       } else {
-        navigate('/');
+        navigate(from || '/');
       }
     } catch (err) {
       const msg =
