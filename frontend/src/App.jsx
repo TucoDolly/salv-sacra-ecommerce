@@ -14,6 +14,7 @@ import ContatoPage from './pages/public/ContatoPage';
 import GuiaMedidasPage from './pages/public/GuiaMedidasPage';
 import ProdutosList from './pages/admin/ProdutosList';
 import ProdutoForm from './pages/admin/ProdutoForm';
+import PedidosList from './pages/admin/PedidosList';
 import './App.css';
 
 /**
@@ -67,6 +68,9 @@ function App() {
         <Route path="produtos"            element={<ProdutosList />} />
         <Route path="produtos/novo"       element={<ProdutoForm />} />
         <Route path="produtos/editar/:id" element={<ProdutoForm />} />
+
+        {/* Gestão de Pedidos e Pagamentos */}
+        <Route path="pedidos"             element={<PedidosList />} />
       </Route>
 
       {/* Qualquer rota não mapeada → vitrine */}

@@ -114,4 +114,47 @@ class PedidoController extends Controller
 
         return response()->json($pedido->load(['itens.variacao.produto', 'user']));
     }
+
+    /**
+     * Listar todos os pedidos com filtros (apenas Admin).
+     */
+    public function indexAdmin(Request $request): JsonResponse
+    {
+        $query = Pedido::with(['user', 'itens.variacao.produto'])->latest('data_pedido');
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->query('status'));
+        }
+
+        if ($request->filled('busca')) {
+            $termo = '%' . $request->query('busca') . '%';
+            $query->where(function ($q) use ($termo) {
+                $q->where('id', 'like', $termo)
+                  ->orWhere('email_contato', 'like', $termo)
+                  ->orWhereHas('user', function ($qu) use ($termo) {
+                      $qu->where('name', 'like', $termo)
+                         ->orWhere('email', 'like', $termo);
+                  });
+            });
+        }
+
+        return response()->json($query->paginate(20));
+    }
+
+    /**
+     * Atualizar status do pedido (apenas Admin).
+     */
+    public function updateStatus(Request $request, Pedido $pedido): JsonResponse
+    {
+        $validated = $request->validate([
+            'status' => ['required', 'string', 'in:Pendente,Pago,Em montagem,Enviado,Entregue,Cancelado'],
+        ]);
+
+        $pedido->update(['status' => $validated['status']]);
+
+        return response()->json([
+            'mensagem' => 'Status do pedido atualizado com sucesso.',
+            'pedido'   => $pedido->load(['itens.variacao.produto', 'user']),
+        ]);
+    }
 }

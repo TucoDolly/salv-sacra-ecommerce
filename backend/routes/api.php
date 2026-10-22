@@ -54,6 +54,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('enderecos',           [\App\Http\Controllers\ContaController::class, 'criarEndereco']);
         Route::put('enderecos/{endereco}', [\App\Http\Controllers\ContaController::class, 'atualizarEndereco']);
         Route::delete('enderecos/{endereco}', [\App\Http\Controllers\ContaController::class, 'removerEndereco']);
+        Route::get('cartoes',              [\App\Http\Controllers\ContaController::class, 'cartoes']);
+        Route::post('cartoes',             [\App\Http\Controllers\ContaController::class, 'criarCartao']);
+        Route::delete('cartoes/{cartao}',  [\App\Http\Controllers\ContaController::class, 'removerCartao']);
     });
 
     /*
@@ -76,5 +79,9 @@ Route::middleware('auth:sanctum')->group(function () {
         // ── Gestão de Devoções (CRUD completo) ────────────────────────────
         Route::apiResource('devocaos', DevocaoController::class)
             ->except(['index']);
+
+        // ── Gestão de Pedidos (Administração) ─────────────────────────────
+        Route::get('admin/pedidos',                 [PedidoController::class, 'indexAdmin']);
+        Route::patch('admin/pedidos/{pedido}/status', [PedidoController::class, 'updateStatus']);
     });
 });

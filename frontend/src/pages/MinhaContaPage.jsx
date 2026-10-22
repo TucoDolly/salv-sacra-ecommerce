@@ -6,9 +6,12 @@ import {
   alterarSenha,
   atualizarEndereco,
   atualizarPerfil,
+  criarCartao,
   criarEndereco,
+  listarCartoes,
   listarEnderecos,
   listarPedidos,
+  removerCartao,
   removerEndereco,
 } from '../services/contaService';
 import '../styles/auth.css';
@@ -20,11 +23,12 @@ const BREADCRUMBS = [
 ];
 
 const TABS = [
-  { id: 'resumo',    label: 'Resumo' },
-  { id: 'pedidos',   label: 'Meus pedidos' },
-  { id: 'dados',     label: 'Informações pessoais' },
-  { id: 'enderecos', label: 'Endereços' },
-  { id: 'senha',     label: 'Alterar senha' },
+  { id: 'resumo',     label: 'Resumo' },
+  { id: 'pedidos',    label: 'Meus pedidos' },
+  { id: 'dados',      label: 'Informações pessoais' },
+  { id: 'enderecos',  label: 'Endereços' },
+  { id: 'pagamentos', label: 'Formas de pagamento' },
+  { id: 'senha',      label: 'Alterar senha' },
 ];
 
 const moeda = (v) =>
@@ -35,9 +39,34 @@ const dataBR = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '—');
 const STATUS_CLASS = {
   Pendente: 'pendente',
   Pago: 'pago',
+  'Em montagem': 'pendente',
   Enviado: 'enviado',
   Entregue: 'entregue',
   Cancelado: 'cancelado',
+};
+
+// Gera uma previsão amigável de entrega (ex: 5 a 8 dias úteis a partir da data do pedido)
+const calcularPrevisaoEntrega = (dataPedido, tipoFrete) => {
+  const base = dataPedido ? new Date(dataPedido) : new Date();
+  const diasMin = tipoFrete && tipoFrete.toLowerCase().includes('sedex') ? 2 : 5;
+  const diasMax = tipoFrete && tipoFrete.toLowerCase().includes('sedex') ? 4 : 8;
+
+  const d1 = new Date(base);
+  d1.setDate(d1.getDate() + diasMin);
+  const d2 = new Date(base);
+  d2.setDate(d2.getDate() + diasMax);
+
+  return `${d1.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} e ${d2.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`;
+};
+
+// Determina em qual etapa da linha do tempo o pedido se encontra
+// 1: Pedido Realizado, 2: Em montagem, 3: Em transporte, 4: Entregue
+const obterEtapaRastreio = (status) => {
+  const s = (status || '').toLowerCase();
+  if (s === 'entregue') return 4;
+  if (s === 'enviado' || s === 'em transporte') return 3;
+  if (s === 'em montagem' || s === 'pago') return 2;
+  return 1; // Pendente ou Criado
 };
 
 const primeiroErro = (err) => {
@@ -47,7 +76,7 @@ const primeiroErro = (err) => {
 };
 
 /* ───────────────────────── Resumo ───────────────────────── */
-function Resumo({ user, pedidos, enderecos, irPara }) {
+function Resumo({ user, pedidos, enderecos, cartoes, irPara }) {
   const ultimo = pedidos[0];
   return (
     <>
@@ -64,6 +93,10 @@ function Resumo({ user, pedidos, enderecos, irPara }) {
         <button type="button" className="conta-card" onClick={() => irPara('enderecos')}>
           <span className="conta-card-num">{enderecos.length}</span>
           <span className="conta-card-label">Endereços salvos</span>
+        </button>
+        <button type="button" className="conta-card" onClick={() => irPara('pagamentos')}>
+          <span className="conta-card-num">{cartoes?.length || 0}</span>
+          <span className="conta-card-label">Cartões salvos</span>
         </button>
         <button type="button" className="conta-card" onClick={() => irPara('dados')}>
           <span className="conta-card-num">✎</span>
@@ -138,6 +171,56 @@ function Pedidos({ pedidos }) {
 
             {aberto === p.id && (
               <div className="conta-pedido-detalhe">
+                {/* ── Rastreamento e Linha do Tempo ── */}
+                <div className="conta-rastreio-container">
+                  <div className="conta-previsao-banner">
+                    <div className="conta-previsao-left">
+                      <span className="conta-previsao-icon">📦</span>
+                      <div className="conta-previsao-text">
+                        <strong>Previsão de entrega: {calcularPrevisaoEntrega(p.data_pedido, p.tipo_frete)}</strong>
+                        <span>Modalidade de envio: {p.tipo_frete || 'Transportadora Padrão'}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="conta-codigo-rastreio" title="Código de rastreamento">
+                        Rastreio: BR{String(p.id).padStart(6, '0')}SS
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Stepper / Linha do Tempo */}
+                  {(() => {
+                    const etapaAtual = obterEtapaRastreio(p.status);
+                    const steps = [
+                      { num: 1, label: 'Pedido Realizado', sub: dataBR(p.data_pedido) },
+                      { num: 2, label: 'Em montagem / Separação', sub: etapaAtual >= 2 ? 'Concluído' : 'Aguardando' },
+                      { num: 3, label: 'Em transporte', sub: etapaAtual >= 3 ? 'A caminho' : 'Pendente' },
+                      { num: 4, label: 'Entregue', sub: etapaAtual >= 4 ? 'Pacote recebido' : 'Pendente' },
+                    ];
+
+                    return (
+                      <div className="conta-timeline">
+                        {steps.map((st) => {
+                          const isCompleted = etapaAtual > st.num || (etapaAtual === 4 && st.num === 4);
+                          const isActive = etapaAtual === st.num && etapaAtual !== 4;
+                          return (
+                            <div
+                              key={st.num}
+                              className={`conta-timeline-step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}`}
+                            >
+                              <div className="conta-timeline-circle">
+                                {isCompleted ? '✓' : st.num}
+                              </div>
+                              <span className="conta-timeline-label">{st.label}</span>
+                              <span className="conta-timeline-sub">{st.sub}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
                 <table className="conta-tabela">
                   <thead>
                     <tr><th>Produto</th><th>Qtd</th><th>Preço</th></tr>
@@ -386,6 +469,206 @@ function Enderecos({ enderecos, recarregar }) {
   );
 }
 
+/* ───────────────────── Formas de Pagamento ───────────────────── */
+const CARTAO_VAZIO = {
+  tipo: 'credito',
+  titular: '',
+  numero: '',
+  validade: '',
+};
+
+function FormasPagamento({ cartoes, recarregar }) {
+  const [form, setForm] = useState(null);
+  const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
+
+  const change = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+
+  // Formatação amigável do número do cartão (grupos de 4 dígitos)
+  const handleNumeroChange = (e) => {
+    let v = e.target.value.replace(/\D/g, '').slice(0, 16);
+    v = v.replace(/(\d{4})/g, '$1 ').trim();
+    setForm((f) => ({ ...f, numero: v }));
+  };
+
+  // Formatação amigável da validade (MM/AA)
+  const handleValidadeChange = (e) => {
+    let v = e.target.value.replace(/\D/g, '').slice(0, 4);
+    if (v.length >= 3) {
+      v = `${v.slice(0, 2)}/${v.slice(2)}`;
+    }
+    setForm((f) => ({ ...f, validade: v }));
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setErro('');
+    setSalvando(true);
+    try {
+      await criarCartao({
+        tipo: form.tipo,
+        titular: form.titular,
+        numero: form.numero.replace(/\s+/g, ''),
+        validade: form.validade,
+      });
+      setForm(null);
+      await recarregar();
+    } catch (err) {
+      setErro(primeiroErro(err));
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const remover = async (id) => {
+    if (!window.confirm('Deseja remover este cartão salvo?')) return;
+    await removerCartao(id);
+    recarregar();
+  };
+
+  return (
+    <>
+      <div className="conta-head-row">
+        <div>
+          <h2 className="conta-section-title">Formas de pagamento</h2>
+          <p className="conta-section-sub">
+            Gerencie seus cartões salvos para agilizar suas compras com total segurança.
+          </p>
+        </div>
+        {!form && (
+          <button type="button" className="conta-btn-sec" onClick={() => { setForm(CARTAO_VAZIO); setErro(''); }}>
+            + Novo cartão
+          </button>
+        )}
+      </div>
+
+      {form && (
+        <form className="auth-form conta-box conta-form" onSubmit={submit}>
+          <h3>Novo Cartão</h3>
+          {erro && <p className="auth-error">{erro}</p>}
+
+          <div className="auth-field">
+            <label htmlFor="card-tipo">Tipo de Cartão</label>
+            <select
+              id="card-tipo"
+              name="tipo"
+              value={form.tipo}
+              onChange={change}
+              style={{ padding: '10px 12px', borderRadius: '6px', border: '1px solid #ccc', background: '#fff' }}
+            >
+              <option value="credito">Cartão de Crédito</option>
+              <option value="debito">Cartão de Débito</option>
+            </select>
+          </div>
+
+          <div className="auth-field">
+            <label htmlFor="card-titular">Nome impresso no Cartão</label>
+            <input
+              id="card-titular"
+              name="titular"
+              placeholder="Ex: JOAO S SILVA"
+              value={form.titular}
+              onChange={change}
+              required
+            />
+          </div>
+
+          <div className="conta-grid-2">
+            <div className="auth-field">
+              <label htmlFor="card-num">Número do Cartão</label>
+              <input
+                id="card-num"
+                name="numero"
+                placeholder="0000 0000 0000 0000"
+                value={form.numero}
+                onChange={handleNumeroChange}
+                required
+              />
+            </div>
+            <div className="auth-field">
+              <label htmlFor="card-val">Validade (MM/AA)</label>
+              <input
+                id="card-val"
+                name="validade"
+                placeholder="MM/AA"
+                maxLength={5}
+                value={form.validade}
+                onChange={handleValidadeChange}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="conta-payment-info-box" style={{ marginTop: '4px', marginBottom: '14px' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <div className="conta-payment-info-text">
+              <strong>Segurança Garantida:</strong> Por normas de segurança e privacidade bancária, não solicitamos nem armazenamos o código de segurança (CVV). O CVV será solicitado apenas no momento exato em que você for fechar a compra.
+            </div>
+          </div>
+
+          <div className="conta-actions">
+            <button type="submit" className="auth-btn" disabled={salvando}>
+              {salvando ? 'Salvando...' : 'Salvar cartão'}
+            </button>
+            <button type="button" className="conta-btn-sec" onClick={() => setForm(null)}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      )}
+
+      {!cartoes.length && !form && (
+        <p className="conta-vazio">Você ainda não tem nenhum cartão salvo.</p>
+      )}
+
+      <div className="conta-lista">
+        {cartoes.map((card) => (
+          <div key={card.id} className="conta-box conta-cartao-item">
+            <div className="conta-cartao-left">
+              <div className="conta-cartao-icon">
+                {card.bandeira || 'CARD'}
+              </div>
+              <div className="conta-cartao-detalhes">
+                <strong>
+                  •••• •••• •••• {card.ultimos_digitos}
+                  <span className="conta-cartao-tag">{card.tipo === 'credito' ? 'Crédito' : 'Débito'}</span>
+                </strong>
+                <p className="conta-muted" style={{ margin: '2px 0 0' }}>
+                  {card.titular} · Validade: {card.validade}
+                </p>
+              </div>
+            </div>
+            <div className="conta-actions">
+              <button
+                type="button"
+                className="conta-link perigo"
+                onClick={() => remover(card.id)}
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Orientações sobre Pix e Boleto */}
+      <div className="conta-payment-info-box">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="16" x2="12" y2="12" />
+          <line x1="12" y1="8" x2="12.01" y2="8" />
+        </svg>
+        <div className="conta-payment-info-text">
+          <strong>Sobre Pix e Boleto Bancário:</strong> O Pix e o Boleto não exigem cadastro prévio de dados nesta tela. Eles geram QR Codes, chave copia-e-cola e código de barras exclusivos automaticamente na conclusão de cada pedido, com confirmação e desconto de 5%.
+        </div>
+      </div>
+    </>
+  );
+}
+
 /* ───────────────────────── Senha ───────────────────────── */
 function Senha() {
   const vazio = { senha_atual: '', password: '', password_confirmation: '' };
@@ -444,6 +727,7 @@ export default function MinhaContaPage() {
   const [aba, setAba] = useState('resumo');
   const [pedidos, setPedidos] = useState([]);
   const [enderecos, setEnderecos] = useState([]);
+  const [cartoes, setCartoes] = useState([]);
 
   const carregarPedidos = useCallback(
     () => listarPedidos().then(({ data }) => setPedidos(data)).catch(() => {}),
@@ -453,13 +737,18 @@ export default function MinhaContaPage() {
     () => listarEnderecos().then(({ data }) => setEnderecos(data)).catch(() => {}),
     [],
   );
+  const carregarCartoes = useCallback(
+    () => listarCartoes().then(({ data }) => setCartoes(data)).catch(() => {}),
+    [],
+  );
 
   useEffect(() => {
     if (isAuthenticated) {
       carregarPedidos();
       carregarEnderecos();
+      carregarCartoes();
     }
-  }, [isAuthenticated, carregarPedidos, carregarEnderecos]);
+  }, [isAuthenticated, carregarPedidos, carregarEnderecos, carregarCartoes]);
 
   if (loading) return null;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
@@ -493,12 +782,21 @@ export default function MinhaContaPage() {
 
           <section className="conta-content">
             {aba === 'resumo' && (
-              <Resumo user={user} pedidos={pedidos} enderecos={enderecos} irPara={setAba} />
+              <Resumo
+                user={user}
+                pedidos={pedidos}
+                enderecos={enderecos}
+                cartoes={cartoes}
+                irPara={setAba}
+              />
             )}
             {aba === 'pedidos' && <Pedidos pedidos={pedidos} />}
             {aba === 'dados' && <DadosPessoais user={user} onSalvo={updateUser} />}
             {aba === 'enderecos' && (
               <Enderecos enderecos={enderecos} recarregar={carregarEnderecos} />
+            )}
+            {aba === 'pagamentos' && (
+              <FormasPagamento cartoes={cartoes} recarregar={carregarCartoes} />
             )}
             {aba === 'senha' && <Senha />}
           </section>

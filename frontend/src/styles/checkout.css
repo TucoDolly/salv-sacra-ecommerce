@@ -453,6 +453,74 @@
   gap: 12px;
 }
 
+.checkout-saved-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.checkout-saved-card-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1.5px solid #d6d6d6;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.checkout-saved-card-item:hover {
+  border-color: #999;
+}
+
+.checkout-saved-card-item.selected {
+  border-color: #1e1e1e;
+  background: #fdfdfd;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.checkout-saved-card-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.checkout-saved-card-radio {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid #aaa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.checkout-saved-card-item.selected .checkout-saved-card-radio {
+  border-color: #1e1e1e;
+}
+
+.checkout-saved-card-item.selected .checkout-saved-card-radio::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #1e1e1e;
+}
+
+.checkout-saved-card-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: #eee;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
 /* Card Salvar Dados Nuvem */
 .checkout-save-data-card {
   background: #fff;

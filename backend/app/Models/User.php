@@ -37,6 +37,11 @@ class User extends Authenticatable
         return $this->hasMany(Endereco::class);
     }
 
+    public function cartoes(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Cartao::class);
+    }
+
     public function pedidos(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(Pedido::class);

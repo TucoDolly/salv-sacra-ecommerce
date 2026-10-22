@@ -6,6 +6,8 @@ import api from '../../services/api';
 import logoImg from '../../assets/logo.webp';
 import '../../styles/checkout.css';
 
+import { listarEnderecos, listarCartoes } from '../../services/contaService';
+
 // Ícones SVG inline
 const IconShieldCheck = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -84,18 +86,23 @@ export default function CheckoutPage() {
   const [etapa, setEtapa] = useState('entrega');
 
   // Dados de contato e endereço
-  const [email, setEmail] = useState(user?.email || 'tucopaes@gmail.com');
-  const [nome, setNome] = useState(user?.name || 'Tuco Paes');
-  const [telefone, setTelefone] = useState('(48) 99825-7778');
+  const [email, setEmail] = useState(user?.email || '');
+  const [nome, setNome] = useState(user?.name || '');
+  const [telefone, setTelefone] = useState(user?.telefone || '');
   const [endereco, setEndereco] = useState({
-    cep: '88701-260',
-    logradouro: 'Rua São José',
-    numero: '387',
+    cep: '',
+    logradouro: '',
+    numero: '',
     complemento: '',
-    bairro: 'Centro',
-    cidade: 'Tubarão',
-    estado: 'SC',
+    bairro: '',
+    cidade: '',
+    estado: '',
   });
+
+  // Endereços e cartões salvos do usuário autenticado
+  const [enderecosSalvos, setEnderecosSalvos] = useState([]);
+  const [cartoesSalvos, setCartoesSalvos] = useState([]);
+  const [cartaoSelecionadoId, setCartaoSelecionadoId] = useState('novo');
 
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [observacoes, setObservacoes] = useState('');
@@ -127,6 +134,55 @@ export default function CheckoutPage() {
 
   const [loading, setLoading] = useState(false);
   const [pedidoConcluido, setPedidoConcluido] = useState(null);
+
+  // Carregar dados de perfil, endereços e cartões salvos
+  useEffect(() => {
+    if (user) {
+      if (user.email) setEmail(user.email);
+      if (user.name) setNome(user.name);
+      if (user.telefone) setTelefone(user.telefone);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      listarEnderecos()
+        .then((res) => {
+          const lista = res.data || [];
+          setEnderecosSalvos(lista);
+          if (lista.length > 0) {
+            const end = lista[0]; // Seleciona automaticamente o endereço cadastrado mais recente
+            setEndereco({
+              cep: end.cep || '',
+              logradouro: end.logradouro || '',
+              numero: end.numero || '',
+              complemento: end.complemento || '',
+              bairro: end.bairro || '',
+              cidade: end.cidade || '',
+              estado: end.estado || '',
+            });
+          }
+        })
+        .catch(() => {});
+
+      listarCartoes()
+        .then((res) => {
+          const lista = res.data || [];
+          setCartoesSalvos(lista);
+          if (lista.length > 0) {
+            const primeiro = lista[0];
+            setCartaoSelecionadoId(primeiro.id);
+            setCartao({
+              numero: primeiro.numero,
+              titular: primeiro.titular,
+              validade: primeiro.validade,
+              cvv: '',
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isAuthenticated]);
 
   // Só usuários logados podem finalizar uma compra
   useEffect(() => {
@@ -183,6 +239,18 @@ export default function CheckoutPage() {
       alert('Seu carrinho está vazio.');
       navigate('/');
       return;
+    }
+    if (metodoPagamento === 'cartao') {
+      if (!cartao.cvv || cartao.cvv.length < 3) {
+        alert('Por favor, informe o código de segurança (CVV) do cartão para autorizar o pagamento.');
+        return;
+      }
+      if (cartaoSelecionadoId === 'novo') {
+        if (!cartao.numero || !cartao.titular || !cartao.validade) {
+          alert('Por favor, preencha todos os dados do novo cartão.');
+          return;
+        }
+      }
     }
 
     setLoading(true);
@@ -372,6 +440,38 @@ export default function CheckoutPage() {
                     Preencha os dados onde deseja receber sua encomenda. O pagamento será realizado no próximo passo.
                   </span>
                 </div>
+
+                {enderecosSalvos.length > 1 && (
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', color: '#555' }}>
+                      Selecione um de seus endereços cadastrados:
+                    </label>
+                    <select
+                      className="checkout-input"
+                      style={{ marginTop: '4px' }}
+                      onChange={(e) => {
+                        const selecionado = enderecosSalvos.find((end) => String(end.id) === e.target.value);
+                        if (selecionado) {
+                          setEndereco({
+                            cep: selecionado.cep || '',
+                            logradouro: selecionado.logradouro || '',
+                            numero: selecionado.numero || '',
+                            complemento: selecionado.complemento || '',
+                            bairro: selecionado.bairro || '',
+                            cidade: selecionado.cidade || '',
+                            estado: selecionado.estado || '',
+                          });
+                        }
+                      }}
+                    >
+                      {enderecosSalvos.map((end, idx) => (
+                        <option key={end.id} value={end.id}>
+                          {end.logradouro}, {end.numero} - {end.bairro}, {end.cidade}/{end.estado} (CEP {end.cep}) {idx === 0 ? ' [Padrão]' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="checkout-form-grid">
                   <div className="checkout-input-row">
@@ -627,52 +727,139 @@ export default function CheckoutPage() {
 
                     {metodoPagamento === 'cartao' && (
                       <div className="checkout-payment-body">
+                        {/* Seletor de cartões salvos */}
+                        {cartoesSalvos.length > 0 && (
+                          <div style={{ marginBottom: '14px' }}>
+                            <label style={{ fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', color: '#555', display: 'block', marginBottom: '6px' }}>
+                              Escolha um cartão salvo:
+                            </label>
+                            <div className="checkout-saved-cards-list">
+                              {cartoesSalvos.map((c) => {
+                                const isSel = cartaoSelecionadoId === c.id;
+                                return (
+                                  <div
+                                    key={c.id}
+                                    className={`checkout-saved-card-item ${isSel ? 'selected' : ''}`}
+                                    onClick={() => {
+                                      setCartaoSelecionadoId(c.id);
+                                      setCartao((prev) => ({
+                                        ...prev,
+                                        numero: c.numero,
+                                        titular: c.titular,
+                                        validade: c.validade,
+                                      }));
+                                    }}
+                                  >
+                                    <div className="checkout-saved-card-left">
+                                      <div className="checkout-saved-card-radio" />
+                                      <div>
+                                        <strong>•••• •••• •••• {c.ultimos_digitos}</strong>
+                                        <span className="checkout-saved-card-badge">{c.tipo === 'credito' ? 'Crédito' : 'Débito'}</span>
+                                        <div style={{ fontSize: '11px', color: '#666' }}>
+                                          {c.titular} · Validade: {c.validade}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#333' }}>
+                                      {c.bandeira || 'Cartão'}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+
+                              {/* Opção de outro cartão */}
+                              <div
+                                className={`checkout-saved-card-item ${cartaoSelecionadoId === 'novo' ? 'selected' : ''}`}
+                                onClick={() => {
+                                  setCartaoSelecionadoId('novo');
+                                  setCartao({ numero: '', titular: '', validade: '', cvv: '' });
+                                }}
+                              >
+                                <div className="checkout-saved-card-left">
+                                  <div className="checkout-saved-card-radio" />
+                                  <span>+ Usar outro cartão</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="checkout-card-form">
-                          <div className="checkout-input-group">
-                            <label>Número do Cartão</label>
-                            <input
-                              type="text"
-                              placeholder="0000 0000 0000 0000"
-                              maxLength="19"
-                              value={cartao.numero}
-                              onChange={(e) => setCartao({ ...cartao, numero: e.target.value })}
-                              className="checkout-input"
-                            />
-                          </div>
-                          <div className="checkout-input-group">
-                            <label>Nome impresso no Cartão</label>
-                            <input
-                              type="text"
-                              placeholder="Nome como no cartão"
-                              value={cartao.titular}
-                              onChange={(e) => setCartao({ ...cartao, titular: e.target.value })}
-                              className="checkout-input"
-                            />
-                          </div>
-                          <div className="checkout-input-row">
-                            <div className="checkout-input-group">
-                              <label>Validade</label>
-                              <input
-                                type="text"
-                                placeholder="MM/AA"
-                                maxLength="5"
-                                value={cartao.validade}
-                                onChange={(e) => setCartao({ ...cartao, validade: e.target.value })}
-                                className="checkout-input"
-                              />
+                          {cartaoSelecionadoId === 'novo' ? (
+                            <>
+                              <div className="checkout-input-group">
+                                <label>Número do Cartão</label>
+                                <input
+                                  type="text"
+                                  placeholder="0000 0000 0000 0000"
+                                  maxLength="19"
+                                  value={cartao.numero}
+                                  onChange={(e) => {
+                                    let v = e.target.value.replace(/\D/g, '').slice(0, 16);
+                                    v = v.replace(/(\d{4})/g, '$1 ').trim();
+                                    setCartao({ ...cartao, numero: v });
+                                  }}
+                                  className="checkout-input"
+                                />
+                              </div>
+                              <div className="checkout-input-group">
+                                <label>Nome impresso no Cartão</label>
+                                <input
+                                  type="text"
+                                  placeholder="Nome como no cartão"
+                                  value={cartao.titular}
+                                  onChange={(e) => setCartao({ ...cartao, titular: e.target.value.toUpperCase() })}
+                                  className="checkout-input"
+                                />
+                              </div>
+                              <div className="checkout-input-row">
+                                <div className="checkout-input-group">
+                                  <label>Validade</label>
+                                  <input
+                                    type="text"
+                                    placeholder="MM/AA"
+                                    maxLength="5"
+                                    value={cartao.validade}
+                                    onChange={(e) => {
+                                      let v = e.target.value.replace(/\D/g, '').slice(0, 4);
+                                      if (v.length >= 3) v = `${v.slice(0, 2)}/${v.slice(2)}`;
+                                      setCartao({ ...cartao, validade: v });
+                                    }}
+                                    className="checkout-input"
+                                  />
+                                </div>
+                                <div className="checkout-input-group">
+                                  <label>CVV (Código de segurança) *</label>
+                                  <input
+                                    type="password"
+                                    placeholder="123"
+                                    maxLength="4"
+                                    value={cartao.cvv}
+                                    onChange={(e) => setCartao({ ...cartao, cvv: e.target.value })}
+                                    className="checkout-input"
+                                  />
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="checkout-input-row" style={{ alignItems: 'flex-end' }}>
+                              <div className="checkout-input-group" style={{ flex: 1 }}>
+                                <label>CVV do Cartão Selecionado *</label>
+                                <input
+                                  type="password"
+                                  placeholder="Ex: 123"
+                                  maxLength="4"
+                                  value={cartao.cvv}
+                                  onChange={(e) => setCartao({ ...cartao, cvv: e.target.value })}
+                                  className="checkout-input"
+                                  required
+                                />
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#666', paddingBottom: '10px' }}>
+                                O CVV é solicitado apenas no momento do pagamento por motivos de segurança.
+                              </div>
                             </div>
-                            <div className="checkout-input-group">
-                              <label>CVV</label>
-                              <input
-                                type="password"
-                                placeholder="123"
-                                maxLength="4"
-                                value={cartao.cvv}
-                                onChange={(e) => setCartao({ ...cartao, cvv: e.target.value })}
-                                className="checkout-input"
-                              />
-                            </div>
-                          </div>
+                          )}
                         </div>
                       </div>
                     )}

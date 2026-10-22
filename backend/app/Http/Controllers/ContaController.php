@@ -97,7 +97,60 @@ class ContaController extends Controller
         return response()->json($pedidos);
     }
 
+    // ── Cartões ─────────────────────────────────────────────────────────
+
+    public function cartoes(Request $request): JsonResponse
+    {
+        return response()->json($request->user()->cartoes()->latest()->get());
+    }
+
+    public function criarCartao(Request $request): JsonResponse
+    {
+        $dados = $request->validate([
+            'tipo'     => ['required', 'in:credito,debito'],
+            'titular'  => ['required', 'string', 'max:255'],
+            'numero'   => ['required', 'string', 'min:12', 'max:25'],
+            'validade' => ['required', 'string', 'regex:/^(0[1-9]|1[0-2])\/?([0-9]{2}|[0-9]{4})$/'],
+            'bandeira' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        $limpo = preg_replace('/\D/', '', $dados['numero']);
+        $ultimos = substr($limpo, -4);
+        // Mascara os números intermediários preservando os últimos 4 dígitos
+        $numeroMascarado = str_repeat('*', max(0, strlen($limpo) - 4)) . $ultimos;
+
+        $cartao = $request->user()->cartoes()->create([
+            'tipo'            => $dados['tipo'],
+            'titular'         => mb_strtoupper($dados['titular']),
+            'numero'          => $numeroMascarado,
+            'ultimos_digitos' => $ultimos,
+            'bandeira'        => $dados['bandeira'] ?? $this->identificarBandeira($limpo),
+            'validade'        => $dados['validade'],
+        ]);
+
+        return response()->json($cartao, 201);
+    }
+
+    public function removerCartao(Request $request, \App\Models\Cartao $cartao): JsonResponse
+    {
+        abort_unless($cartao->user_id === $request->user()->id, 403, 'Acesso negado.');
+        $cartao->delete();
+
+        return response()->json(['message' => 'Cartão removido com sucesso.']);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
+
+    private function identificarBandeira(string $numero): string
+    {
+        if (preg_match('/^4/', $numero)) return 'Visa';
+        if (preg_match('/^5[1-5]|^2[2-7]/', $numero)) return 'Mastercard';
+        if (preg_match('/^3[47]/', $numero)) return 'American Express';
+        if (preg_match('/^6(?:011|5)/', $numero)) return 'Discover';
+        if (preg_match('/^(4011|4389|4514|4576|5041|5066|509|6277|6362|6363|650|6516|6550)/', $numero)) return 'Elo';
+        if (preg_match('/^6062/', $numero)) return 'Hipercard';
+        return 'Cartão';
+    }
 
     private function validarEndereco(Request $request): array
     {
