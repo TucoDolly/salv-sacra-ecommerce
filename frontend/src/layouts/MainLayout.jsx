@@ -60,13 +60,15 @@ const IconMapPin = () => (
 );
 
 /* ── Header ─────────────────────────────────────────────── */
-function SiteHeader() {
+function SiteHeader({ configs }) {
   const { totalItens, openCart } = useCart();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [termoBusca, setTermoBusca] = useState('');
   const [dropdownAcessorios, setDropdownAcessorios] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+
+  const logoDestino = isAuthenticated && user?.papel === 'admin' ? '/admin' : '/';
 
   const handleBuscar = (e) => {
     e.preventDefault();
@@ -75,18 +77,23 @@ function SiteHeader() {
     }
   };
 
+  const exibirBanner = configs.aviso_topo_ativo !== '0';
+  const textoBanner = configs.aviso_topo_texto || '✦ FRETE GRÁTIS PARA COMPRAS ACIMA DE R$500 ✦';
+
   return (
     <header>
-      {/* Topbar */}
-      <div className="topbar">
-        ✦ FRETE GRÁTIS PARA COMPRAS ACIMA DE R$500 ✦
-      </div>
+      {/* Topbar dinâmico */}
+      {exibirBanner && (
+        <div className="topbar">
+          {textoBanner}
+        </div>
+      )}
 
       {/* Logo + Busca + Ações */}
       <div className="site-header">
         <div className="header-inner">
-          <Link to="/" className="header-logo">
-            <img src={logoImg} alt="Salv Sacra" className="logo-img" />
+          <Link to={logoDestino} className="header-logo" title={isAuthenticated && user?.papel === 'admin' ? 'Ir para o Painel do Administrador' : 'Ir para o Início'}>
+            <img src={logoImg} alt={configs.nome_loja || "Salv Sacra"} className="logo-img" />
           </Link>
 
           <form onSubmit={handleBuscar} className="header-search">
@@ -207,7 +214,10 @@ const PAYMENT_METHODS = [
   "Visa", "Master", "Amex", "Diners", "Elo", "Hiper", "Discover", "Pix"
 ];
 
-function SiteFooter() {
+function SiteFooter({ configs }) {
+  const whatsNumero = (configs.contato_whatsapp || '5548996205153').replace(/\D/g, '');
+  const whatsUrl = `https://wa.me/${whatsNumero}`;
+
   return (
     <footer className="site-footer">
       {/* Colunas */}
@@ -215,7 +225,7 @@ function SiteFooter() {
         {/* Quem somos */}
         <div className="footer-col">
           <h4>Quem somos</h4>
-          <a href="#">Teste</a>
+          <a href="#">{configs.slogan_loja || 'Vestindo a Fé com Elegância'}</a>
         </div>
 
         {/* Institucional */}
@@ -230,26 +240,28 @@ function SiteFooter() {
           <h4>Entre em contato</h4>
           <div className="contact-item">
             <IconWhatsapp />
-            <span>5548996205153</span>
+            <a href={whatsUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+              {configs.contato_whatsapp || '5548996205153'}
+            </a>
           </div>
           <div className="contact-item">
             <IconPhone />
-            <span>48996205153</span>
+            <span>{configs.contato_telefone || '(48) 99620-5153'}</span>
           </div>
           <div className="contact-item">
             <IconMail />
-            <a href="mailto:salvsacra@gmail.com">salvsacra@gmail.com</a>
+            <a href={`mailto:${configs.contato_email || 'salvsacra@gmail.com'}`}>{configs.contato_email || 'salvsacra@gmail.com'}</a>
           </div>
           <div className="contact-item">
             <IconMapPin />
-            <span>Rua Manoel Antunes Corrêa, 2171</span>
+            <span>{configs.contato_endereco || 'Rua Manoel Antunes Corrêa, 2171'}</span>
           </div>
         </div>
 
         {/* Siga-nos */}
         <div className="footer-col">
           <h4>Siga-nos!</h4>
-          <a href="https://instagram.com" target="_blank" rel="noreferrer" className="social-btn" aria-label="Instagram">
+          <a href={configs.instagram_url || "https://instagram.com"} target="_blank" rel="noreferrer" className="social-btn" aria-label="Instagram">
             <IconInstagram />
           </a>
         </div>
@@ -272,7 +284,7 @@ function SiteFooter() {
       {/* Copyright */}
       <div className="footer-copyright">
         <p>
-          Copyright <a href="#">SALV SACRA</a> · 2026. Todos os direitos reservados.
+          Copyright <a href="#">{configs.nome_loja || 'SALV SACRA'}</a> · {new Date().getFullYear()}. Todos os direitos reservados.
         </p>
       </div>
     </footer>
@@ -281,9 +293,22 @@ function SiteFooter() {
 
 /* ── Layout principal ───────────────────────────────────── */
 export default function MainLayout({ children, breadcrumbs }) {
+  const [configs, setConfigs] = useState({});
+
+  useEffect(() => {
+    fetch('/api/configuracoes')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && typeof data === 'object') {
+          setConfigs(data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-      <SiteHeader />
+      <SiteHeader configs={configs} />
 
       <main className="main-content">
         {/* Breadcrumb */}
@@ -306,7 +331,7 @@ export default function MainLayout({ children, breadcrumbs }) {
         {children}
       </main>
 
-      <SiteFooter />
+      <SiteFooter configs={configs} />
 
       {/* Gaveta lateral do Carrinho de Compras */}
       <CarrinhoDrawer />

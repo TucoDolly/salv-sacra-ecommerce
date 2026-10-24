@@ -1,5 +1,6 @@
 import api from './api';
 
+export const obterResumoConta = () => api.get('/conta/resumo');
 export const atualizarPerfil = (data) => api.put('/conta/perfil', data);
 export const alterarSenha = (data) => api.put('/conta/senha', data);
 export const listarPedidos = () => api.get('/conta/pedidos');

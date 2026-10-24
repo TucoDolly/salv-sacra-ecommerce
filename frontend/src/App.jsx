@@ -15,6 +15,10 @@ import GuiaMedidasPage from './pages/public/GuiaMedidasPage';
 import ProdutosList from './pages/admin/ProdutosList';
 import ProdutoForm from './pages/admin/ProdutoForm';
 import PedidosList from './pages/admin/PedidosList';
+import EstoqueList from './pages/admin/EstoqueList';
+import RelatoriosPage from './pages/admin/RelatoriosPage';
+import ConfiguracoesPage from './pages/admin/ConfiguracoesPage';
+import AdminDashboard from './pages/admin/AdminDashboard';
 import './App.css';
 
 /**
@@ -61,8 +65,8 @@ function App() {
           </ProtectedRoute>
         }
       >
-        {/* /admin → redireciona para /admin/produtos */}
-        <Route index element={<AdminRedirect />} />
+        {/* /admin → Início / Dashboard */}
+        <Route index element={<AdminDashboard />} />
 
         {/* UC03 — Produtos */}
         <Route path="produtos"            element={<ProdutosList />} />
@@ -71,6 +75,15 @@ function App() {
 
         {/* Gestão de Pedidos e Pagamentos */}
         <Route path="pedidos"             element={<PedidosList />} />
+
+        {/* Gestão de Estoque */}
+        <Route path="estoque"             element={<EstoqueList />} />
+
+        {/* Relatórios e Faturamento */}
+        <Route path="relatorios"          element={<RelatoriosPage />} />
+
+        {/* Configurações da Loja */}
+        <Route path="config"              element={<ConfiguracoesPage />} />
       </Route>
 
       {/* Qualquer rota não mapeada → vitrine */}

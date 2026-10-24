@@ -11,6 +11,7 @@ import {
   listarCartoes,
   listarEnderecos,
   listarPedidos,
+  obterResumoConta,
   removerCartao,
   removerEndereco,
 } from '../services/contaService';
@@ -60,12 +61,13 @@ const calcularPrevisaoEntrega = (dataPedido, tipoFrete) => {
 };
 
 // Determina em qual etapa da linha do tempo o pedido se encontra
-// 1: Pedido Realizado, 2: Em montagem, 3: Em transporte, 4: Entregue
+// 1: Pedido Realizado, 2: Pagamento confirmado, 3: Em montagem, 4: Em transporte, 5: Entregue
 const obterEtapaRastreio = (status) => {
   const s = (status || '').toLowerCase();
-  if (s === 'entregue') return 4;
-  if (s === 'enviado' || s === 'em transporte') return 3;
-  if (s === 'em montagem' || s === 'pago') return 2;
+  if (s === 'entregue') return 5;
+  if (s === 'enviado' || s === 'em transporte') return 4;
+  if (s === 'em montagem') return 3;
+  if (s === 'pago') return 2;
   return 1; // Pendente ou Criado
 };
 
@@ -76,8 +78,12 @@ const primeiroErro = (err) => {
 };
 
 /* ───────────────────────── Resumo ───────────────────────── */
-function Resumo({ user, pedidos, enderecos, cartoes, irPara }) {
-  const ultimo = pedidos[0];
+function Resumo({ user, pedidos, enderecos, cartoes, resumo, irPara, carregando }) {
+  const ultimo = resumo?.ultimo_pedido !== undefined ? resumo.ultimo_pedido : pedidos?.[0];
+  const numPedidos = resumo?.total_pedidos !== undefined ? resumo.total_pedidos : (pedidos?.length || 0);
+  const numEnderecos = resumo?.total_enderecos !== undefined ? resumo.total_enderecos : (enderecos?.length || 0);
+  const numCartoes = resumo?.total_cartoes !== undefined ? resumo.total_cartoes : (cartoes?.length || 0);
+
   return (
     <>
       <h2 className="conta-section-title">Olá, {user.name.split(' ')[0]}!</h2>
@@ -87,15 +93,15 @@ function Resumo({ user, pedidos, enderecos, cartoes, irPara }) {
 
       <div className="conta-cards">
         <button type="button" className="conta-card" onClick={() => irPara('pedidos')}>
-          <span className="conta-card-num">{pedidos.length}</span>
+          <span className="conta-card-num">{numPedidos}</span>
           <span className="conta-card-label">Pedidos realizados</span>
         </button>
         <button type="button" className="conta-card" onClick={() => irPara('enderecos')}>
-          <span className="conta-card-num">{enderecos.length}</span>
+          <span className="conta-card-num">{numEnderecos}</span>
           <span className="conta-card-label">Endereços salvos</span>
         </button>
         <button type="button" className="conta-card" onClick={() => irPara('pagamentos')}>
-          <span className="conta-card-num">{cartoes?.length || 0}</span>
+          <span className="conta-card-num">{numCartoes}</span>
           <span className="conta-card-label">Cartões salvos</span>
         </button>
         <button type="button" className="conta-card" onClick={() => irPara('dados')}>
@@ -119,6 +125,8 @@ function Resumo({ user, pedidos, enderecos, cartoes, irPara }) {
               <strong> {moeda(ultimo.valor_total)}</strong>
             </div>
           </div>
+        ) : carregando ? (
+          <div className="conta-skeleton-linha" />
         ) : (
           <p className="conta-vazio">
             Você ainda não fez nenhum pedido. <Link to="/produtos">Ver produtos</Link>
@@ -193,16 +201,17 @@ function Pedidos({ pedidos }) {
                     const etapaAtual = obterEtapaRastreio(p.status);
                     const steps = [
                       { num: 1, label: 'Pedido Realizado', sub: dataBR(p.data_pedido) },
-                      { num: 2, label: 'Em montagem / Separação', sub: etapaAtual >= 2 ? 'Concluído' : 'Aguardando' },
-                      { num: 3, label: 'Em transporte', sub: etapaAtual >= 3 ? 'A caminho' : 'Pendente' },
-                      { num: 4, label: 'Entregue', sub: etapaAtual >= 4 ? 'Pacote recebido' : 'Pendente' },
+                      { num: 2, label: 'Pagamento confirmado', sub: etapaAtual >= 2 ? 'Aprovado' : 'Aguardando' },
+                      { num: 3, label: 'Em montagem / Separação', sub: etapaAtual >= 3 ? 'Concluído' : (etapaAtual === 2 ? 'Em andamento' : 'Pendente') },
+                      { num: 4, label: 'Em transporte', sub: etapaAtual >= 4 ? 'A caminho' : 'Pendente' },
+                      { num: 5, label: 'Entregue', sub: etapaAtual >= 5 ? 'Pacote recebido' : 'Pendente' },
                     ];
 
                     return (
                       <div className="conta-timeline">
                         {steps.map((st) => {
-                          const isCompleted = etapaAtual > st.num || (etapaAtual === 4 && st.num === 4);
-                          const isActive = etapaAtual === st.num && etapaAtual !== 4;
+                          const isCompleted = etapaAtual > st.num || (etapaAtual === 5 && st.num === 5);
+                          const isActive = etapaAtual === st.num && etapaAtual !== 5;
                           return (
                             <div
                               key={st.num}
@@ -729,6 +738,17 @@ export default function MinhaContaPage() {
   const [enderecos, setEnderecos] = useState([]);
   const [cartoes, setCartoes] = useState([]);
 
+  // Lê do cache local imediatamente para os números já aparecerem na tela no milissegundo 0
+  const [resumo, setResumo] = useState(() => {
+    try {
+      const salvo = localStorage.getItem('minha_conta_resumo');
+      return salvo ? JSON.parse(salvo) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [carregandoDados, setCarregandoDados] = useState(!resumo);
+
   const carregarPedidos = useCallback(
     () => listarPedidos().then(({ data }) => setPedidos(data)).catch(() => {}),
     [],
@@ -742,18 +762,32 @@ export default function MinhaContaPage() {
     [],
   );
 
+  const carregarResumo = useCallback(() => {
+    return obterResumoConta()
+      .then(({ data }) => {
+        setResumo(data);
+        localStorage.setItem('minha_conta_resumo', JSON.stringify(data));
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (isAuthenticated) {
+      // 1. Atualiza imediatamente o resumo leve com os contadores
+      carregarResumo().finally(() => setCarregandoDados(false));
+
+      // 2. Busca os dados completos para as abas secundárias
       carregarPedidos();
       carregarEnderecos();
       carregarCartoes();
     }
-  }, [isAuthenticated, carregarPedidos, carregarEnderecos, carregarCartoes]);
+  }, [isAuthenticated, carregarResumo, carregarPedidos, carregarEnderecos, carregarCartoes]);
 
   if (loading) return null;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
   const sair = async () => {
+    localStorage.removeItem('minha_conta_resumo');
     await signOut();
     navigate('/');
   };
@@ -787,16 +821,30 @@ export default function MinhaContaPage() {
                 pedidos={pedidos}
                 enderecos={enderecos}
                 cartoes={cartoes}
+                resumo={resumo}
                 irPara={setAba}
+                carregando={carregandoDados}
               />
             )}
             {aba === 'pedidos' && <Pedidos pedidos={pedidos} />}
             {aba === 'dados' && <DadosPessoais user={user} onSalvo={updateUser} />}
             {aba === 'enderecos' && (
-              <Enderecos enderecos={enderecos} recarregar={carregarEnderecos} />
+              <Enderecos
+                enderecos={enderecos}
+                recarregar={() => {
+                  carregarEnderecos();
+                  carregarResumo();
+                }}
+              />
             )}
             {aba === 'pagamentos' && (
-              <FormasPagamento cartoes={cartoes} recarregar={carregarCartoes} />
+              <FormasPagamento
+                cartoes={cartoes}
+                recarregar={() => {
+                  carregarCartoes();
+                  carregarResumo();
+                }}
+              />
             )}
             {aba === 'senha' && <Senha />}
           </section>

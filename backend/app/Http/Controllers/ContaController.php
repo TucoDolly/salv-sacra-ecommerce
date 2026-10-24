@@ -16,6 +16,23 @@ use Illuminate\Validation\ValidationException;
  */
 class ContaController extends Controller
 {
+    /** Retorna resumo para a tela inicial da conta: contadores e último pedido. */
+    public function resumo(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $ultimoPedido = Pedido::where('user_id', $user->id)
+            ->orderByDesc('data_pedido')
+            ->first();
+
+        return response()->json([
+            'total_pedidos'   => $user->pedidos()->count(),
+            'total_enderecos' => $user->enderecos()->count(),
+            'total_cartoes'   => $user->cartoes()->count(),
+            'ultimo_pedido'   => $ultimoPedido,
+        ]);
+    }
+
     /** Atualiza as informações pessoais. */
     public function atualizarPerfil(Request $request): JsonResponse
     {

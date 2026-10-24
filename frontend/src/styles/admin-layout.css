@@ -5,7 +5,7 @@
 
 /* ── Variáveis de tema ──────────────────────────────────────── */
 :root {
-  --sidebar-w:      220px;
+  --sidebar-w:      240px;
   --topbar-h:       60px;
   --sidebar-bg:     #1c1c1c;
   --sidebar-border: rgba(255,255,255,0.06);
@@ -42,14 +42,18 @@
 
 /* ── Logo ───────────────────────────────────────────────────── */
 .al-logo {
-  padding: 22px 20px 18px;
+  padding: 24px 20px 22px;
   border-bottom: 1px solid var(--sidebar-border);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .al-logo img {
-  height: 36px;
+  height: 68px;
   width: auto;
+  max-width: 90%;
   object-fit: contain;
   display: block;
 }

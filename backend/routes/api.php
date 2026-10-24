@@ -29,6 +29,9 @@ Route::get('devocaos',           [DevocaoController::class,   'index']);
 
 // Pedidos / Checkout: exigem usuário autenticado (ver grupo auth:sanctum abaixo)
 
+// Configurações públicas da loja (banner de topo, frete grátis, contatos)
+Route::get('configuracoes', [\App\Http\Controllers\ConfiguracaoController::class, 'publicas']);
+
 // Formulário de contato (com reCAPTCHA)
 Route::post('contato', [\App\Http\Controllers\ContatoController::class, 'enviar']);
 
@@ -47,6 +50,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Minha Conta (cliente autenticado) ─────────────────────────────
     Route::prefix('conta')->group(function () {
+        Route::get('resumo',               [\App\Http\Controllers\ContaController::class, 'resumo']);
         Route::put('perfil',               [\App\Http\Controllers\ContaController::class, 'atualizarPerfil']);
         Route::put('senha',                [\App\Http\Controllers\ContaController::class, 'alterarSenha']);
         Route::get('pedidos',              [\App\Http\Controllers\ContaController::class, 'pedidos']);
@@ -83,5 +87,19 @@ Route::middleware('auth:sanctum')->group(function () {
         // ── Gestão de Pedidos (Administração) ─────────────────────────────
         Route::get('admin/pedidos',                 [PedidoController::class, 'indexAdmin']);
         Route::patch('admin/pedidos/{pedido}/status', [PedidoController::class, 'updateStatus']);
+
+        // ── Gestão de Estoque Rápida (Administração) ─────────────────────
+        Route::get('admin/estoque',                      [\App\Http\Controllers\EstoqueController::class, 'index']);
+        Route::patch('admin/estoque/{variacao}',         [\App\Http\Controllers\EstoqueController::class, 'update']);
+
+        // ── Relatórios e Faturamento (Administração) ─────────────────────
+        Route::get('admin/relatorios',                   [\App\Http\Controllers\RelatorioController::class, 'index']);
+
+        // ── Configurações da Loja (Administração) ────────────────────────
+        Route::get('admin/configuracoes',                [\App\Http\Controllers\ConfiguracaoController::class, 'index']);
+        Route::put('admin/configuracoes',                [\App\Http\Controllers\ConfiguracaoController::class, 'updateBatch']);
+
+        // ── Dashboard Inicial (Administração) ─────────────────────────────
+        Route::get('admin/dashboard', [\App\Http\Controllers\AdminDashboardController::class, 'index']);
     });
 });

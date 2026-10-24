@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import logo from '../assets/logo.webp';
 import '../styles/admin-layout.css';
@@ -97,9 +97,9 @@ export default function AdminLayout() {
       <aside className="al-sidebar">
 
         {/* Logo */}
-        <div className="al-logo">
+        <Link to="/admin" className="al-logo" title="Ir para o início do painel">
           <img src={logo} alt="Salv Sacra" />
-        </div>
+        </Link>
 
         {/* Navegação */}
         <nav className="al-nav" aria-label="Menu principal">

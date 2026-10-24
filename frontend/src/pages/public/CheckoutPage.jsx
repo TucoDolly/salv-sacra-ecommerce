@@ -298,6 +298,8 @@ export default function CheckoutPage() {
     }
   };
 
+  const logoDestino = isAuthenticated && user?.papel === 'admin' ? '/admin' : '/';
+
   if (authLoading || !isAuthenticated) return null;
 
   // Sucesso
@@ -306,7 +308,7 @@ export default function CheckoutPage() {
       <div className="checkout-page">
         <header className="checkout-header">
           <div className="checkout-header-inner">
-            <Link to="/" className="checkout-logo-link">
+            <Link to={logoDestino} className="checkout-logo-link">
               <img src={logoImg} alt="Salv Sacra" className="checkout-logo-img" />
             </Link>
             <div className="checkout-safe-badge">
@@ -346,7 +348,7 @@ export default function CheckoutPage() {
           )}
 
           <div style={{ marginTop: '30px' }}>
-            <Link to="/" className="checkout-submit-btn" style={{ textDecoration: 'none', textAlign: 'center', lineHeight: '52px' }}>
+            <Link to={logoDestino} className="checkout-submit-btn" style={{ textDecoration: 'none', textAlign: 'center', lineHeight: '52px' }}>
               Voltar para a Loja
             </Link>
           </div>
@@ -360,7 +362,7 @@ export default function CheckoutPage() {
       {/* ── 1. Topo Seguro com Logo Proporcional ── */}
       <header className="checkout-header">
         <div className="checkout-header-inner">
-          <Link to="/" className="checkout-logo-link">
+          <Link to={logoDestino} className="checkout-logo-link">
             <img src={logoImg} alt="Salv Sacra" className="checkout-logo-img" />
           </Link>
 
