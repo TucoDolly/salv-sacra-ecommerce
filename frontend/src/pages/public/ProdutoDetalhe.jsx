@@ -167,10 +167,16 @@ export default function ProdutoDetalhe() {
   const precoBoleto = (precoBase * 0.95).toFixed(2); // 5% de desconto no boleto
   const parcela12x = (precoBase / 12 * 1.23).toFixed(2); // Com juros leves ou sem juros
 
-  // Galeria de fotos (caso a API só tenha 1 foto, criamos ângulos para simular a grade do Figma)
-  const galeriaFotos = produto.imagem_url
-    ? [produto.imagem_url, produto.imagem_url, produto.imagem_url]
-    : [];
+  // Galeria de fotos dinâmicas cadastradas no admin
+  const galeriaFotos = (() => {
+    if (Array.isArray(produto.imagens) && produto.imagens.length > 0) {
+      return produto.imagens.filter(Boolean);
+    }
+    if (produto.imagem_url) {
+      return [produto.imagem_url];
+    }
+    return [];
+  })();
 
   const variacoes = produto.variacoes || [];
   const cores = Array.from(new Set(variacoes.map((v) => v.cor))).filter(Boolean);

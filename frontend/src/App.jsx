@@ -18,6 +18,7 @@ import PedidosList from './pages/admin/PedidosList';
 import EstoqueList from './pages/admin/EstoqueList';
 import RelatoriosPage from './pages/admin/RelatoriosPage';
 import ConfiguracoesPage from './pages/admin/ConfiguracoesPage';
+import CategoriasDevocoesPage from './pages/admin/CategoriasDevocoesPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import './App.css';
 
@@ -75,6 +76,9 @@ function App() {
 
         {/* Gestão de Pedidos e Pagamentos */}
         <Route path="pedidos"             element={<PedidosList />} />
+
+        {/* Categorias e Devoções */}
+        <Route path="categorias"          element={<CategoriasDevocoesPage />} />
 
         {/* Gestão de Estoque */}
         <Route path="estoque"             element={<EstoqueList />} />

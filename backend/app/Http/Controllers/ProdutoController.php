@@ -104,6 +104,8 @@ class ProdutoController extends Controller
             'descricao'    => ['nullable', 'string'],
             'preco_base'   => ['required', 'numeric', 'min:0'],
             'imagem_url'   => ['nullable', 'url', 'max:2048'],
+            'imagens'      => ['nullable', 'array'],
+            'imagens.*'    => ['nullable', 'url', 'max:2048'],
             'disponivel'   => ['boolean'],
             'colecao'      => ['nullable', 'string', 'max:255'],
             'modelo'       => ['nullable', 'string', 'max:255'],
@@ -117,8 +119,20 @@ class ProdutoController extends Controller
             'variacoes.*.estoque'  => ['required_with:variacoes', 'integer', 'min:0'],
         ]);
 
-        $produto = DB::transaction(function () use ($validated) {
-            $produto = Produto::create(collect($validated)->except('variacoes')->toArray());
+        $produto = DB::transaction(function () use ($validated, $request) {
+            $dadosProduto = collect($validated)->except('variacoes')->toArray();
+            
+            // Se imagens vieram, filtra URLs vazias
+            if (isset($dadosProduto['imagens']) && is_array($dadosProduto['imagens'])) {
+                $dadosProduto['imagens'] = array_values(array_filter($dadosProduto['imagens'], fn($u) => !empty(trim($u))));
+                if (empty($dadosProduto['imagem_url']) && !empty($dadosProduto['imagens'])) {
+                    $dadosProduto['imagem_url'] = $dadosProduto['imagens'][0];
+                }
+            } elseif (!empty($dadosProduto['imagem_url'])) {
+                $dadosProduto['imagens'] = [$dadosProduto['imagem_url']];
+            }
+
+            $produto = Produto::create($dadosProduto);
 
             if (!empty($validated['variacoes'])) {
                 $produto->variacoes()->createMany($validated['variacoes']);
@@ -161,6 +175,8 @@ class ProdutoController extends Controller
             'descricao'    => ['nullable', 'string'],
             'preco_base'   => ['sometimes', 'numeric', 'min:0'],
             'imagem_url'   => ['nullable', 'url', 'max:2048'],
+            'imagens'      => ['nullable', 'array'],
+            'imagens.*'    => ['nullable', 'url', 'max:2048'],
             'disponivel'   => ['boolean'],
             'colecao'      => ['nullable', 'string', 'max:255'],
             'modelo'       => ['nullable', 'string', 'max:255'],
@@ -175,7 +191,16 @@ class ProdutoController extends Controller
         ]);
 
         $produto = DB::transaction(function () use ($validated, $produto) {
-            $produto->update(collect($validated)->except('variacoes')->toArray());
+            $dadosProduto = collect($validated)->except('variacoes')->toArray();
+
+            if (array_key_exists('imagens', $dadosProduto) && is_array($dadosProduto['imagens'])) {
+                $dadosProduto['imagens'] = array_values(array_filter($dadosProduto['imagens'], fn($u) => !empty(trim($u))));
+                if (empty($dadosProduto['imagem_url']) && !empty($dadosProduto['imagens'])) {
+                    $dadosProduto['imagem_url'] = $dadosProduto['imagens'][0];
+                }
+            }
+
+            $produto->update($dadosProduto);
 
             // Sincroniza variações somente se a chave foi enviada no payload
             if (array_key_exists('variacoes', $validated)) {

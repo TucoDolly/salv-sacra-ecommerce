@@ -50,6 +50,7 @@ export default function ProdutoForm() {
 
   // ── Estado ─────────────────────────────────────────────────────────────────
   const [form, setForm]           = useState(EMPTY_FORM);
+  const [imagens, setImagens]     = useState(['']);
   const [variacoes, setVariacoes] = useState([]);
   const [errors, setErrors]       = useState({});
   const [apiError, setApiError]   = useState('');
@@ -76,6 +77,18 @@ export default function ProdutoForm() {
         categoria_id: data.categoria_id ?? '',
         devocao_id:   data.devocao_id   ?? '',
       });
+
+      // Carrega lista de imagens
+      let listaImgs = [];
+      if (Array.isArray(data.imagens) && data.imagens.length > 0) {
+        listaImgs = data.imagens;
+      } else if (data.imagem_url) {
+        listaImgs = [data.imagem_url];
+      } else {
+        listaImgs = [''];
+      }
+      setImagens(listaImgs);
+
       setVariacoes(
         (data.variacoes ?? []).map(({ tamanho, cor, estoque }) => ({
           tamanho, cor, estoque,
@@ -118,6 +131,25 @@ export default function ProdutoForm() {
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
+  // ── Handlers de imagens da galeria ──────────────────────────────────────────
+  const handleImagemChange = (index, value) => {
+    setImagens((prev) => prev.map((img, i) => (i === index ? value : img)));
+    if (errors[`imagem_${index}`]) {
+      setErrors((prev) => ({ ...prev, [`imagem_${index}`]: '' }));
+    }
+  };
+
+  const addImagem = () => {
+    setImagens((prev) => [...prev, '']);
+  };
+
+  const removeImagem = (index) => {
+    setImagens((prev) => {
+      const novaLista = prev.filter((_, i) => i !== index);
+      return novaLista.length > 0 ? novaLista : [''];
+    });
+  };
+
   // ── Handlers de variações ────────────────────────────────────────────────────
   const addVariacao = () =>
     setVariacoes((prev) => [...prev, { ...EMPTY_VARIACAO }]);
@@ -139,8 +171,13 @@ export default function ProdutoForm() {
     if (!form.preco_base && form.preco_base !== 0)
                                          errs.preco_base = 'O preço é obrigatório.';
     if (Number(form.preco_base) < 0)    errs.preco_base = 'O preço não pode ser negativo.';
-    if (form.imagem_url && !/^https?:\/\/.+/.test(form.imagem_url))
-                                         errs.imagem_url = 'Informe uma URL válida (http/https).';
+
+    // Valida cada URL de imagem preenchida
+    imagens.forEach((imgUrl, i) => {
+      if (imgUrl && !/^https?:\/\/.+/.test(imgUrl.trim())) {
+        errs[`imagem_${i}`] = 'Informe uma URL válida (http/https).';
+      }
+    });
 
     variacoes.forEach((v, i) => {
       if (!v.tamanho.trim()) errs[`variacao_${i}_tamanho`] = 'Tamanho obrigatório.';
@@ -159,8 +196,12 @@ export default function ProdutoForm() {
     const errs = validate();
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
 
+    const imagensValidas = imagens.map((u) => u.trim()).filter(Boolean);
+
     const payload = {
       ...form,
+      imagem_url:   imagensValidas[0] || '',
+      imagens:      imagensValidas,
       preco_base:   form.preco_base   !== '' ? Number(form.preco_base)   : '',
       categoria_id: form.categoria_id !== '' ? Number(form.categoria_id) : null,
       devocao_id:   form.devocao_id   !== '' ? Number(form.devocao_id)   : null,
@@ -286,31 +327,117 @@ export default function ProdutoForm() {
             </div>
           </div>
 
-          {/* URL da imagem */}
-          <div className="admin-field" style={{ marginBottom: '16px' }}>
-            <label htmlFor="imagem_url">URL da Imagem</label>
-            <input
-              id="imagem_url"
-              name="imagem_url"
-              type="url"
-              value={form.imagem_url}
-              onChange={handleChange}
-              placeholder="https://…"
-            />
-            {errors.imagem_url && <span className="admin-field-error">{errors.imagem_url}</span>}
-          </div>
-
-          {/* Preview da imagem */}
-          {form.imagem_url && /^https?:\/\/.+/.test(form.imagem_url) && (
-            <div style={{ marginBottom: '16px' }}>
-              <img
-                src={form.imagem_url}
-                alt="Preview"
-                style={{ height: '100px', borderRadius: '8px', border: '1px solid #e0e0e0', objectFit: 'cover' }}
-                onError={(e) => { e.target.style.display = 'none'; }}
-              />
+          {/* ════ Fotos do Produto (Galeria Dinâmica) ════ */}
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label style={{ fontSize: '13px', fontWeight: 700, color: '#333', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Fotos do Produto (Galeria)
+              </label>
+              <button
+                type="button"
+                onClick={addImagem}
+                className="admin-btn admin-btn-secondary admin-btn-sm"
+                style={{ padding: '4px 10px', fontSize: '12px' }}
+              >
+                + Adicionar Outra Foto
+              </button>
             </div>
-          )}
+            <p style={{ fontSize: '12px', color: '#666', marginBottom: '14px' }}>
+              A 1ª foto será a principal exibida na vitrine e catálogo. Fotos adicionais aparecerão como miniaturas laterais na página do produto.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {imagens.map((imgUrl, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    background: '#f8fafc',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                  }}
+                >
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569', minWidth: '70px' }}>
+                    {idx === 0 ? 'Principal:' : `Foto ${idx + 1}:`}
+                  </span>
+
+                  {/* Input URL */}
+                  <div style={{ flex: 1 }}>
+                    <input
+                      type="url"
+                      value={imgUrl}
+                      onChange={(e) => handleImagemChange(idx, e.target.value)}
+                      placeholder={idx === 0 ? "https://... (Foto de capa da vitrine)" : "https://... (Foto em outro ângulo/detalhe)"}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        border: errors[`imagem_${idx}`] ? '1px solid #ef4444' : '1px solid #cbd5e1',
+                        fontSize: '13px',
+                        outline: 'none',
+                        background: '#fff',
+                      }}
+                    />
+                    {errors[`imagem_${idx}`] && (
+                      <span className="admin-field-error" style={{ display: 'block', marginTop: '4px', fontSize: '11px' }}>
+                        {errors[`imagem_${idx}`]}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Miniatura Preview */}
+                  <div style={{
+                    width: '46px',
+                    height: '46px',
+                    borderRadius: '6px',
+                    border: '1.5px solid #cbd5e1',
+                    background: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    flexShrink: 0,
+                  }}>
+                    {imgUrl && /^https?:\/\/.+/.test(imgUrl) ? (
+                      <img
+                        src={imgUrl}
+                        alt={`Preview ${idx + 1}`}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>Foto</span>
+                    )}
+                  </div>
+
+                  {/* Botão Remover (se tiver mais de 1 ou se quiser limpar) */}
+                  {imagens.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeImagem(idx)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#ef4444',
+                        cursor: 'pointer',
+                        padding: '6px',
+                        borderRadius: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                      title="Remover esta foto"
+                    >
+                      <IconTrash />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* Disponível */}
           <div className="admin-field admin-field-row">

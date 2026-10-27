@@ -27,6 +27,13 @@ const IconCatalog = () => (
   </svg>
 );
 
+const IconTag = () => (
+  <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24">
+    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+    <line x1="7" y1="7" x2="7.01" y2="7"/>
+  </svg>
+);
+
 const IconStock = () => (
   <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24">
     <line x1="8" y1="6" x2="21" y2="6"/>
@@ -64,6 +71,7 @@ const NAV_ITEMS = [
   { label: 'Início',                  to: '/admin',          icon: <IconHome />,     end: true  },
   { label: 'Pedidos e Pagamentos',    to: '/admin/pedidos',  icon: <IconOrders />,   end: false },
   { label: 'Catálogo de Produtos',    to: '/admin/produtos', icon: <IconCatalog />,  end: false },
+  { label: 'Categorias e Devoções',   to: '/admin/categorias', icon: <IconTag />,    end: false },
   { label: 'Gestão de Estoque',       to: '/admin/estoque',  icon: <IconStock />,    end: false },
   { label: 'Relatórios/Faturamento',  to: '/admin/relatorios',icon: <IconReports />, end: false },
   { label: 'Configurações',           to: '/admin/config',   icon: <IconSettings />, end: false },
