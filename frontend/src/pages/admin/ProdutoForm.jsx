@@ -7,6 +7,7 @@ import {
   getProduto,
   updateProduto,
 } from '../../services/produtoService';
+import { CORES_PADRAO } from '../../constants/cores';
 import '../../styles/admin.css';
 
 // ── Ícones ─────────────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ const EMPTY_FORM = {
 };
 
 const EMPTY_VARIACAO = { tamanho: '', cor: '', estoque: '' };
+const OPCOES_TAMANHO = ['PP', 'P', 'M', 'G', 'GG', 'G1', 'G2'];
 
 export default function ProdutoForm() {
   const { id }   = useParams();           // presente somente na rota de edição
@@ -552,31 +554,72 @@ export default function ProdutoForm() {
           ) : (
             variacoes.map((variacao, index) => (
               <div key={index} className="admin-variacao-row">
-                {/* Tamanho */}
+                {/* Tamanho: Escolher entre P, M, G, GG, G1 */}
                 <div className="admin-field" style={{ margin: 0 }}>
                   <label>Tamanho</label>
-                  <input
+                  <select
                     name="tamanho"
-                    type="text"
                     value={variacao.tamanho}
                     onChange={(e) => handleVariacaoChange(index, e)}
-                    placeholder="P, M, G…"
-                  />
+                  >
+                    <option value="">Selecione...</option>
+                    {OPCOES_TAMANHO.map((tam) => (
+                      <option key={tam} value={tam}>{tam}</option>
+                    ))}
+                  </select>
                   {errors[`variacao_${index}_tamanho`] && (
                     <span className="admin-field-error">{errors[`variacao_${index}_tamanho`]}</span>
                   )}
                 </div>
 
-                {/* Cor */}
+                {/* Cor com Paleta de Bolinhas */}
                 <div className="admin-field" style={{ margin: 0 }}>
-                  <label>Cor</label>
-                  <input
-                    name="cor"
-                    type="text"
-                    value={variacao.cor}
-                    onChange={(e) => handleVariacaoChange(index, e)}
-                    placeholder="Marrom, Bege…"
-                  />
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>Cor</span>
+                    {variacao.cor && (
+                      <span style={{ fontSize: '11px', color: '#666', fontWeight: 600 }}>
+                        {variacao.cor}
+                      </span>
+                    )}
+                  </label>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    flexWrap: 'wrap',
+                    padding: '6px 8px',
+                    background: '#fff',
+                    border: errors[`variacao_${index}_cor`] ? '1px solid #c0392b' : '1px solid #d0d0d0',
+                    borderRadius: '6px',
+                    minHeight: '38px',
+                  }}>
+                    {CORES_PADRAO.map((c) => {
+                      const selecionada = variacao.cor?.toLowerCase() === c.nome.toLowerCase();
+                      return (
+                        <button
+                          key={c.nome}
+                          type="button"
+                          onClick={() => {
+                            const eFake = { target: { name: 'cor', value: c.nome } };
+                            handleVariacaoChange(index, eFake);
+                          }}
+                          title={c.nome}
+                          style={{
+                            width: '20px',
+                            height: '20px',
+                            borderRadius: '50%',
+                            backgroundColor: c.hex,
+                            border: selecionada ? '2.5px solid #1e1e1e' : `1.5px solid ${c.borda}`,
+                            transform: selecionada ? 'scale(1.2)' : 'scale(1)',
+                            cursor: 'pointer',
+                            padding: 0,
+                            boxShadow: selecionada ? '0 0 0 2px #d4ac0d' : 'none',
+                            transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
                   {errors[`variacao_${index}_cor`] && (
                     <span className="admin-field-error">{errors[`variacao_${index}_cor`]}</span>
                   )}

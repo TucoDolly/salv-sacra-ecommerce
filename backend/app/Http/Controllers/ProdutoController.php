@@ -87,6 +87,17 @@ class ProdutoController extends Controller
             });
         }
 
+        // Filtro explícito por devoção (id ou nome)
+        if ($request->filled('devocao')) {
+            $dev = $request->input('devocao');
+            $query->whereHas('devocao', function ($d) use ($dev) {
+                $d->where('nome', 'ilike', "%{$dev}%");
+                if (is_numeric($dev)) {
+                    $d->orWhere('id', (int) $dev);
+                }
+            });
+        }
+
         $produtos = $query->get();
 
         return response()->json($produtos);

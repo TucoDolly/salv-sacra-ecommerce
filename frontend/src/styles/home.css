@@ -276,6 +276,29 @@
   transform: scale(1.04);
 }
 
+.produto-card-dots {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 3px 6px;
+  border-radius: 12px;
+  backdrop-filter: blur(2px);
+  z-index: 2;
+}
+
+.produto-card-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  display: inline-block;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
 .produto-card-placeholder {
   width: 100%;
   height: 100%;

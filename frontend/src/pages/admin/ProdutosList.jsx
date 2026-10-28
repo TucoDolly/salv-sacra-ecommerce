@@ -91,51 +91,54 @@ export default function ProdutosList() {
           <table className="admin-table">
             <thead>
               <tr>
-                <th>Imagem</th>
-                <th>Nome</th>
-                <th>Categoria</th>
-                <th>Coleção</th>
-                <th>Preço Base</th>
-                <th>Variações</th>
-                <th>Status</th>
-                <th>Ações</th>
+                <th style={{ width: '80px', textAlign: 'center' }}>Imagem</th>
+                <th style={{ textAlign: 'left', minWidth: '180px' }}>Nome</th>
+                <th style={{ textAlign: 'left' }}>Categoria</th>
+                <th style={{ textAlign: 'left' }}>Coleção</th>
+                <th style={{ textAlign: 'right', paddingRight: '20px' }}>Preço Base</th>
+                <th style={{ textAlign: 'center' }}>Variações</th>
+                <th style={{ textAlign: 'center' }}>Status</th>
+                <th style={{ textAlign: 'center', width: '200px' }}>Ações</th>
               </tr>
             </thead>
             <tbody>
               {produtos.map((produto) => (
                 <tr key={produto.id}>
                   {/* Thumbnail */}
-                  <td>
+                  <td style={{ textAlign: 'center' }}>
                     {produto.imagem_url ? (
                       <img
                         className="admin-thumb"
                         src={produto.imagem_url}
                         alt={produto.nome}
                         onError={(e) => { e.target.style.display = 'none'; }}
+                        style={{ margin: '0 auto', display: 'block' }}
                       />
                     ) : (
-                      <div className="admin-thumb-placeholder">🖼</div>
+                      <div className="admin-thumb-placeholder" style={{ margin: '0 auto' }}>🖼</div>
                     )}
                   </td>
 
-                  <td style={{ fontWeight: 600 }}>{produto.nome}</td>
-                  <td>{produto.categoria?.nome ?? '—'}</td>
-                  <td>{produto.colecao ?? '—'}</td>
-                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <td style={{ fontWeight: 600, textAlign: 'left' }}>{produto.nome}</td>
+                  <td style={{ textAlign: 'left' }}>{produto.categoria?.nome ?? '—'}</td>
+                  <td style={{ textAlign: 'left' }}>{produto.colecao ?? '—'}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', fontWeight: 600, paddingRight: '20px' }}>
                     {formatBRL(produto.preco_base)}
                   </td>
-                  <td>{produto.variacoes?.length ?? 0}</td>
+                  <td style={{ textAlign: 'center', fontWeight: 500 }}>
+                    {produto.variacoes?.length ?? 0}
+                  </td>
 
                   {/* Badge disponível */}
-                  <td>
+                  <td style={{ textAlign: 'center' }}>
                     <span className={`admin-badge ${produto.disponivel ? 'admin-badge-green' : 'admin-badge-red'}`}>
                       {produto.disponivel ? 'Disponível' : 'Indisponível'}
                     </span>
                   </td>
 
                   {/* Ações */}
-                  <td>
-                    <div className="admin-table-actions">
+                  <td style={{ textAlign: 'center' }}>
+                    <div className="admin-table-actions" style={{ justifyContent: 'center' }}>
                       <button
                         className="admin-btn admin-btn-secondary admin-btn-sm"
                         onClick={() => navigate(`/admin/produtos/editar/${produto.id}`)}

@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import api from '../../services/api';
+import { getHexCor } from '../../constants/cores';
 import '../../styles/catalogo.css';
 
 // Ícone de ordenação
@@ -12,6 +13,50 @@ const IconSort = () => (
   </svg>
 );
 
+// Subcomponente de Card do Produto com suporte a foto 2 no hover e bolinhas de variações reais
+function CatalogoItemCard({ prod }) {
+  const [hovered, setHovered] = useState(false);
+
+  const foto1 = (Array.isArray(prod.imagens) && prod.imagens[0]) || prod.imagem_url;
+  const foto2 = Array.isArray(prod.imagens) && prod.imagens[1] ? prod.imagens[1] : null;
+  const fotoExibida = hovered && foto2 ? foto2 : foto1;
+
+  const coresVariacoes = Array.from(new Set((prod.variacoes || []).map((v) => v.cor))).filter(Boolean);
+
+  return (
+    <Link
+      to={`/produto/${prod.id}`}
+      className="catalogo-product-card"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className="catalogo-product-img-wrap">
+        {fotoExibida ? (
+          <img src={fotoExibida} alt={prod.nome} loading="lazy" />
+        ) : (
+          <span style={{ fontSize: '32px' }}>🕊️</span>
+        )}
+        {coresVariacoes.length > 0 && (
+          <div className="catalogo-card-dots">
+            {coresVariacoes.slice(0, 4).map((c) => (
+              <span
+                key={c}
+                className="catalogo-dot"
+                style={{ backgroundColor: getHexCor(c) }}
+                title={c}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="catalogo-product-info">
+        <span className="catalogo-product-name">{prod.nome}</span>
+      </div>
+    </Link>
+  );
+}
+
 export default function CatalogoPage({ modoFixo = null }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [produtos, setProdutos] = useState([]);
@@ -21,6 +66,7 @@ export default function CatalogoPage({ modoFixo = null }) {
   const [coresSelecionadas, setCoresSelecionadas] = useState([]);
   const [modeloSelecionado, setModeloSelecionado] = useState('');
   const [tamanhosSelecionados, setTamanhosSelecionados] = useState([]);
+  const [devocoesSelecionadas, setDevocoesSelecionadas] = useState([]);
   const [marcasSelecionadas, setMarcasSelecionadas] = useState([]);
   const [precoMin, setPrecoMin] = useState('');
   const [precoMax, setPrecoMax] = useState('');
@@ -105,33 +151,99 @@ export default function CatalogoPage({ modoFixo = null }) {
       .finally(() => setLoading(false));
   }, [buscaParam, categoriaParam, colecaoParam]);
 
-  // Lista de opções de filtro do modelo Figma
-  const OPCOES_CORES = [
-    { nome: 'Preto', corHex: '#1e1e1e', qtd: 5 },
-    { nome: 'Areia', corHex: '#d8c49e', qtd: 2 },
-    { nome: 'Branco', corHex: '#ffffff', qtd: 2 },
-    { nome: 'Marrom', corHex: '#6d4c41', qtd: 1 },
-  ];
+  // ── Cálculo dinâmico das quantidades reais dos filtros com base no catálogo carregado ──
+  // 1. Cores dinâmicas
+  const opcoesCoresDinamicas = (() => {
+    const mapa = new Map();
+    produtos.forEach((prod) => {
+      (prod.variacoes || []).forEach((v) => {
+        if (!v.cor) return;
+        const nomeCor = v.cor.trim();
+        const estoque = Number(v.estoque || 0);
+        if (estoque > 0) {
+          mapa.set(nomeCor, (mapa.get(nomeCor) || 0) + estoque);
+        }
+      });
+    });
 
+    // Se houver cores cadastradas com estoque, retorna elas; senão, mostra as cadastradas ou padrão
+    const entries = Array.from(mapa.entries());
+    if (entries.length > 0) {
+      return entries.map(([nome, qtd]) => ({
+        nome,
+        corHex: getHexCor(nome),
+        qtd,
+      }));
+    }
+
+    // Fallback caso ainda não tenha variações
+    return [
+      { nome: 'Preto', corHex: '#1e1e1e', qtd: 0 },
+      { nome: 'Areia', corHex: '#d8c49e', qtd: 0 },
+      { nome: 'Branco', corHex: '#ffffff', qtd: 0 },
+      { nome: 'Marrom', corHex: '#6d4c41', qtd: 0 },
+    ];
+  })();
+
+  // 2. Modelos dinâmicos (Regular Fit, Oversized, Ambos)
   const OPCOES_MODELOS = [
-    { nome: 'Regular Fit', qtd: 5 },
-    { nome: 'Oversized', qtd: 3 },
-    { nome: 'Ambos', qtd: 2 },
+    {
+      nome: 'Regular Fit',
+      qtd: produtos.filter((p) => {
+        const m = (p.modelo || p.colecao || '').toLowerCase();
+        return m.includes('regular') || m.includes('ambos');
+      }).length,
+    },
+    {
+      nome: 'Oversized',
+      qtd: produtos.filter((p) => {
+        const m = (p.modelo || p.colecao || '').toLowerCase();
+        return m.includes('over') || m.includes('ambos');
+      }).length,
+    },
+    {
+      nome: 'Ambos',
+      qtd: produtos.filter((p) => (p.modelo || p.colecao || '').toLowerCase().includes('ambos')).length,
+    },
   ];
 
-  const OPCOES_TAMANHOS = [
-    { nome: 'G1', qtd: 4 },
-    { nome: 'G2', qtd: 4 },
-    { nome: 'PP', qtd: 7 },
-    { nome: 'P', qtd: 7 },
-    { nome: 'M', qtd: 7 },
-    { nome: 'G', qtd: 7 },
-    { nome: 'GG', qtd: 7 },
-  ];
+  // 3. Tamanhos dinâmicos (soma das quantidades reais em estoque de cada tamanho)
+  const ordemTamanhos = ['PP', 'P', 'M', 'G', 'GG', 'G1', 'G2'];
+  const opcoesTamanhosDinamicos = ordemTamanhos.map((tam) => {
+    let totalEstoque = 0;
+    produtos.forEach((prod) => {
+      (prod.variacoes || []).forEach((v) => {
+        if (v.tamanho?.toUpperCase() === tam.toUpperCase()) {
+          totalEstoque += Number(v.estoque || 0);
+        }
+      });
+    });
+    return {
+      nome: tam,
+      qtd: totalEstoque,
+    };
+  });
 
+  // 4. Devoções dinâmicas (calcula quantidade de camisetas por devoção)
+  const opcoesDevocoesDinamicas = (() => {
+    const mapa = new Map();
+    produtos.forEach((prod) => {
+      const nomeDevocao = prod.devocao?.nome || (prod.colecao && prod.colecao !== 'Regular Fit' && prod.colecao !== 'Oversized' ? prod.colecao : null);
+      if (nomeDevocao) {
+        mapa.set(nomeDevocao, (mapa.get(nomeDevocao) || 0) + 1);
+      }
+    });
+
+    return Array.from(mapa.entries()).map(([nome, qtd]) => ({
+      nome,
+      qtd,
+    }));
+  })();
+
+  // 5. Marcas
   const OPCOES_MARCAS = [
-    { nome: 'Salv', qtd: 4 },
-    { nome: 'Salv Sacra', qtd: 1 },
+    { nome: 'Salv', qtd: produtos.length },
+    { nome: 'Salv Sacra', qtd: produtos.length },
   ];
 
   const OPCOES_ORDENACAO = [
@@ -199,6 +311,12 @@ export default function CatalogoPage({ modoFixo = null }) {
       if (tamanhosSelecionados.length > 0) {
         const temTam = (prod.variacoes || []).some((v) => tamanhosSelecionados.includes(v.tamanho));
         if (!temTam) return false;
+      }
+
+      // Filtro de devoções selecionadas
+      if (devocoesSelecionadas.length > 0) {
+        const devNome = prod.devocao?.nome || prod.colecao || '';
+        if (!devocoesSelecionadas.includes(devNome)) return false;
       }
 
       return true;
@@ -272,7 +390,7 @@ export default function CatalogoPage({ modoFixo = null }) {
             <div className="catalogo-filter-group">
               <span className="catalogo-filter-heading">Cor</span>
               <div className="catalogo-filter-list">
-                {OPCOES_CORES.map((cor) => (
+                {opcoesCoresDinamicas.map((cor) => (
                   <label key={cor.nome} className="catalogo-filter-item">
                     <div className="catalogo-filter-checkbox-wrap">
                       <input
@@ -316,7 +434,7 @@ export default function CatalogoPage({ modoFixo = null }) {
             <div className="catalogo-filter-group">
               <span className="catalogo-filter-heading">Tamanho</span>
               <div className="catalogo-filter-list">
-                {OPCOES_TAMANHOS.map((tam) => (
+                {opcoesTamanhosDinamicos.map((tam) => (
                   <label key={tam.nome} className="catalogo-filter-item">
                     <div className="catalogo-filter-checkbox-wrap">
                       <input
@@ -331,6 +449,28 @@ export default function CatalogoPage({ modoFixo = null }) {
                 ))}
               </div>
             </div>
+
+            {/* Filtro: Devoção (Novo) */}
+            {opcoesDevocoesDinamicas.length > 0 && (
+              <div className="catalogo-filter-group">
+                <span className="catalogo-filter-heading">Devoção</span>
+                <div className="catalogo-filter-list">
+                  {opcoesDevocoesDinamicas.map((dev) => (
+                    <label key={dev.nome} className="catalogo-filter-item">
+                      <div className="catalogo-filter-checkbox-wrap">
+                        <input
+                          type="checkbox"
+                          checked={devocoesSelecionadas.includes(dev.nome)}
+                          onChange={() => toggleFiltro(dev.nome, devocoesSelecionadas, setDevocoesSelecionadas)}
+                          className="catalogo-checkbox"
+                        />
+                        <span>{dev.nome} ({dev.qtd})</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Filtro: Marca */}
             <div className="catalogo-filter-group">
@@ -392,27 +532,7 @@ export default function CatalogoPage({ modoFixo = null }) {
             ) : (
               <div className="catalogo-products-grid">
                 {produtosFiltrados.map((prod) => (
-                  <Link
-                    key={prod.id}
-                    to={`/produto/${prod.id}`}
-                    className="catalogo-product-card"
-                  >
-                    <div className="catalogo-product-img-wrap">
-                      {prod.imagem_url ? (
-                        <img src={prod.imagem_url} alt={prod.nome} loading="lazy" />
-                      ) : (
-                        <span style={{ fontSize: '32px' }}>🕊️</span>
-                      )}
-                      <div className="catalogo-card-dots">
-                        <span className="catalogo-dot" />
-                        <span className="catalogo-dot gold" />
-                      </div>
-                    </div>
-
-                    <div className="catalogo-product-info">
-                      <span className="catalogo-product-name">{prod.nome}</span>
-                    </div>
-                  </Link>
+                  <CatalogoItemCard key={prod.id} prod={prod} />
                 ))}
               </div>
             )}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
+import { getHexCor } from '../../constants/cores';
 import '../../styles/home.css';
 import bannerSaoJose from '../../assets/banner-sao-jose.jpg';
 import bannerDesatadora from '../../assets/banner-desatadora.jpg';
@@ -85,22 +86,52 @@ const BENEFITS = [
 
 // ── Componente de card de produto ──────────────────────────────────────────────
 function ProdutoCard({ produto }) {
+  const [hovered, setHovered] = useState(false);
+
   const preco = produto.preco_base
     ? Number(produto.preco_base).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
     : null;
 
+  // Foto 1 (capa) e Foto 2 (hover)
+  const foto1 = (Array.isArray(produto.imagens) && produto.imagens[0]) || produto.imagem_url;
+  const foto2 = Array.isArray(produto.imagens) && produto.imagens[1] ? produto.imagens[1] : null;
+  const fotoExibida = hovered && foto2 ? foto2 : foto1;
+
+  // Cores dinâmicas cadastradas nas variações do produto
+  const coresVariacoes = Array.from(new Set((produto.variacoes || []).map((v) => v.cor))).filter(Boolean);
+
   return (
-    <Link to={`/produto/${produto.id}`} className="produto-card" aria-label={produto.nome}>
+    <Link
+      to={`/produto/${produto.id}`}
+      className="produto-card"
+      aria-label={produto.nome}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       <div className="produto-card-img">
-        {produto.imagem_url ? (
+        {fotoExibida ? (
           <img
-            src={produto.imagem_url}
+            src={fotoExibida}
             alt={produto.nome}
             loading="lazy"
           />
         ) : (
           <div className="produto-card-placeholder" aria-hidden="true">
             <span>🕊️</span>
+          </div>
+        )}
+
+        {/* Bolinhas coloridas das variações do produto na vitrine */}
+        {coresVariacoes.length > 0 && (
+          <div className="produto-card-dots">
+            {coresVariacoes.slice(0, 4).map((c) => (
+              <span
+                key={c}
+                className="produto-card-dot"
+                style={{ backgroundColor: getHexCor(c) }}
+                title={c}
+              />
+            ))}
           </div>
         )}
       </div>

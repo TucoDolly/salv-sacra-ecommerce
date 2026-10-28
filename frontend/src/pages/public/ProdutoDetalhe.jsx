@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCart } from '../../contexts/CartContext';
 import api from '../../services/api';
+import { getHexCor } from '../../constants/cores';
 import '../../styles/produto-detalhe.css';
 
 // Ícones SVG inline baseados no Figma
@@ -93,7 +94,7 @@ export default function ProdutoDetalhe() {
   // Ref do carrossel similar
   const similarTrackRef = useRef(null);
 
-  // Lista de tamanhos padrão do design
+  // Lista de tamanhos padrão: PP, P, M, G, GG, G1, G2
   const TAMANHOS_PADRAO = ['PP', 'P', 'M', 'G', 'GG', 'G1', 'G2'];
 
   useEffect(() => {
@@ -108,7 +109,7 @@ export default function ProdutoDetalhe() {
         const variacoes = res.data.variacoes || [];
 
         if (variacoes.length > 0) {
-          const varComEstoque = variacoes.find((v) => v.estoque > 0) || variacoes[0];
+          const varComEstoque = variacoes.find((v) => Number(v.estoque) > 0) || variacoes[0];
           setTamanhoSelecionado(varComEstoque.tamanho || 'M');
           setCorSelecionada(varComEstoque.cor || 'Preto');
         } else {
@@ -182,9 +183,36 @@ export default function ProdutoDetalhe() {
   const cores = Array.from(new Set(variacoes.map((v) => v.cor))).filter(Boolean);
   const coresExibicao = cores.length > 0 ? cores : ['Preto', 'Marrom'];
 
+  // Verifica o estoque de um tamanho específico considerando a cor selecionada
+  const getEstoqueTamanho = (tam) => {
+    if (variacoes.length === 0) return 99; // Se não tem variações cadastradas, permite
+    const match = variacoes.find(
+      (v) =>
+        v.tamanho?.toUpperCase() === tam.toUpperCase() &&
+        (!corSelecionada || v.cor?.toLowerCase() === corSelecionada?.toLowerCase())
+    );
+    return match ? Number(match.estoque || 0) : 0;
+  };
+
+  // Ao clicar em uma cor, muda corSelecionada e alterna a foto principal para o ângulo correspondente
+  const handleSelecionarCor = (cor, idx) => {
+    setCorSelecionada(cor);
+    // A primeira cor (idx 0) mostra a foto 1 (índice 0), a segunda cor (idx 1) mostra a foto 2 (índice 1), etc.
+    if (galeriaFotos.length > 0) {
+      const fotoIndexAlvo = idx < galeriaFotos.length ? idx : 0;
+      setFotoAtiva(fotoIndexAlvo);
+    }
+  };
+
   const { addItem } = useCart();
 
   const handleComprar = () => {
+    const estoqueDisponivel = getEstoqueTamanho(tamanhoSelecionado);
+    if (estoqueDisponivel <= 0) {
+      alert(`O tamanho ${tamanhoSelecionado} para a cor ${corSelecionada} não está disponível no estoque.`);
+      return;
+    }
+
     addItem({
       produtoId: produto.id,
       nome: produto.nome,
@@ -307,27 +335,43 @@ export default function ProdutoDetalhe() {
               Ver mais detalhes
             </button>
 
-            {/* Seletor de Cores com Miniaturas */}
+            {/* Seletor de Cores com Miniaturas e Bolinhas de Identificação */}
             <div className="pdp-selector-section">
-              <div className="pdp-selector-label">
-                Cor: <strong>{corSelecionada || 'Preto'}</strong>
+              <div className="pdp-selector-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>Cor: <strong>{corSelecionada || 'Preto'}</strong></span>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: '14px',
+                    height: '14px',
+                    borderRadius: '50%',
+                    backgroundColor: getHexCor(corSelecionada),
+                    border: '1px solid #ccc',
+                    verticalAlign: 'middle',
+                  }}
+                />
               </div>
               <div className="pdp-color-thumbnails">
-                {coresExibicao.map((cor, idx) => (
-                  <button
-                    key={cor}
-                    type="button"
-                    className={`pdp-color-thumb-btn ${corSelecionada === cor ? 'active' : ''}`}
-                    onClick={() => setCorSelecionada(cor)}
-                    title={cor}
-                  >
-                    {galeriaFotos[idx % galeriaFotos.length] ? (
-                      <img src={galeriaFotos[idx % galeriaFotos.length]} alt={cor} />
-                    ) : (
-                      <span style={{ fontSize: '10px' }}>{cor}</span>
-                    )}
-                  </button>
-                ))}
+                {coresExibicao.map((cor, idx) => {
+                  // A 1ª cor mostra a foto 1 (idx 0), a 2ª cor mostra a foto 2 (idx 1), etc.
+                  const imgMin = galeriaFotos[idx < galeriaFotos.length ? idx : 0] || galeriaFotos[0];
+
+                  return (
+                    <button
+                      key={cor}
+                      type="button"
+                      className={`pdp-color-thumb-btn ${corSelecionada === cor ? 'active' : ''}`}
+                      onClick={() => handleSelecionarCor(cor, idx)}
+                      title={cor}
+                    >
+                      {imgMin ? (
+                        <img src={imgMin} alt={cor} />
+                      ) : (
+                        <span style={{ fontSize: '10px' }}>{cor}</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -337,16 +381,27 @@ export default function ProdutoDetalhe() {
                 Tamanho: <strong>{tamanhoSelecionado}</strong>
               </div>
               <div className="pdp-sizes-list">
-                {TAMANHOS_PADRAO.map((tam) => (
-                  <button
-                    key={tam}
-                    type="button"
-                    className={`pdp-size-chip ${tamanhoSelecionado === tam ? 'active' : ''}`}
-                    onClick={() => setTamanhoSelecionado(tam)}
-                  >
-                    {tam}
-                  </button>
-                ))}
+                {TAMANHOS_PADRAO.map((tam) => {
+                  const estoqueTam = getEstoqueTamanho(tam);
+                  const semEstoque = estoqueTam <= 0;
+
+                  return (
+                    <button
+                      key={tam}
+                      type="button"
+                      className={`pdp-size-chip ${tamanhoSelecionado === tam ? 'active' : ''} ${semEstoque ? 'sem-estoque' : ''}`}
+                      disabled={semEstoque}
+                      onClick={() => {
+                        if (!semEstoque) {
+                          setTamanhoSelecionado(tam);
+                        }
+                      }}
+                      title={semEstoque ? `Tamanho ${tam} sem estoque` : `Tamanho ${tam} (${estoqueTam} un)`}
+                    >
+                      {tam}
+                    </button>
+                  );
+                })}
               </div>
               <div className="pdp-size-guide-row">
                 <span>↔</span>

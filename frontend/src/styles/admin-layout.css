@@ -132,6 +132,38 @@
   flex-shrink: 0;
 }
 
+.al-logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.al-logout-btn svg {
+  flex-shrink: 0;
+  transition: transform 0.2s ease, stroke 0.2s ease;
+}
+
+.al-logout-btn:hover {
+  color: #ff4d4f;
+  background: rgba(255, 77, 79, 0.12);
+}
+
+.al-logout-btn:hover svg {
+  stroke: #ff4d4f;
+  transform: translateX(3px);
+}
+
 /* ================================================================
    COLUNA DIREITA (TopBar + Content)
    ================================================================ */
