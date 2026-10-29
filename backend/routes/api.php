@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login',    [AuthController::class, 'login']);
+    Route::post('/esqueci-senha',   [\App\Http\Controllers\PasswordResetController::class, 'enviarLink']);
+    Route::post('/redefinir-senha', [\App\Http\Controllers\PasswordResetController::class, 'redefinirSenha']);
 });
 
 /*

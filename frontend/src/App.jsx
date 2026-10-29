@@ -5,6 +5,8 @@ import AdminLayout from './components/AdminLayout';
 import PublicLayout from './components/PublicLayout';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import EsqueciSenhaPage from './pages/EsqueciSenhaPage';
+import RedefinirSenhaPage from './pages/RedefinirSenhaPage';
 import MinhaContaPage from './pages/MinhaContaPage';
 import Home from './pages/public/Home';
 import ProdutoDetalhe from './pages/public/ProdutoDetalhe';
@@ -12,6 +14,9 @@ import CatalogoPage from './pages/public/CatalogoPage';
 import CheckoutPage from './pages/public/CheckoutPage';
 import ContatoPage from './pages/public/ContatoPage';
 import GuiaMedidasPage from './pages/public/GuiaMedidasPage';
+import PoliticaPrivacidadePage from './pages/public/PoliticaPrivacidadePage';
+import TermosUsoPage from './pages/public/TermosUsoPage';
+import QuemSomosPage from './pages/public/QuemSomosPage';
 import ProdutosList from './pages/admin/ProdutosList';
 import ProdutoForm from './pages/admin/ProdutoForm';
 import PedidosList from './pages/admin/PedidosList';
@@ -47,6 +52,9 @@ function App() {
         <Route path="/produto/:id" element={<ProdutoDetalhe />} />
         <Route path="/contato" element={<ContatoPage />} />
         <Route path="/guia-de-medidas" element={<GuiaMedidasPage />} />
+        <Route path="/politica-de-privacidade" element={<PoliticaPrivacidadePage />} />
+        <Route path="/termos-de-uso" element={<TermosUsoPage />} />
+        <Route path="/quem-somos" element={<QuemSomosPage />} />
       </Route>
 
       {/* ── Fluxo de Checkout ── */}
@@ -55,6 +63,8 @@ function App() {
       {/* ── Autenticação ── */}
       <Route path="/login"    element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/esqueci-minha-senha" element={<EsqueciSenhaPage />} />
+      <Route path="/redefinir-senha" element={<RedefinirSenhaPage />} />
       <Route path="/minha-conta" element={<MinhaContaPage />} />
 
       {/* ── Painel Administrativo (layout compartilhado) ── */}

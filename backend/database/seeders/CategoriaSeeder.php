@@ -11,7 +11,6 @@ class CategoriaSeeder extends Seeder
     {
         $categorias = [
             ['nome' => 'Camisetas',   'descricao' => 'Camisetas com estampas religiosas artesanais.'],
-            ['nome' => 'Acessórios',  'descricao' => 'Pulseiras, chaveiros e outros acessórios sacros.'],
             ['nome' => 'Terços',      'descricao' => 'Terços artesanais em diferentes materiais e estilos.'],
         ];
 

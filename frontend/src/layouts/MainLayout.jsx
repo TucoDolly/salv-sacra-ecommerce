@@ -31,10 +31,20 @@ const IconCart = () => (
   </svg>
 );
 const IconInstagram = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ display: 'block' }}
+  >
     <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
-    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+    <circle cx="12" cy="12" r="4" />
+    <circle cx="17.5" cy="6.5" r="0.5" fill="currentColor" stroke="none" />
   </svg>
 );
 const IconWhatsapp = () => (
@@ -64,7 +74,6 @@ function SiteHeader({ configs }) {
   const { totalItens, openCart } = useCart();
   const { isAuthenticated, user } = useAuth();
   const [termoBusca, setTermoBusca] = useState('');
-  const [dropdownAcessorios, setDropdownAcessorios] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -164,7 +173,7 @@ function SiteHeader({ configs }) {
             Mais vendidos
           </Link>
 
-          {/* Camisetas: link normal sem dropdown ao passar o mouse */}
+          {/* Camisetas: link normal */}
           <Link
             to="/produtos?categoria=camisetas"
             className={`nav-link ${
@@ -175,31 +184,6 @@ function SiteHeader({ configs }) {
           >
             Camisetas
           </Link>
-
-          {/* Menu Acessórios com Dropdown: ativo somente quando categoria=acessorios */}
-          <div
-            className="nav-dropdown-wrapper"
-            onMouseEnter={() => setDropdownAcessorios(true)}
-            onMouseLeave={() => setDropdownAcessorios(false)}
-          >
-            <Link
-              to="/produtos?categoria=acessorios"
-              className={`nav-link ${
-                location.pathname === '/produtos' && location.search.includes('categoria=acessorios')
-                  ? 'active'
-                  : ''
-              }`}
-            >
-              Acessórios ▾
-            </Link>
-            {dropdownAcessorios && (
-              <div className="nav-dropdown-menu">
-                <Link to="/produtos?categoria=acessorios&item=bone" className="nav-dropdown-item">
-                  Boné
-                </Link>
-              </div>
-            )}
-          </div>
 
           <Link to="/contato" className={`nav-link ${location.pathname === '/contato' ? 'active' : ''}`}>Contato</Link>
           <Link to="/guia-de-medidas" className={`nav-link ${location.pathname === '/guia-de-medidas' ? 'active' : ''}`}>Guia de medidas</Link>
@@ -225,14 +209,14 @@ function SiteFooter({ configs }) {
         {/* Quem somos */}
         <div className="footer-col">
           <h4>Quem somos</h4>
-          <a href="#">{configs.slogan_loja || 'Vestindo a Fé com Elegância'}</a>
+          <Link to="/quem-somos">Salv Sacra</Link>
         </div>
 
         {/* Institucional */}
         <div className="footer-col">
           <h4>Institucional</h4>
-          <a href="#">Termos de uso</a>
-          <a href="#">Política de privacidade</a>
+          <Link to="/termos-de-uso">Termos de uso</Link>
+          <Link to="/politica-de-privacidade">Política de privacidade</Link>
         </div>
 
         {/* Contato */}
@@ -259,11 +243,19 @@ function SiteFooter({ configs }) {
         </div>
 
         {/* Siga-nos */}
-        <div className="footer-col">
-          <h4>Siga-nos!</h4>
-          <a href={configs.instagram_url || "https://instagram.com"} target="_blank" rel="noreferrer" className="social-btn" aria-label="Instagram">
-            <IconInstagram />
-          </a>
+        <div className="footer-col footer-col--social">
+          <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center' }}>
+            <h4>Siga-nos!</h4>
+            <a
+              href={configs.instagram_url || "https://instagram.com/salv.sacra"}
+              target="_blank"
+              rel="noreferrer"
+              className="social-btn"
+              aria-label="Instagram"
+            >
+              <IconInstagram />
+            </a>
+          </div>
         </div>
       </div>
 

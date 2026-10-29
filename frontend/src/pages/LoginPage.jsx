@@ -111,7 +111,7 @@ export default function LoginPage() {
 
           {/* Esqueceu a senha */}
           <div className="auth-forgot">
-            <a href="#">Esqueceu a senha?</a>
+            <Link to="/esqueci-minha-senha">Esqueceu a senha?</Link>
           </div>
 
           <button type="submit" className="auth-btn" disabled={loading}>

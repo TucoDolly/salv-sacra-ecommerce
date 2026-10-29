@@ -67,7 +67,6 @@ export default function CatalogoPage({ modoFixo = null }) {
   const [modeloSelecionado, setModeloSelecionado] = useState('');
   const [tamanhosSelecionados, setTamanhosSelecionados] = useState([]);
   const [devocoesSelecionadas, setDevocoesSelecionadas] = useState([]);
-  const [marcasSelecionadas, setMarcasSelecionadas] = useState([]);
   const [precoMin, setPrecoMin] = useState('');
   const [precoMax, setPrecoMax] = useState('');
 
@@ -105,12 +104,6 @@ export default function CatalogoPage({ modoFixo = null }) {
       return {
         title: 'Camisetas',
         breadcrumb: 'CAMISETAS',
-      };
-    }
-    if (categoriaParam.toLowerCase().includes('acessorios') || categoriaParam.toLowerCase().includes('bone')) {
-      return {
-        title: 'Acessórios',
-        breadcrumb: 'ACESSÓRIOS > BONÉ',
       };
     }
     return {
@@ -274,11 +267,6 @@ export default function CatalogoPage({ modoFixo = null }) {
   // Filtragem e ordenação local
   const produtosFiltrados = produtos
     .filter((prod) => {
-      // Se for acessórios e não temos itens ainda, exibe vazio
-      if (categoriaParam.toLowerCase().includes('acessorios') || categoriaParam.toLowerCase().includes('bone')) {
-        return false;
-      }
-
       // Filtro de preço
       const preco = Number(prod.preco_base || 0);
       if (precoMin && preco < Number(precoMin)) return false;
@@ -399,7 +387,7 @@ export default function CatalogoPage({ modoFixo = null }) {
                         onChange={() => toggleFiltro(cor.nome, coresSelecionadas, setCoresSelecionadas)}
                         className="catalogo-checkbox"
                       />
-                      <span>{cor.nome} ({cor.qtd})</span>
+                      <span>{cor.nome}</span>
                     </div>
                     <span
                       className="catalogo-color-circle"
@@ -423,7 +411,7 @@ export default function CatalogoPage({ modoFixo = null }) {
                         onChange={() => toggleModelo(mod.nome)}
                         className="catalogo-checkbox"
                       />
-                      <span>{mod.nome} ({mod.qtd})</span>
+                      <span>{mod.nome}</span>
                     </div>
                   </label>
                 ))}
@@ -443,14 +431,14 @@ export default function CatalogoPage({ modoFixo = null }) {
                         onChange={() => toggleFiltro(tam.nome, tamanhosSelecionados, setTamanhosSelecionados)}
                         className="catalogo-checkbox"
                       />
-                      <span>{tam.nome} ({tam.qtd})</span>
+                      <span>{tam.nome}</span>
                     </div>
                   </label>
                 ))}
               </div>
             </div>
 
-            {/* Filtro: Devoção (Novo) */}
+            {/* Filtro: Devoção */}
             {opcoesDevocoesDinamicas.length > 0 && (
               <div className="catalogo-filter-group">
                 <span className="catalogo-filter-heading">Devoção</span>
@@ -464,33 +452,13 @@ export default function CatalogoPage({ modoFixo = null }) {
                           onChange={() => toggleFiltro(dev.nome, devocoesSelecionadas, setDevocoesSelecionadas)}
                           className="catalogo-checkbox"
                         />
-                        <span>{dev.nome} ({dev.qtd})</span>
+                        <span>{dev.nome}</span>
                       </div>
                     </label>
                   ))}
                 </div>
               </div>
             )}
-
-            {/* Filtro: Marca */}
-            <div className="catalogo-filter-group">
-              <span className="catalogo-filter-heading">Marca</span>
-              <div className="catalogo-filter-list">
-                {OPCOES_MARCAS.map((marca) => (
-                  <label key={marca.nome} className="catalogo-filter-item">
-                    <div className="catalogo-filter-checkbox-wrap">
-                      <input
-                        type="checkbox"
-                        checked={marcasSelecionadas.includes(marca.nome)}
-                        onChange={() => toggleFiltro(marca.nome, marcasSelecionadas, setMarcasSelecionadas)}
-                        className="catalogo-checkbox"
-                      />
-                      <span>{marca.nome} ({marca.qtd})</span>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
 
             {/* Filtro: Preço */}
             <div className="catalogo-filter-group">

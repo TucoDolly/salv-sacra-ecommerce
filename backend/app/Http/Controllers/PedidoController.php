@@ -98,6 +98,16 @@ class PedidoController extends Controller
             return $pedido;
         });
 
+        // Dispara e-mail de confirmação de pedido para o cliente
+        try {
+            $destinatario = $pedido->email_contato ?: $request->user()->email;
+            if ($destinatario) {
+                \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\PedidoCriadoMail($pedido->load(['itens.variacao.produto', 'user'])));
+            }
+        } catch (\Throwable $e) {
+            \Log::error('Erro ao enviar e-mail de pedido criado: ' . $e->getMessage());
+        }
+
         return response()->json([
             'mensagem' => 'Pedido criado com sucesso!',
             'pedido'   => $pedido->load(['itens.variacao.produto']),

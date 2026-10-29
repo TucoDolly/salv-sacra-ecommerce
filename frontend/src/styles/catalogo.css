@@ -267,7 +267,9 @@
 
 .catalogo-product-img-wrap {
   width: 100%;
-  height: 260px;
+  aspect-ratio: 3 / 4;
+  height: auto;
+  min-height: 290px;
   background-color: #f4f4f4;
   overflow: hidden;
   position: relative;
@@ -279,7 +281,12 @@
 .catalogo-product-img-wrap img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  transition: transform 0.3s ease;
+}
+
+.catalogo-product-card:hover .catalogo-product-img-wrap img {
+  transform: scale(1.03);
 }
 
 /* Dots de cores no rodapé da imagem */
