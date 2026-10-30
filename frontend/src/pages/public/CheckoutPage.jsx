@@ -5,6 +5,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
 import logoImg from '../../assets/logo.webp';
 import '../../styles/checkout.css';
+import '../../styles/cupom.css';
+import CupomSelector from '../../components/CupomSelector';
 
 import { listarEnderecos, listarCartoes, obterUltimoEndereco } from '../../services/contaService';
 
@@ -90,6 +92,9 @@ export default function CheckoutPage() {
     loadingFrete,
     openCart,
     clearCart,
+    cupom,
+    descontoCupom,
+    removerCupom,
   } = useCart();
 
   // Etapa atual do checkout: 'entrega' | 'pagamento'
@@ -295,7 +300,7 @@ export default function CheckoutPage() {
   const freteAtual = selectedShipping || opcoesFrete[0];
   const freteValor = freteAtual.preco;
   const tipoFreteNome = freteAtual.nome;
-  const totalBase = (subtotal || 79.9) + freteValor;
+  const totalBase = Math.max(0, (subtotal || 79.9) + freteValor - (descontoCupom || 0));
   const descontoBoletoPix = (metodoPagamento === 'pix' || metodoPagamento === 'boleto') ? totalBase * 0.05 : 0;
   const totalFinal = totalBase - descontoBoletoPix;
 
@@ -378,6 +383,7 @@ export default function CheckoutPage() {
       valor_frete: freteValor,
       metodo_pagamento: metodoPagamento,
       observacoes: observacoes,
+      cupom_codigo: descontoCupom > 0 ? cupom?.codigo : null,
       itens: items.map((i) => ({
         produto_id: i.produtoId,
         variacao_id: i.variacaoId || null,
@@ -390,6 +396,7 @@ export default function CheckoutPage() {
       const res = await api.post('/pedidos', payload);
       setPedidoConcluido(res.data.pedido);
       clearCart();
+      removerCupom();
     } catch (err) {
       console.error('Erro ao finalizar pedido:', err);
       if (err.response?.status === 401) {
@@ -1333,6 +1340,12 @@ export default function CheckoutPage() {
                 <span>Custo de frete</span>
                 <span>R${freteValor.toFixed(2).replace('.', ',')}</span>
               </div>
+              {descontoCupom > 0 && (
+                <div className="checkout-total-line" style={{ color: '#1e8449', fontWeight: 'bold' }}>
+                  <span>Cupom {cupom?.codigo} ({Number(cupom?.percentual)}% {cupom?.tipo === 'frete' ? 'no frete' : 'nas peças'})</span>
+                  <span>- R${descontoCupom.toFixed(2).replace('.', ',')}</span>
+                </div>
+              )}
               {descontoBoletoPix > 0 && etapa === 'pagamento' && (
                 <div className="checkout-total-line" style={{ color: '#c4953a', fontWeight: 'bold' }}>
                   <span>Desconto 5% (Pix/Boleto)</span>
@@ -1345,17 +1358,8 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* Botão Adicionar Cupom */}
-            <button
-              type="button"
-              className="checkout-coupon-btn"
-              onClick={() => {
-                const cupom = prompt('Digite seu cupom de desconto:');
-                if (cupom) alert(`Cupom "${cupom}" aplicado com sucesso!`);
-              }}
-            >
-              <span>🏷</span> Adicionar cupom de desconto
-            </button>
+            {/* Cupom de desconto: lista de cupons disponíveis com aplicação automática */}
+            <CupomSelector />
           </div>
 
         </div>

@@ -45,6 +45,9 @@ Route::post('contato', [\App\Http\Controllers\ContatoController::class, 'enviar'
 // Webhook de pagamento do Mercado Pago
 Route::post('webhooks/mercadopago', [PedidoController::class, 'webhookMercadoPago']);
 
+// Cupons ativos disponíveis para o cliente
+Route::get('cupons/disponiveis', [\App\Http\Controllers\CupomController::class, 'disponiveis']);
+
 /*
 |--------------------------------------------------------------------------
 | Rotas Protegidas — requerem token Sanctum
@@ -73,6 +76,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('cartoes',              [\App\Http\Controllers\ContaController::class, 'cartoes']);
         Route::post('cartoes',             [\App\Http\Controllers\ContaController::class, 'criarCartao']);
         Route::delete('cartoes/{cartao}',  [\App\Http\Controllers\ContaController::class, 'removerCartao']);
+        Route::delete('excluir',           [\App\Http\Controllers\ContaController::class, 'excluirConta']);
     });
 
     /*
@@ -99,6 +103,12 @@ Route::middleware('auth:sanctum')->group(function () {
         // ── Gestão de Pedidos (Administração) ─────────────────────────────
         Route::get('admin/pedidos',                 [PedidoController::class, 'indexAdmin']);
         Route::patch('admin/pedidos/{pedido}/status', [PedidoController::class, 'updateStatus']);
+
+        // ── Cupons de desconto (Administração) ────────────────────────────
+        Route::get('admin/cupons',            [\App\Http\Controllers\CupomController::class, 'index']);
+        Route::post('admin/cupons',           [\App\Http\Controllers\CupomController::class, 'store']);
+        Route::put('admin/cupons/{cupom}',    [\App\Http\Controllers\CupomController::class, 'update']);
+        Route::delete('admin/cupons/{cupom}', [\App\Http\Controllers\CupomController::class, 'destroy']);
 
         // ── Gestão de Estoque Rápida (Administração) ─────────────────────
         Route::get('admin/estoque',                      [\App\Http\Controllers\EstoqueController::class, 'index']);

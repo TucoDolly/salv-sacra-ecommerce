@@ -183,6 +183,29 @@ class ContaController extends Controller
         return response()->json(['message' => 'Cartão removido com sucesso.']);
     }
 
+    /**
+     * Exclui permanentemente a conta do usuário autenticado, apagando pedidos, itens, endereços, cartões e tokens.
+     */
+    public function excluirConta(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($user) {
+            $pedidoIds = $user->pedidos()->pluck('id')->all();
+            if (! empty($pedidoIds)) {
+                \App\Models\ItemPedido::whereIn('pedido_id', $pedidoIds)->delete();
+                $user->pedidos()->delete();
+            }
+
+            $user->enderecos()->delete();
+            $user->cartoes()->delete();
+            $user->tokens()->delete();
+            $user->delete();
+        });
+
+        return response()->json(['message' => 'Sua conta e todos os seus dados foram excluídos permanentemente.']);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     private function identificarBandeira(string $numero): string

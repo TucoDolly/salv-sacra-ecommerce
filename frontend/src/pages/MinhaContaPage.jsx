@@ -8,6 +8,7 @@ import {
   atualizarPerfil,
   criarCartao,
   criarEndereco,
+  excluirConta,
   listarCartoes,
   listarEnderecos,
   listarPedidos,
@@ -281,7 +282,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial }) {
 }
 
 /* ───────────────────── Informações pessoais ───────────────────── */
-function DadosPessoais({ user, onSalvo }) {
+function DadosPessoais({ user, onSalvo, onExcluirConta, excluindoConta }) {
   const [form, setForm] = useState({
     name: user.name ?? '',
     email: user.email ?? '',
@@ -342,6 +343,42 @@ function DadosPessoais({ user, onSalvo }) {
           {salvando ? 'Salvando...' : 'Salvar alterações'}
         </button>
       </form>
+
+      {/* Zona de Exclusão da Conta */}
+      <div
+        className="conta-box"
+        style={{
+          marginTop: '32px',
+          border: '1px solid #fecaca',
+          background: '#fef2f2',
+          padding: '20px',
+          borderRadius: '10px',
+        }}
+      >
+        <h3 style={{ color: '#b91c1c', margin: '0 0 8px 0', fontSize: '16px' }}>
+          Excluir minha conta
+        </h3>
+        <p style={{ color: '#7f1d1d', fontSize: '13px', margin: '0 0 16px 0', lineHeight: 1.5 }}>
+          Ao excluir sua conta, todos os seus dados pessoais, endereços, cartões salvos e histórico de compras serão apagados permanentemente. Esta ação não pode ser desfeita.
+        </p>
+        <button
+          type="button"
+          onClick={onExcluirConta}
+          disabled={excluindoConta}
+          style={{
+            background: '#dc2626',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '6px',
+            padding: '10px 18px',
+            fontSize: '13px',
+            fontWeight: 700,
+            cursor: excluindoConta ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {excluindoConta ? 'Excluindo conta...' : 'Excluir minha conta permanentemente'}
+        </button>
+      </div>
     </>
   );
 }
@@ -786,6 +823,8 @@ export default function MinhaContaPage() {
   const [pedidos, setPedidos] = useState([]);
   const [enderecos, setEnderecos] = useState([]);
   const [cartoes, setCartoes] = useState([]);
+  const [excluindoConta, setExcluindoConta] = useState(false);
+  const [modalExcluirConta, setModalExcluirConta] = useState(false);
 
   // Se o link do e-mail veio para outra conta e a conta atual não bate, desloga para que o usuário logue na conta correta
   useEffect(() => {
@@ -857,6 +896,27 @@ export default function MinhaContaPage() {
     navigate('/');
   };
 
+  const abrirConfirmacaoExclusao = () => {
+    setModalExcluirConta(true);
+  };
+
+  const confirmarExclusaoConta = async () => {
+    setExcluindoConta(true);
+    try {
+      await excluirConta();
+      localStorage.removeItem('minha_conta_resumo');
+      localStorage.removeItem('@SalvSacra:carrinho');
+      localStorage.removeItem('@SalvSacra:cupom');
+      await signOut();
+      navigate('/login');
+    } catch (err) {
+      alert(primeiroErro(err));
+    } finally {
+      setExcluindoConta(false);
+      setModalExcluirConta(false);
+    }
+  };
+
   return (
     <MainLayout breadcrumbs={BREADCRUMBS}>
       <div className="conta-page">
@@ -877,6 +937,15 @@ export default function MinhaContaPage() {
             <button type="button" className="conta-menu-item sair" onClick={sair}>
               Sair
             </button>
+            <button
+              type="button"
+              className="conta-menu-item sair"
+              style={{ color: '#dc2626', marginTop: '4px' }}
+              onClick={abrirConfirmacaoExclusao}
+              disabled={excluindoConta}
+            >
+              {excluindoConta ? 'Excluindo...' : 'Excluir conta'}
+            </button>
           </aside>
 
           <section className="conta-content">
@@ -892,7 +961,14 @@ export default function MinhaContaPage() {
               />
             )}
             {aba === 'pedidos' && <Pedidos pedidos={pedidos} pedidoSelecionadoInicial={urlPedido} />}
-            {aba === 'dados' && <DadosPessoais user={user} onSalvo={updateUser} />}
+            {aba === 'dados' && (
+              <DadosPessoais
+                user={user}
+                onSalvo={updateUser}
+                onExcluirConta={abrirConfirmacaoExclusao}
+                excluindoConta={excluindoConta}
+              />
+            )}
             {aba === 'enderecos' && (
               <Enderecos
                 enderecos={enderecos}
@@ -914,6 +990,69 @@ export default function MinhaContaPage() {
             {aba === 'senha' && <Senha />}
           </section>
         </div>
+
+        {/* Modal de confirmação de exclusão da conta (sem alerta de localhost) */}
+        {modalExcluirConta && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0, 0, 0, 0.55)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1200,
+              padding: '20px',
+            }}
+            onClick={() => !excluindoConta && setModalExcluirConta(false)}
+          >
+            <div
+              style={{
+                background: '#fff',
+                borderRadius: '12px',
+                padding: '28px',
+                maxWidth: '460px',
+                width: '100%',
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.25)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#b91c1c', margin: '0 0 12px 0' }}>
+                Confirmar exclusão de conta
+              </h3>
+              <p style={{ fontSize: '14px', color: '#444', lineHeight: 1.6, margin: '0 0 24px 0' }}>
+                Tem certeza de que deseja excluir sua conta mesmo? Todos os seus dados pessoais, endereços, cartões salvos e histórico de compras serão apagados permanentemente e não poderão ser recuperados.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="conta-btn-sec"
+                  onClick={() => setModalExcluirConta(false)}
+                  disabled={excluindoConta}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmarExclusaoConta}
+                  disabled={excluindoConta}
+                  style={{
+                    background: '#dc2626',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '10px 18px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: excluindoConta ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {excluindoConta ? 'Excluindo...' : 'Sim, excluir minha conta'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </MainLayout>
   );

@@ -92,9 +92,15 @@ function ProdutoCard({ produto }) {
     ? Number(produto.preco_base).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
     : null;
 
-  // Foto 1 (capa) e Foto 2 (hover)
-  const foto1 = (Array.isArray(produto.imagens) && produto.imagens[0]) || produto.imagem_url;
-  const foto2 = Array.isArray(produto.imagens) && produto.imagens[1] ? produto.imagens[1] : null;
+  // Foto 1 (capa) e Foto 2 (hover) a partir de imagens_vitrine (com fallback para imagens)
+  const vitrine = Array.isArray(produto.imagens_vitrine) && produto.imagens_vitrine.length > 0
+    ? produto.imagens_vitrine
+    : Array.isArray(produto.imagens) && produto.imagens.length > 0
+    ? produto.imagens
+    : [];
+
+  const foto1 = vitrine[0] || produto.imagem_url;
+  const foto2 = vitrine[1] || null;
   const fotoExibida = hovered && foto2 ? foto2 : foto1;
 
   // Cores dinâmicas cadastradas nas variações do produto

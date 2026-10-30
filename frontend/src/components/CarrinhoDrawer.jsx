@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
+import CupomSelector from './CupomSelector';
 import '../styles/carrinho-drawer.css';
+import '../styles/cupom.css';
 
 // Ícones SVG inline
 const IconClose = () => (
@@ -62,6 +64,7 @@ export default function CarrinhoDrawer() {
     cidadeDestino,
     ufDestino,
     loadingFrete,
+    descontoCupom,
   } = useCart();
 
   const [editandoCep, setEditandoCep] = useState(false);
@@ -131,7 +134,7 @@ export default function CarrinhoDrawer() {
                   const precoTotal = (precoNum * item.quantidade).toFixed(2);
 
                   return (
-                    <div key={`${item.produtoId}-${item.tamanho}-${item.cor}-${index}`} className="cart-item-row">
+                    <div key={`${item.produtoId}-${item.modelo || 'Regular Fit'}-${item.tamanho}-${item.cor}-${index}`} className="cart-item-row">
                       <div className="cart-item-thumb">
                         {item.imagem ? (
                           <img src={item.imagem} alt={item.nome} />
@@ -143,7 +146,10 @@ export default function CarrinhoDrawer() {
                       <div className="cart-item-info">
                         <div className="cart-item-header">
                           <span className="cart-item-name">
-                            {item.nome} <span className="cart-item-variation">({item.cor}, {item.tamanho})</span>
+                            {item.nome}{' '}
+                            <span className="cart-item-variation">
+                              ({item.modelo ? `${item.modelo}, ` : ''}{item.cor}, {item.tamanho})
+                            </span>
                           </span>
                           <button
                             type="button"
@@ -297,6 +303,8 @@ export default function CarrinhoDrawer() {
                 <p className="cart-shipping-note">
                   O prazo de entrega <strong>não contabiliza feriados</strong>.
                 </p>
+
+                <CupomSelector />
               </div>
             </>
           )}
@@ -305,6 +313,12 @@ export default function CarrinhoDrawer() {
         {/* Rodapé Fixo */}
         {items.length > 0 && (
           <div className="cart-footer">
+            {descontoCupom > 0 && (
+              <div className="cart-total-row" style={{ fontSize: '13px', color: '#1e8449', fontWeight: 700 }}>
+                <span>Desconto do cupom:</span>
+                <span>− {descontoCupom.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+              </div>
+            )}
             <div className="cart-total-row">
               <span className="cart-total-label">Total:</span>
               <span className="cart-total-value">

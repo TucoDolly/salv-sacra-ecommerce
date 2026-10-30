@@ -365,11 +365,12 @@ export default function EstoqueList() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc', color: '#64748b', borderBottom: '1px solid #e2e8f0', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.05em' }}>
-                        <th style={{ width: '18%', padding: '14px 16px', textAlign: 'center' }}>Tamanho</th>
-                        <th style={{ width: '22%', padding: '14px 16px', textAlign: 'center' }}>Cor</th>
-                        <th style={{ width: '20%', padding: '14px 16px', textAlign: 'center' }}>Nível</th>
-                        <th style={{ width: '24%', padding: '14px 16px', textAlign: 'center' }}>Quantidade em Estoque</th>
-                        <th style={{ width: '16%', padding: '14px 16px', textAlign: 'center' }}>Ação</th>
+                        <th style={{ width: '16%', padding: '14px 16px', textAlign: 'center' }}>Modelo</th>
+                        <th style={{ width: '12%', padding: '14px 16px', textAlign: 'center' }}>Tamanho</th>
+                        <th style={{ width: '20%', padding: '14px 16px', textAlign: 'center' }}>Cor</th>
+                        <th style={{ width: '16%', padding: '14px 16px', textAlign: 'center' }}>Nível</th>
+                        <th style={{ width: '22%', padding: '14px 16px', textAlign: 'center' }}>Quantidade em Estoque</th>
+                        <th style={{ width: '14%', padding: '14px 16px', textAlign: 'center' }}>Ação</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -399,6 +400,9 @@ export default function EstoqueList() {
 
                         return (
                           <tr key={variacao.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '14px 16px', fontWeight: 600, color: '#334155', textAlign: 'center', fontSize: '12px' }}>
+                              {variacao.modelo || 'Regular Fit'}
+                            </td>
                             <td style={{ padding: '14px 16px', fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>
                               {variacao.tamanho || 'Único'}
                             </td>

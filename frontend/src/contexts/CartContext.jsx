@@ -103,8 +103,13 @@ export function CartProvider({ children }) {
 
   const addItem = (item) => {
     const novos = [...items];
+    const modItem = item.modelo || 'Regular Fit';
     const index = novos.findIndex(
-      (i) => i.produtoId === item.produtoId && i.tamanho === item.tamanho && i.cor === item.cor
+      (i) =>
+        i.produtoId === item.produtoId &&
+        i.tamanho === item.tamanho &&
+        i.cor === item.cor &&
+        (i.modelo || 'Regular Fit') === modItem
     );
 
     if (index >= 0) {
@@ -112,9 +117,11 @@ export function CartProvider({ children }) {
     } else {
       novos.push({
         produtoId: item.produtoId,
+        variacaoId: item.variacaoId || null,
         nome: item.nome,
         preco: Number(item.preco || 79.9),
         imagem: item.imagem,
+        modelo: modItem,
         tamanho: item.tamanho || 'M',
         cor: item.cor || 'Preto',
         quantidade: item.quantidade || 1,
@@ -150,7 +157,33 @@ export function CartProvider({ children }) {
   const closeCart = () => setIsCartOpen(false);
 
   const fretePreco = items.length > 0 ? (selectedShipping?.preco ?? 0) : 0;
-  const total = subtotal + fretePreco;
+
+  // ── Cupom de desconto ──
+  const [cupom, setCupom] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('@SalvSacra:cupom') || 'null'); } catch { return null; }
+  });
+
+  const aplicarCupom = (c) => {
+    setCupom(c);
+    if (c) localStorage.setItem('@SalvSacra:cupom', JSON.stringify(c));
+    else localStorage.removeItem('@SalvSacra:cupom');
+  };
+  const removerCupom = () => aplicarCupom(null);
+
+  // Verifica se o cupom vale para algum item do carrinho e calcula o desconto
+  const calcularDescontoCupom = (c) => {
+    if (!c || items.length === 0) return 0;
+    const ids = (c.produto_ids || []).map(Number);
+    const validos = c.todos_produtos ? items : items.filter((i) => ids.includes(Number(i.produtoId)));
+    if (validos.length === 0) return 0;
+    const pct = Math.min(100, Math.max(0, Number(c.percentual))) / 100;
+    if (c.tipo === 'frete') return Math.round(fretePreco * pct * 100) / 100;
+    const base = validos.reduce((acc, i) => acc + Number(i.preco) * Number(i.quantidade), 0);
+    return Math.round(base * pct * 100) / 100;
+  };
+
+  const descontoCupom = calcularDescontoCupom(cupom);
+  const total = Math.max(0, subtotal + fretePreco - descontoCupom);
   const totalBoleto = total * 0.95; // 5% no boleto
 
   return (
@@ -177,6 +210,11 @@ export function CartProvider({ children }) {
         ufDestino,
         loadingFrete,
         calcularFretePorCep,
+        cupom,
+        aplicarCupom,
+        removerCupom,
+        descontoCupom,
+        calcularDescontoCupom,
       }}
     >
       {children}

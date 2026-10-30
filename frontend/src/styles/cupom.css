@@ -1,0 +1,80 @@
+/* ── Seletor de cupons (carrinho e checkout) ── */
+.cupom-selector { margin-top: 14px; }
+
+.cupom-toggle-btn {
+  width: 100%;
+  height: 42px;
+  border: 1.5px dashed #bbb;
+  border-radius: 20px;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: border-color 0.2s;
+}
+.cupom-toggle-btn:hover { border-color: #1e1e1e; }
+
+.cupom-lista {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.cupom-msg { font-size: 12px; color: #777; text-align: center; margin: 6px 0; }
+.cupom-msg.erro { color: #c0392b; }
+
+.cupom-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 10px 14px;
+  border: 1.5px solid #c4953a;
+  background: #fdfbf7;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.cupom-item:hover:not(:disabled) { background: #f8f0dd; }
+.cupom-item.invalido { border-color: #ddd; background: #f7f7f7; cursor: not-allowed; opacity: 0.7; }
+
+.cupom-item-info { display: flex; flex-direction: column; gap: 2px; }
+.cupom-item-info strong { font-size: 13px; letter-spacing: 1px; color: #1e1e1e; }
+.cupom-item-info span { font-size: 11px; color: #555; }
+.cupom-item-info small { font-size: 11px; color: #888; }
+.cupom-item-valor { font-size: 13px; font-weight: 800; color: #1e8449; white-space: nowrap; }
+.cupom-item.invalido .cupom-item-valor { color: #999; font-weight: 600; font-size: 11px; }
+
+.cupom-aplicado {
+  margin-top: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1.5px solid #1e8449;
+  background: #ecf8f0;
+  border-radius: 8px;
+}
+.cupom-aplicado div { display: flex; flex-direction: column; gap: 2px; }
+.cupom-aplicado strong { font-size: 13px; color: #1e1e1e; letter-spacing: 1px; }
+.cupom-aplicado span { font-size: 11px; color: #1e6b3a; }
+.cupom-aplicado button {
+  background: none;
+  border: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: #c0392b;
+  text-decoration: underline;
+  cursor: pointer;
+}
+

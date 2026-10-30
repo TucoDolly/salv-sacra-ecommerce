@@ -114,17 +114,20 @@ class ProdutoController extends Controller
             'nome'         => ['required', 'string', 'max:255'],
             'descricao'    => ['nullable', 'string'],
             'preco_base'   => ['required', 'numeric', 'min:0'],
-            'imagem_url'   => ['nullable', 'url', 'max:2048'],
-            'imagens'      => ['nullable', 'array'],
-            'imagens.*'    => ['nullable', 'url', 'max:2048'],
-            'disponivel'   => ['boolean'],
-            'colecao'      => ['nullable', 'string', 'max:255'],
-            'modelo'       => ['nullable', 'string', 'max:255'],
-            'categoria_id' => ['nullable', 'integer', 'exists:categorias,id'],
-            'devocao_id'   => ['nullable', 'integer', 'exists:devocaos,id'],
+            'imagem_url'        => ['nullable', 'url', 'max:2048'],
+            'imagens'           => ['nullable', 'array'],
+            'imagens.*'         => ['nullable', 'url', 'max:2048'],
+            'imagens_vitrine'   => ['nullable', 'array'],
+            'imagens_vitrine.*' => ['nullable', 'url', 'max:2048'],
+            'disponivel'        => ['boolean'],
+            'colecao'           => ['nullable', 'string', 'max:255'],
+            'modelo'            => ['nullable', 'string', 'max:255'],
+            'categoria_id'      => ['nullable', 'integer', 'exists:categorias,id'],
+            'devocao_id'        => ['nullable', 'integer', 'exists:devocaos,id'],
 
             // Variações
             'variacoes'            => ['nullable', 'array'],
+            'variacoes.*.modelo'   => ['nullable', 'string', 'max:100'],
             'variacoes.*.tamanho'  => ['required_with:variacoes', 'string', 'max:50'],
             'variacoes.*.cor'      => ['required_with:variacoes', 'string', 'max:100'],
             'variacoes.*.estoque'  => ['required_with:variacoes', 'integer', 'min:0'],
@@ -132,12 +135,16 @@ class ProdutoController extends Controller
 
         $produto = DB::transaction(function () use ($validated, $request) {
             $dadosProduto = collect($validated)->except('variacoes')->toArray();
+
+            if (isset($dadosProduto['imagens_vitrine']) && is_array($dadosProduto['imagens_vitrine'])) {
+                $dadosProduto['imagens_vitrine'] = array_values(array_filter($dadosProduto['imagens_vitrine'], fn($u) => !empty(trim($u))));
+            }
             
             // Se imagens vieram, filtra URLs vazias
             if (isset($dadosProduto['imagens']) && is_array($dadosProduto['imagens'])) {
                 $dadosProduto['imagens'] = array_values(array_filter($dadosProduto['imagens'], fn($u) => !empty(trim($u))));
-                if (empty($dadosProduto['imagem_url']) && !empty($dadosProduto['imagens'])) {
-                    $dadosProduto['imagem_url'] = $dadosProduto['imagens'][0];
+                if (empty($dadosProduto['imagem_url'])) {
+                    $dadosProduto['imagem_url'] = $dadosProduto['imagens_vitrine'][0] ?? $dadosProduto['imagens'][0] ?? null;
                 }
             } elseif (!empty($dadosProduto['imagem_url'])) {
                 $dadosProduto['imagens'] = [$dadosProduto['imagem_url']];
@@ -185,17 +192,20 @@ class ProdutoController extends Controller
             'nome'         => ['sometimes', 'string', 'max:255'],
             'descricao'    => ['nullable', 'string'],
             'preco_base'   => ['sometimes', 'numeric', 'min:0'],
-            'imagem_url'   => ['nullable', 'url', 'max:2048'],
-            'imagens'      => ['nullable', 'array'],
-            'imagens.*'    => ['nullable', 'url', 'max:2048'],
-            'disponivel'   => ['boolean'],
-            'colecao'      => ['nullable', 'string', 'max:255'],
-            'modelo'       => ['nullable', 'string', 'max:255'],
-            'categoria_id' => ['nullable', 'integer', 'exists:categorias,id'],
-            'devocao_id'   => ['nullable', 'integer', 'exists:devocaos,id'],
+            'imagem_url'        => ['nullable', 'url', 'max:2048'],
+            'imagens'           => ['nullable', 'array'],
+            'imagens.*'         => ['nullable', 'url', 'max:2048'],
+            'imagens_vitrine'   => ['nullable', 'array'],
+            'imagens_vitrine.*' => ['nullable', 'url', 'max:2048'],
+            'disponivel'        => ['boolean'],
+            'colecao'           => ['nullable', 'string', 'max:255'],
+            'modelo'            => ['nullable', 'string', 'max:255'],
+            'categoria_id'      => ['nullable', 'integer', 'exists:categorias,id'],
+            'devocao_id'        => ['nullable', 'integer', 'exists:devocaos,id'],
 
             // Variações
             'variacoes'            => ['nullable', 'array'],
+            'variacoes.*.modelo'   => ['nullable', 'string', 'max:100'],
             'variacoes.*.tamanho'  => ['required_with:variacoes', 'string', 'max:50'],
             'variacoes.*.cor'      => ['required_with:variacoes', 'string', 'max:100'],
             'variacoes.*.estoque'  => ['required_with:variacoes', 'integer', 'min:0'],
@@ -204,10 +214,14 @@ class ProdutoController extends Controller
         $produto = DB::transaction(function () use ($validated, $produto) {
             $dadosProduto = collect($validated)->except('variacoes')->toArray();
 
+            if (array_key_exists('imagens_vitrine', $dadosProduto) && is_array($dadosProduto['imagens_vitrine'])) {
+                $dadosProduto['imagens_vitrine'] = array_values(array_filter($dadosProduto['imagens_vitrine'], fn($u) => !empty(trim($u))));
+            }
+
             if (array_key_exists('imagens', $dadosProduto) && is_array($dadosProduto['imagens'])) {
                 $dadosProduto['imagens'] = array_values(array_filter($dadosProduto['imagens'], fn($u) => !empty(trim($u))));
-                if (empty($dadosProduto['imagem_url']) && !empty($dadosProduto['imagens'])) {
-                    $dadosProduto['imagem_url'] = $dadosProduto['imagens'][0];
+                if (empty($dadosProduto['imagem_url'])) {
+                    $dadosProduto['imagem_url'] = $dadosProduto['imagens_vitrine'][0] ?? $dadosProduto['imagens'][0] ?? null;
                 }
             }
 
@@ -215,10 +229,47 @@ class ProdutoController extends Controller
 
             // Sincroniza variações somente se a chave foi enviada no payload
             if (array_key_exists('variacoes', $validated)) {
-                $produto->variacoes()->delete();
+                $idsMantidos = [];
+                foreach ($validated['variacoes'] ?? [] as $varData) {
+                    $modeloVar = $varData['modelo'] ?? 'Regular Fit';
+                    $existente = $produto->variacoes()
+                        ->where('tamanho', $varData['tamanho'])
+                        ->where('cor', $varData['cor'])
+                        ->where(function ($q) use ($modeloVar) {
+                            $q->where('modelo', $modeloVar)->orWhereNull('modelo');
+                        })
+                        ->first();
 
-                if (!empty($validated['variacoes'])) {
-                    $produto->variacoes()->createMany($validated['variacoes']);
+                    if ($existente) {
+                        $existente->update([
+                            'modelo'  => $modeloVar,
+                            'tamanho' => $varData['tamanho'],
+                            'cor'     => $varData['cor'],
+                            'estoque' => $varData['estoque'],
+                        ]);
+                        $idsMantidos[] = $existente->id;
+                    } else {
+                        $nova = $produto->variacoes()->create([
+                            'modelo'  => $modeloVar,
+                            'tamanho' => $varData['tamanho'],
+                            'cor'     => $varData['cor'],
+                            'estoque' => $varData['estoque'],
+                        ]);
+                        $idsMantidos[] = $nova->id;
+                    }
+                }
+
+                // Remove variações antigas que não estão mais na lista (desvinculando itens de pedido se necessário)
+                $paraRemover = $produto->variacoes()->whereNotIn('id', $idsMantidos)->pluck('id')->all();
+                if (!empty($paraRemover)) {
+                    $idSubstituto = $idsMantidos[0] ?? null;
+                    if ($idSubstituto) {
+                        \App\Models\ItemPedido::whereIn('variacao_produto_id', $paraRemover)
+                            ->update(['variacao_produto_id' => $idSubstituto]);
+                    } else {
+                        \App\Models\ItemPedido::whereIn('variacao_produto_id', $paraRemover)->delete();
+                    }
+                    $produto->variacoes()->whereIn('id', $paraRemover)->delete();
                 }
             }
 

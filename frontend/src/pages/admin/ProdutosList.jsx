@@ -92,13 +92,13 @@ export default function ProdutosList() {
             <thead>
               <tr>
                 <th style={{ width: '80px', textAlign: 'center' }}>Imagem</th>
-                <th style={{ textAlign: 'left', minWidth: '180px' }}>Nome</th>
+                <th style={{ textAlign: 'left', minWidth: '180px', paddingLeft: '36px' }}>Nome</th>
                 <th style={{ textAlign: 'left' }}>Categoria</th>
                 <th style={{ textAlign: 'left' }}>Coleção</th>
                 <th style={{ textAlign: 'right', paddingRight: '20px' }}>Preço Base</th>
                 <th style={{ textAlign: 'center' }}>Variações</th>
                 <th style={{ textAlign: 'center' }}>Status</th>
-                <th style={{ textAlign: 'center', width: '200px' }}>Ações</th>
+                <th style={{ textAlign: 'center', width: '180px' }}>Ações</th>
               </tr>
             </thead>
             <tbody>

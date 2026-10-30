@@ -17,8 +17,14 @@ const IconSort = () => (
 function CatalogoItemCard({ prod }) {
   const [hovered, setHovered] = useState(false);
 
-  const foto1 = (Array.isArray(prod.imagens) && prod.imagens[0]) || prod.imagem_url;
-  const foto2 = Array.isArray(prod.imagens) && prod.imagens[1] ? prod.imagens[1] : null;
+  const vitrine = Array.isArray(prod.imagens_vitrine) && prod.imagens_vitrine.length > 0
+    ? prod.imagens_vitrine
+    : Array.isArray(prod.imagens) && prod.imagens.length > 0
+    ? prod.imagens
+    : [];
+
+  const foto1 = vitrine[0] || prod.imagem_url;
+  const foto2 = vitrine[1] || null;
   const fotoExibida = hovered && foto2 ? foto2 : foto1;
 
   const coresVariacoes = Array.from(new Set((prod.variacoes || []).map((v) => v.cor))).filter(Boolean);
@@ -67,6 +73,7 @@ export default function CatalogoPage({ modoFixo = null }) {
   const [modeloSelecionado, setModeloSelecionado] = useState('');
   const [tamanhosSelecionados, setTamanhosSelecionados] = useState([]);
   const [devocoesSelecionadas, setDevocoesSelecionadas] = useState([]);
+  const [colecoesSelecionadas, setColecoesSelecionadas] = useState([]);
   const [precoMin, setPrecoMin] = useState('');
   const [precoMax, setPrecoMax] = useState('');
 
@@ -221,9 +228,26 @@ export default function CatalogoPage({ modoFixo = null }) {
   const opcoesDevocoesDinamicas = (() => {
     const mapa = new Map();
     produtos.forEach((prod) => {
-      const nomeDevocao = prod.devocao?.nome || (prod.colecao && prod.colecao !== 'Regular Fit' && prod.colecao !== 'Oversized' ? prod.colecao : null);
+      const nomeDevocao = prod.devocao?.nome;
       if (nomeDevocao) {
         mapa.set(nomeDevocao, (mapa.get(nomeDevocao) || 0) + 1);
+      }
+    });
+
+    return Array.from(mapa.entries()).map(([nome, qtd]) => ({
+      nome,
+      qtd,
+    }));
+  })();
+
+  // 5. Coleções dinâmicas (Santos, Datas Comemorativas, Geral, Inverno, Verão, etc.)
+  const opcoesColecoesDinamicas = (() => {
+    const opcoesPadrao = ['Santos', 'Datas Comemorativas', 'Geral', 'Inverno', 'Verão'];
+    const mapa = new Map(opcoesPadrao.map((c) => [c, 0]));
+    produtos.forEach((prod) => {
+      const col = (prod.colecao || '').trim();
+      if (col && col !== 'Regular Fit' && col !== 'Oversized') {
+        mapa.set(col, (mapa.get(col) || 0) + 1);
       }
     });
 
@@ -303,8 +327,14 @@ export default function CatalogoPage({ modoFixo = null }) {
 
       // Filtro de devoções selecionadas
       if (devocoesSelecionadas.length > 0) {
-        const devNome = prod.devocao?.nome || prod.colecao || '';
+        const devNome = prod.devocao?.nome || '';
         if (!devocoesSelecionadas.includes(devNome)) return false;
+      }
+
+      // Filtro de coleções selecionadas
+      if (colecoesSelecionadas.length > 0) {
+        const colNome = (prod.colecao || '').trim();
+        if (!colecoesSelecionadas.includes(colNome)) return false;
       }
 
       return true;
@@ -453,6 +483,28 @@ export default function CatalogoPage({ modoFixo = null }) {
                           className="catalogo-checkbox"
                         />
                         <span>{dev.nome}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Filtro: Coleção (abaixo de Devoção) */}
+            {opcoesColecoesDinamicas.length > 0 && (
+              <div className="catalogo-filter-group">
+                <span className="catalogo-filter-heading">Coleção</span>
+                <div className="catalogo-filter-list">
+                  {opcoesColecoesDinamicas.map((col) => (
+                    <label key={col.nome} className="catalogo-filter-item">
+                      <div className="catalogo-filter-checkbox-wrap">
+                        <input
+                          type="checkbox"
+                          checked={colecoesSelecionadas.includes(col.nome)}
+                          onChange={() => toggleFiltro(col.nome, colecoesSelecionadas, setColecoesSelecionadas)}
+                          className="catalogo-checkbox"
+                        />
+                        <span>{col.nome}</span>
                       </div>
                     </label>
                   ))}

@@ -12,3 +12,4 @@ export const removerEndereco = (id) => api.delete(`/conta/enderecos/${id}`);
 export const listarCartoes = () => api.get('/conta/cartoes');
 export const criarCartao = (data) => api.post('/conta/cartoes', data);
 export const removerCartao = (id) => api.delete(`/conta/cartoes/${id}`);
+export const excluirConta = () => api.delete('/conta/excluir');

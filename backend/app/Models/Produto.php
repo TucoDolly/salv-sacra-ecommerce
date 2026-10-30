@@ -14,6 +14,7 @@ class Produto extends Model
         'preco_base',
         'imagem_url',
         'imagens',
+        'imagens_vitrine',
         'disponivel',
         'colecao',
         'modelo',
@@ -22,9 +23,10 @@ class Produto extends Model
     ];
 
     protected $casts = [
-        'preco_base' => 'decimal:2',
-        'disponivel'  => 'boolean',
-        'imagens'     => 'array',
+        'preco_base'      => 'decimal:2',
+        'disponivel'      => 'boolean',
+        'imagens'         => 'array',
+        'imagens_vitrine' => 'array',
     ];
 
     // ─── Relações ────────────────────────────────────────────────────────────

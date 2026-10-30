@@ -78,10 +78,11 @@ export default function ProdutoDetalhe() {
   const [erro, setErro] = useState(null);
 
   // Estados de seleção
+  const [modeloSelecionado, setModeloSelecionado] = useState('Regular Fit');
   const [tamanhoSelecionado, setTamanhoSelecionado] = useState('M');
   const [corSelecionada, setCorSelecionada] = useState('');
   const [quantidade, setQuantidade] = useState(1);
-  const [fotoAtiva, setFotoAtiva] = useState(0);
+  const [fotoPrincipal, setFotoPrincipal] = useState('');
 
   // Frete
   const [cep, setCep] = useState('');
@@ -105,14 +106,27 @@ export default function ProdutoDetalhe() {
     // Busca produto atual
     api.get(`/produtos/${id}`)
       .then((res) => {
-        setProduto(res.data);
-        const variacoes = res.data.variacoes || [];
+        const prod = res.data;
+        setProduto(prod);
+        const variacoes = prod.variacoes || [];
+
+        const galeriaInicial = Array.isArray(prod.imagens) && prod.imagens.filter(Boolean).length > 0
+          ? prod.imagens.filter(Boolean)
+          : [];
+        const vitrineInicial = Array.isArray(prod.imagens_vitrine) && prod.imagens_vitrine.filter(Boolean).length > 0
+          ? prod.imagens_vitrine.filter(Boolean)
+          : galeriaInicial;
+
+        setFotoPrincipal(galeriaInicial[0] || vitrineInicial[0] || prod.imagem_url || '');
 
         if (variacoes.length > 0) {
           const varComEstoque = variacoes.find((v) => Number(v.estoque) > 0) || variacoes[0];
+          const modInicial = varComEstoque.modelo || (prod.modelo === 'Oversized' ? 'Oversized' : 'Regular Fit');
+          setModeloSelecionado(modInicial);
           setTamanhoSelecionado(varComEstoque.tamanho || 'M');
           setCorSelecionada(varComEstoque.cor || 'Preto');
         } else {
+          setModeloSelecionado(prod.modelo === 'Oversized' ? 'Oversized' : 'Regular Fit');
           setTamanhoSelecionado('M');
           setCorSelecionada('Preto');
         }
@@ -168,9 +182,9 @@ export default function ProdutoDetalhe() {
   const precoBoleto = (precoBase * 0.95).toFixed(2); // 5% de desconto no boleto
   const parcela12x = (precoBase / 12 * 1.23).toFixed(2); // Com juros leves ou sem juros
 
-  // Galeria de fotos dinâmicas cadastradas no admin
+  // Aba 1: Galeria de fotos menores do lado esquerdo da foto grande
   const galeriaFotos = (() => {
-    if (Array.isArray(produto.imagens) && produto.imagens.length > 0) {
+    if (Array.isArray(produto.imagens) && produto.imagens.filter(Boolean).length > 0) {
       return produto.imagens.filter(Boolean);
     }
     if (produto.imagem_url) {
@@ -179,28 +193,71 @@ export default function ProdutoDetalhe() {
     return [];
   })();
 
+  // Aba 2: Fotos da vitrine e das opções de cores
+  const fotosCores = (() => {
+    if (Array.isArray(produto.imagens_vitrine) && produto.imagens_vitrine.filter(Boolean).length > 0) {
+      return produto.imagens_vitrine.filter(Boolean);
+    }
+    return galeriaFotos;
+  })();
+
+  const imagemExibida = fotoPrincipal || galeriaFotos[0] || fotosCores[0] || produto.imagem_url || '';
+
   const variacoes = produto.variacoes || [];
   const cores = Array.from(new Set(variacoes.map((v) => v.cor))).filter(Boolean);
   const coresExibicao = cores.length > 0 ? cores : ['Preto', 'Marrom'];
 
-  // Verifica o estoque de um tamanho específico considerando a cor selecionada
-  const getEstoqueTamanho = (tam) => {
-    if (variacoes.length === 0) return 99; // Se não tem variações cadastradas, permite
-    const match = variacoes.find(
-      (v) =>
-        v.tamanho?.toUpperCase() === tam.toUpperCase() &&
-        (!corSelecionada || v.cor?.toLowerCase() === corSelecionada?.toLowerCase())
-    );
-    return match ? Number(match.estoque || 0) : 0;
+  // Opções de modelo disponíveis para a peça
+  const modelosDisponiveis = (() => {
+    if (produto.modelo === 'Ambos') {
+      return ['Regular Fit', 'Oversized'];
+    }
+    const modelosVar = Array.from(new Set(variacoes.map((v) => v.modelo).filter(Boolean)));
+    if (modelosVar.length > 1) {
+      return modelosVar;
+    }
+    if (produto.modelo === 'Oversized' || modelosVar[0] === 'Oversized') {
+      return ['Oversized'];
+    }
+    return ['Regular Fit'];
+  })();
+
+  // Verifica se uma variação bate com o modelo selecionado
+  const matchModelo = (v, modAlvo = modeloSelecionado) => {
+    const vMod = (v.modelo || 'Regular Fit').toLowerCase();
+    return vMod === (modAlvo || 'Regular Fit').toLowerCase();
   };
 
-  // Ao clicar em uma cor, muda corSelecionada e alterna a foto principal para o ângulo correspondente
+  // Verifica o estoque de um tamanho específico considerando o modelo e a cor selecionada
+  const getEstoqueTamanho = (tam, modAlvo = modeloSelecionado) => {
+    if (variacoes.length === 0) return 99; // Se não tem variações cadastradas, permite
+    const matches = variacoes.filter(
+      (v) =>
+        v.tamanho?.toUpperCase() === tam.toUpperCase() &&
+        (!corSelecionada || v.cor?.toLowerCase() === corSelecionada?.toLowerCase()) &&
+        matchModelo(v, modAlvo)
+    );
+    return matches.reduce((soma, v) => soma + Number(v.estoque || 0), 0);
+  };
+
+  const handleSelecionarModelo = (mod) => {
+    setModeloSelecionado(mod);
+    if (getEstoqueTamanho(tamanhoSelecionado, mod) <= 0) {
+      const tamComEstoque = TAMANHOS_PADRAO.find((t) => getEstoqueTamanho(t, mod) > 0);
+      if (tamComEstoque) {
+        setTamanhoSelecionado(tamComEstoque);
+      }
+    }
+  };
+
+  // Ao clicar em uma cor, muda corSelecionada e alterna a foto principal usando a Aba 2 (fotosCores)
   const handleSelecionarCor = (cor, idx) => {
     setCorSelecionada(cor);
-    // A primeira cor (idx 0) mostra a foto 1 (índice 0), a segunda cor (idx 1) mostra a foto 2 (índice 1), etc.
-    if (galeriaFotos.length > 0) {
-      const fotoIndexAlvo = idx < galeriaFotos.length ? idx : 0;
-      setFotoAtiva(fotoIndexAlvo);
+    if (fotosCores.length > 0) {
+      const fotoCor = fotosCores[idx < fotosCores.length ? idx : 0] || fotosCores[0];
+      if (fotoCor) {
+        setFotoPrincipal(fotoCor);
+      }
     }
   };
 
@@ -209,15 +266,27 @@ export default function ProdutoDetalhe() {
   const handleComprar = () => {
     const estoqueDisponivel = getEstoqueTamanho(tamanhoSelecionado);
     if (estoqueDisponivel <= 0) {
-      alert(`O tamanho ${tamanhoSelecionado} para a cor ${corSelecionada} não está disponível no estoque.`);
+      alert(`O tamanho ${tamanhoSelecionado} (${modeloSelecionado}) para a cor ${corSelecionada} não está disponível no estoque.`);
       return;
     }
 
+    const variacaoEncontrada = variacoes.find(
+      (v) =>
+        v.tamanho?.toUpperCase() === tamanhoSelecionado.toUpperCase() &&
+        (!corSelecionada || v.cor?.toLowerCase() === corSelecionada?.toLowerCase()) &&
+        matchModelo(v, modeloSelecionado)
+    );
+
+    const idxCor = Math.max(0, coresExibicao.findIndex((c) => c === corSelecionada));
+    const imgCorCarrinho = fotosCores[idxCor < fotosCores.length ? idxCor : 0] || imagemExibida || produto.imagem_url;
+
     addItem({
       produtoId: produto.id,
+      variacaoId: variacaoEncontrada?.id || null,
       nome: produto.nome,
       preco: produto.preco_base,
-      imagem: produto.imagem_url,
+      imagem: imgCorCarrinho,
+      modelo: modeloSelecionado,
       tamanho: tamanhoSelecionado,
       cor: corSelecionada,
       quantidade: quantidade,
@@ -273,8 +342,8 @@ export default function ProdutoDetalhe() {
                 <button
                   key={idx}
                   type="button"
-                  className={`pdp-thumb-item ${fotoAtiva === idx ? 'active' : ''}`}
-                  onClick={() => setFotoAtiva(idx)}
+                  className={`pdp-thumb-item ${imagemExibida === img ? 'active' : ''}`}
+                  onClick={() => setFotoPrincipal(img)}
                 >
                   <img src={img} alt={`Ângulo ${idx + 1}`} />
                 </button>
@@ -288,9 +357,9 @@ export default function ProdutoDetalhe() {
                 <span>OFF</span>
               </div>
 
-              {galeriaFotos[fotoAtiva] ? (
+              {imagemExibida ? (
                 <img
-                  src={galeriaFotos[fotoAtiva]}
+                  src={imagemExibida}
                   alt={produto.nome}
                   className="pdp-main-img"
                 />
@@ -355,6 +424,26 @@ export default function ProdutoDetalhe() {
               Ver mais detalhes
             </button>
 
+            {/* Seletor de Modelo (Regular Fit / Oversized) */}
+            <div className="pdp-selector-section">
+              <div className="pdp-selector-label">
+                Modelo: <strong>{modeloSelecionado}</strong>
+              </div>
+              <div className="pdp-sizes-list">
+                {modelosDisponiveis.map((mod) => (
+                  <button
+                    key={mod}
+                    type="button"
+                    className={`pdp-size-chip ${modeloSelecionado === mod ? 'active' : ''}`}
+                    style={{ padding: '0 14px' }}
+                    onClick={() => handleSelecionarModelo(mod)}
+                  >
+                    {mod}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Seletor de Cores com Miniaturas e Bolinhas de Identificação */}
             <div className="pdp-selector-section">
               <div className="pdp-selector-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -373,8 +462,8 @@ export default function ProdutoDetalhe() {
               </div>
               <div className="pdp-color-thumbnails">
                 {coresExibicao.map((cor, idx) => {
-                  // A 1ª cor mostra a foto 1 (idx 0), a 2ª cor mostra a foto 2 (idx 1), etc.
-                  const imgMin = galeriaFotos[idx < galeriaFotos.length ? idx : 0] || galeriaFotos[0];
+                  // A 1ª cor mostra a foto 1 da aba Vitrine/Cores (idx 0), a 2ª cor mostra a foto 2 (idx 1), etc.
+                  const imgMin = fotosCores[idx < fotosCores.length ? idx : 0] || fotosCores[0];
 
                   return (
                     <button

@@ -169,6 +169,7 @@ class PedidoController extends Controller
             'valor_frete'        => ['required', 'numeric', 'min:0'],
             'metodo_pagamento'   => ['required', 'in:cartao,pix,boleto'],
             'observacoes'        => ['nullable', 'string'],
+            'cupom_codigo'       => ['nullable', 'string', 'max:50'],
             'itens'              => ['required', 'array', 'min:1'],
             'itens.*.variacao_id'=> ['nullable', 'integer', 'exists:variacaos,id'],
             'itens.*.produto_id' => ['required', 'integer', 'exists:produtos,id'],
@@ -185,6 +186,22 @@ class PedidoController extends Controller
             });
 
             $valorTotal = $subtotal + $validated['valor_frete'];
+
+            // Cupom de desconto (recalculado no servidor para evitar fraude)
+            $cupomCodigo = null;
+            $descontoCupom = 0.0;
+            if (! empty($validated['cupom_codigo'])) {
+                $cupom = \App\Models\Cupom::where('codigo', strtoupper(trim($validated['cupom_codigo'])))
+                    ->where('ativo', true)->first();
+                if ($cupom) {
+                    $descontoCupom = $cupom->calcularDesconto($validated['itens'], (float) $validated['valor_frete']);
+                    if ($descontoCupom > 0) {
+                        $cupomCodigo = $cupom->codigo;
+                        $valorTotal = max(0, $valorTotal - $descontoCupom);
+                    }
+                }
+            }
+
             if ($validated['metodo_pagamento'] === 'pix' || $validated['metodo_pagamento'] === 'boleto') {
                 $valorTotal = $valorTotal * 0.95; // 5% de desconto
             }
@@ -209,6 +226,8 @@ class PedidoController extends Controller
                 'estado'           => strtoupper($validated['estado']),
                 'valor_frete'      => $validated['valor_frete'],
                 'valor_total'      => $valorTotal,
+                'cupom_codigo'     => $cupomCodigo,
+                'valor_desconto_cupom' => $descontoCupom,
             ]);
 
             foreach ($validated['itens'] as $item) {

@@ -76,8 +76,12 @@
 }
 
 .admin-btn-sm {
-  padding: 7px 14px;
-  font-size: 12px;
+  padding: 6px 10px;
+  font-size: 11px;
+  gap: 5px;
+  width: auto;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .admin-btn:disabled {
@@ -363,7 +367,7 @@
 
 .admin-variacao-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 100px 40px;
+  grid-template-columns: 140px 115px 1fr 90px 40px;
   gap: 10px;
   align-items: end;
   padding: 14px;
@@ -373,7 +377,11 @@
   margin-bottom: 10px;
 }
 
-@media (max-width: 500px) {
+.admin-variacao-row.sem-modelo {
+  grid-template-columns: 140px 1fr 110px 40px;
+}
+
+@media (max-width: 720px) {
   .admin-variacao-row {
     grid-template-columns: 1fr 1fr;
   }

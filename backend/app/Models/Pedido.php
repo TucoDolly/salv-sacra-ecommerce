@@ -30,6 +30,8 @@ class Pedido extends Model
         'estado',
         'valor_frete',
         'valor_total',
+        'cupom_codigo',
+        'valor_desconto_cupom',
     ];
 
     protected $casts = [

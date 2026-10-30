@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getConfiguracoesAdmin, updateConfiguracoesAdmin } from '../../services/configuracaoService';
 import '../../styles/admin.css';
+import CuponsAdmin from './CuponsAdmin';
 
 export default function ConfiguracoesPage() {
   const [form, setForm] = useState({
@@ -124,6 +125,7 @@ export default function ConfiguracoesPage() {
           { id: 'loja', label: 'Identidade da Loja' },
           { id: 'frete', label: 'Frete & Banner de Topo' },
           { id: 'pagamento', label: 'Pagamentos & PIX' },
+          { id: 'cupons', label: 'Cupons de Desconto' },
           { id: 'contato', label: 'Atendimento & Contato' },
         ].map((tab) => (
           <button
@@ -151,6 +153,10 @@ export default function ConfiguracoesPage() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>
           Carregando configurações...
+        </div>
+      ) : abaAtiva === 'cupons' ? (
+        <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #eaeaea', padding: '32px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
+          <CuponsAdmin />
         </div>
       ) : (
         <form onSubmit={handleSubmit} style={{ background: '#fff', borderRadius: '12px', border: '1px solid #eaeaea', padding: '32px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>

@@ -9,6 +9,7 @@ class Variacao extends Model
 {
     protected $fillable = [
         'produto_id',
+        'modelo',
         'tamanho',
         'cor',
         'estoque',
