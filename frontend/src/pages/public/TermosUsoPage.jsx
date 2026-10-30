@@ -63,7 +63,7 @@ export default function TermosUsoPage() {
 
           <h3>8. Atendimento e Contato</h3>
           <p>
-            Caso você tenha dúvidas sobre estes Termos de Uso ou necessite de suporte com seu pedido, fale com nossa equipe através do e-mail <a href="mailto:salvsacra@gmail.com">salvsacra@gmail.com</a> ou pelo WhatsApp oficial disponibilizado em nosso rodapé.
+            Caso você tenha dúvidas sobre estes Termos de Uso ou necessite de suporte com seu pedido, fale com nossa equipe através do e-mail <a href="mailto:salvsacra2@gmail.com">salvsacra2@gmail.com</a> ou pelo WhatsApp oficial disponibilizado em nosso rodapé.
           </p>
         </div>
       </div>

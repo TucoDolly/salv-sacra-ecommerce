@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import MainLayout from '../layouts/MainLayout';
 import '../styles/auth.css';
 
-// Sem VITE_RECAPTCHA_SITE_KEY no .env usa a chave de TESTE do Google (sempre passa)
+import { reenviarValidacao } from '../services/authService';
 const SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI';
 
 /* ── Eye toggle icon ── */
@@ -78,13 +78,17 @@ export default function RegisterPage() {
     }
   };
 
-  const handleResend = () => {
+  const handleResend = async () => {
     setResending(true);
     setResendMessage('');
-    setTimeout(() => {
+    try {
+      const { data } = await reenviarValidacao({ email: registeredEmail });
+      setResendMessage(data.message || 'Link de verificação reenviado com sucesso!');
+    } catch (err) {
+      setResendMessage(err.response?.data?.message || 'Erro ao reenviar link. Tente novamente mais tarde.');
+    } finally {
       setResending(false);
-      setResendMessage('Link de verificação reenviado com sucesso!');
-    }, 1000);
+    }
   };
 
   const fieldError = (field) =>
@@ -181,6 +185,7 @@ export default function RegisterPage() {
                     type={showPass ? 'text' : 'password'}
                     name="password"
                     autoComplete="new-password"
+                    placeholder="Mínimo de 8 caracteres"
                     required
                     value={form.password}
                     onChange={handleChange}
@@ -206,6 +211,7 @@ export default function RegisterPage() {
                     type={showConf ? 'text' : 'password'}
                     name="password_confirmation"
                     autoComplete="new-password"
+                    placeholder="Repita a senha criada"
                     required
                     value={form.password_confirmation}
                     onChange={handleChange}

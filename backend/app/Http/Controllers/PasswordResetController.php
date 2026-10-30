@@ -28,11 +28,11 @@ class PasswordResetController extends Controller
         $email = trim(strtolower($request->input('email')));
         $user = User::where('email', $email)->first();
 
-        // Por segurança, respondemos sucesso mesmo se o e-mail não existir (evita enumeração)
         if (! $user) {
             return response()->json([
-                'message' => 'Se o e-mail estiver cadastrado em nossa base, enviaremos as instruções para redefinição da senha.',
-            ]);
+                'message' => 'Não encontramos nenhuma conta com este e-mail. Verifique os dados digitados ou crie uma nova conta.',
+                'nao_encontrado' => true,
+            ], 404);
         }
 
         // Gera token aleatório de 64 caracteres

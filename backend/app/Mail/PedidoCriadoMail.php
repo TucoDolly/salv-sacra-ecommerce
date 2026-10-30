@@ -2,10 +2,9 @@
 
 namespace App\Mail;
 
+use App\Models\Pedido;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -14,12 +13,17 @@ class PedidoCriadoMail extends Mailable
 {
     use Queueable, SerializesModels;
 
+    public Pedido $pedido;
+    public string $minhaContaUrl;
+
     /**
      * Create a new message instance.
      */
-    public function __construct()
+    public function __construct(Pedido $pedido)
     {
-        //
+        $this->pedido = $pedido;
+        $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
+        $this->minhaContaUrl = rtrim($frontendUrl, '/') . '/minha-conta?aba=pedidos&pedido=' . $pedido->id . '&email=' . urlencode($pedido->user?->email ?? $pedido->email_contato ?? '');
     }
 
     /**
@@ -28,7 +32,7 @@ class PedidoCriadoMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Pedido Criado Mail',
+            subject: "Pedido #{$this->pedido->id} Confirmado! - Salv Sacra",
         );
     }
 
@@ -38,14 +42,12 @@ class PedidoCriadoMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: 'view.name',
+            view: 'emails.pedido_criado',
         );
     }
 
     /**
      * Get the attachments for the message.
-     *
-     * @return array<int, Attachment>
      */
     public function attachments(): array
     {

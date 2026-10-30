@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -53,31 +54,29 @@ export default function CarrinhoDrawer() {
     subtotal,
     total,
     totalBoleto,
+    shippingOptions,
     selectedShipping,
     setSelectedShipping,
     cep,
     setCep,
+    cidadeDestino,
+    ufDestino,
+    loadingFrete,
   } = useCart();
 
-  // Opções de envio do Figma
-  const shippingOptions = [
-    {
-      id: 'sedex',
-      nome: 'Nuvem Envio Correios SEDEX',
-      prazo: 'Chega quarta 20/05',
-      preco: 12.47,
-    },
-    {
-      id: 'jadlog',
-      nome: 'Nuvem Envio - Jadlog Rápido',
-      prazo: 'Chega segunda 25/05',
-      preco: 19.74,
-    },
-  ];
+  const [editandoCep, setEditandoCep] = useState(false);
+  const [cepInput, setCepInput] = useState(cep);
 
-  const handleAlterarCep = () => {
-    const novo = prompt('Informe seu CEP:', cep);
-    if (novo) setCep(novo);
+  const handleSalvarCep = (e) => {
+    e.preventDefault();
+    const limpo = cepInput.replace(/\D/g, '');
+    if (limpo.length === 8) {
+      const formatado = `${limpo.slice(0, 5)}-${limpo.slice(5)}`;
+      setCep(formatado);
+      setEditandoCep(false);
+    } else {
+      alert('Digite um CEP válido com 8 dígitos.');
+    }
   };
 
   return (
@@ -202,15 +201,46 @@ export default function CarrinhoDrawer() {
               </div>
 
               {/* Seção de CEP */}
-              <div className="cart-cep-header">
-                <span>Entregas para o CEP: <strong>{cep}</strong></span>
-                <button
-                  type="button"
-                  className="cart-change-cep-btn"
-                  onClick={handleAlterarCep}
-                >
-                  ALTERAR CEP
-                </button>
+              <div className="cart-cep-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>
+                    Entregas para: <strong>{cep}</strong>
+                    {cidadeDestino && <span style={{ color: '#666', fontSize: '12px' }}> ({cidadeDestino}/{ufDestino})</span>}
+                  </span>
+                  <button
+                    type="button"
+                    className="cart-change-cep-btn"
+                    onClick={() => {
+                      setCepInput(cep);
+                      setEditandoCep(!editandoCep);
+                    }}
+                  >
+                    {editandoCep ? 'CANCELAR' : 'ALTERAR CEP'}
+                  </button>
+                </div>
+
+                {editandoCep && (
+                  <form onSubmit={handleSalvarCep} style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                    <input
+                      type="text"
+                      value={cepInput}
+                      onChange={(e) => {
+                        let v = e.target.value.replace(/\D/g, '').slice(0, 8);
+                        if (v.length > 5) v = `${v.slice(0, 5)}-${v.slice(5)}`;
+                        setCepInput(v);
+                      }}
+                      placeholder="00000-000"
+                      style={{ flex: 1, padding: '8px 10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px' }}
+                      autoFocus
+                    />
+                    <button
+                      type="submit"
+                      style={{ background: '#111', color: '#fff', border: 'none', borderRadius: '4px', padding: '0 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      CALCULAR
+                    </button>
+                  </form>
+                )}
               </div>
 
               {/* Alerta de Prioridade Laranja */}
@@ -225,7 +255,7 @@ export default function CarrinhoDrawer() {
               <div className="cart-shipping-section">
                 <div className="cart-shipping-title">
                   <IconTruck />
-                  <span>Envio a domicílio</span>
+                  <span>Envio a domicílio {loadingFrete && <small style={{ fontWeight: 400, color: '#888' }}>(calculando...)</small>}</span>
                 </div>
 
                 <div className="cart-shipping-options">
@@ -248,8 +278,8 @@ export default function CarrinhoDrawer() {
                             </span>
                           </div>
                         </div>
-                        <span className="cart-shipping-price">
-                          R${opt.preco.toFixed(2).replace('.', ',')}
+                        <span className="cart-shipping-price" style={{ color: opt.preco === 0 ? '#1e8449' : 'inherit' }}>
+                          {opt.preco === 0 ? 'GRÁTIS' : `R$ ${Number(opt.preco).toFixed(2).replace('.', ',')}`}
                         </span>
                       </div>
                     );

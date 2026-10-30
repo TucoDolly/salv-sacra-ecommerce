@@ -234,7 +234,7 @@ function SiteFooter({ configs }) {
           </div>
           <div className="contact-item">
             <IconMail />
-            <a href={`mailto:${configs.contato_email || 'salvsacra@gmail.com'}`}>{configs.contato_email || 'salvsacra@gmail.com'}</a>
+            <a href={`mailto:${configs.contato_email || 'salvsacra2@gmail.com'}`}>{configs.contato_email || 'salvsacra2@gmail.com'}</a>
           </div>
           <div className="contact-item">
             <IconMapPin />

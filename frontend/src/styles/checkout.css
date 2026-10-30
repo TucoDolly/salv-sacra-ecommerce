@@ -725,6 +725,20 @@
   text-align: center;
 }
 
+.pix-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d97706;
+  display: inline-block;
+  animation: pixPulse 1.4s infinite ease-in-out;
+}
+
+@keyframes pixPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: 0.45; }
+}
+
 /* ── Responsivo ── */
 @media (max-width: 860px) {
   .checkout-grid {

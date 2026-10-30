@@ -23,7 +23,7 @@ export default function PoliticaPrivacidadePage() {
           </div>
 
           <p>
-            Esta Política de Privacidade fornece uma visão geral de nossas práticas de privacidade e das escolhas que você pode fazer, bem como direitos que você pode exercer em relação aos Dados Pessoais tratados por nós. Se você tiver alguma dúvida sobre o uso de Dados Pessoais, entre em contato com <a href="mailto:salvsacra@gmail.com">salvsacra@gmail.com</a>.
+            Esta Política de Privacidade fornece uma visão geral de nossas práticas de privacidade e das escolhas que você pode fazer, bem como direitos que você pode exercer em relação aos Dados Pessoais tratados por nós. Se você tiver alguma dúvida sobre o uso de Dados Pessoais, entre em contato com <a href="mailto:salvsacra2@gmail.com">salvsacra2@gmail.com</a>.
           </p>
 
           <p>
@@ -144,7 +144,7 @@ export default function PoliticaPrivacidadePage() {
 
           <h3>Pessoa responsável do tratamento dos Dados Pessoais</h3>
           <p>
-            Caso pretenda exercer qualquer um dos direitos previstos nesta Política de Privacidade e/ou nas Leis de Proteção de Dados, ou resolver quaisquer dúvidas relacionadas ao Tratamento de seus Dados Pessoais, favor contatar-nos através do e-mail: <a href="mailto:salvsacra@gmail.com">salvsacra@gmail.com</a>.
+            Caso pretenda exercer qualquer um dos direitos previstos nesta Política de Privacidade e/ou nas Leis de Proteção de Dados, ou resolver quaisquer dúvidas relacionadas ao Tratamento de seus Dados Pessoais, favor contatar-nos através do e-mail: <a href="mailto:salvsacra2@gmail.com">salvsacra2@gmail.com</a>.
           </p>
         </div>
       </div>

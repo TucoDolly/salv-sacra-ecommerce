@@ -514,12 +514,14 @@
   letter-spacing: 0.04em;
 }
 
-.admin-status-badge.pendente    { background: #fff4d6; color: #8a6d00; }
-.admin-status-badge.pago        { background: #dff3e4; color: #1e7a3c; }
-.admin-status-badge.em-montagem { background: #e8eaf6; color: #283593; }
-.admin-status-badge.enviado     { background: #dcecfb; color: #1b5fa6; }
-.admin-status-badge.entregue    { background: #dff3e4; color: #1e7a3c; }
-.admin-status-badge.cancelado   { background: #fdecea; color: #c0392b; }
+.admin-status-badge.pendente      { background: #fff4d6; color: #8a6d00; }
+.admin-status-badge.pago          { background: #dff3e4; color: #1e7a3c; }
+.admin-status-badge.em-separacao  { background: #e8eaf6; color: #283593; }
+.admin-status-badge.em-montagem   { background: #e8eaf6; color: #283593; }
+.admin-status-badge.enviado       { background: #dcecfb; color: #1b5fa6; }
+.admin-status-badge.em-transporte { background: #e0f2fe; color: #0369a1; }
+.admin-status-badge.entregue      { background: #dff3e4; color: #1e7a3c; }
+.admin-status-badge.cancelado     { background: #fdecea; color: #c0392b; }
 
 .admin-status-select {
   padding: 6px 10px;

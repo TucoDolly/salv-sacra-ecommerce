@@ -48,7 +48,7 @@ export default function ContatoPage() {
             <ul>
               <li><span>📱</span> 5548996205153</li>
               <li><span>📞</span> 48996205153</li>
-              <li><span>✉️</span> salvsacra@gmail.com</li>
+              <li><span>✉️</span> salvsacra2@gmail.com</li>
               <li><span>📍</span> Rua Manoel Antunes Corrêa, 2171</li>
             </ul>
           </div>

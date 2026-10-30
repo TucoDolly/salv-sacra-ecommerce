@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import MainLayout from '../layouts/MainLayout';
 import {
@@ -40,8 +40,10 @@ const dataBR = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '—');
 const STATUS_CLASS = {
   Pendente: 'pendente',
   Pago: 'pago',
-  'Em montagem': 'pendente',
+  'Em separação': 'em-separacao',
+  'Em montagem': 'em-separacao',
   Enviado: 'enviado',
+  'Em transporte': 'em-transporte',
   Entregue: 'entregue',
   Cancelado: 'cancelado',
 };
@@ -61,12 +63,13 @@ const calcularPrevisaoEntrega = (dataPedido, tipoFrete) => {
 };
 
 // Determina em qual etapa da linha do tempo o pedido se encontra
-// 1: Pedido Realizado, 2: Pagamento confirmado, 3: Em montagem, 4: Em transporte, 5: Entregue
+// 1: Pendente (Pedido Realizado), 2: Pago, 3: Em separação, 4: Enviado, 5: Em transporte, 6: Entregue
 const obterEtapaRastreio = (status) => {
   const s = (status || '').toLowerCase();
-  if (s === 'entregue') return 5;
-  if (s === 'enviado' || s === 'em transporte') return 4;
-  if (s === 'em montagem') return 3;
+  if (s === 'entregue') return 6;
+  if (s === 'em transporte') return 5;
+  if (s === 'enviado') return 4;
+  if (s === 'em separação' || s === 'em separacao' || s === 'em montagem') return 3;
   if (s === 'pago') return 2;
   return 1; // Pendente ou Criado
 };
@@ -138,8 +141,14 @@ function Resumo({ user, pedidos, enderecos, cartoes, resumo, irPara, carregando 
 }
 
 /* ───────────────────────── Pedidos ───────────────────────── */
-function Pedidos({ pedidos }) {
-  const [aberto, setAberto] = useState(null);
+function Pedidos({ pedidos, pedidoSelecionadoInicial }) {
+  const [aberto, setAberto] = useState(pedidoSelecionadoInicial ? Number(pedidoSelecionadoInicial) : null);
+
+  useEffect(() => {
+    if (pedidoSelecionadoInicial) {
+      setAberto(Number(pedidoSelecionadoInicial));
+    }
+  }, [pedidoSelecionadoInicial]);
 
   if (!pedidos.length) {
     return (
@@ -191,7 +200,9 @@ function Pedidos({ pedidos }) {
                     </div>
                     <div>
                       <span className="conta-codigo-rastreio" title="Código de rastreamento">
-                        Rastreio: BR{String(p.id).padStart(6, '0')}SS
+                        {p.codigo_rastreio
+                          ? `Rastreio: ${p.codigo_rastreio}`
+                          : 'Rastreio: Aguardando postagem'}
                       </span>
                     </div>
                   </div>
@@ -200,18 +211,19 @@ function Pedidos({ pedidos }) {
                   {(() => {
                     const etapaAtual = obterEtapaRastreio(p.status);
                     const steps = [
-                      { num: 1, label: 'Pedido Realizado', sub: dataBR(p.data_pedido) },
-                      { num: 2, label: 'Pagamento confirmado', sub: etapaAtual >= 2 ? 'Aprovado' : 'Aguardando' },
-                      { num: 3, label: 'Em montagem / Separação', sub: etapaAtual >= 3 ? 'Concluído' : (etapaAtual === 2 ? 'Em andamento' : 'Pendente') },
-                      { num: 4, label: 'Em transporte', sub: etapaAtual >= 4 ? 'A caminho' : 'Pendente' },
-                      { num: 5, label: 'Entregue', sub: etapaAtual >= 5 ? 'Pacote recebido' : 'Pendente' },
+                      { num: 1, label: 'Pendente', sub: dataBR(p.data_pedido) },
+                      { num: 2, label: 'Pago', sub: etapaAtual >= 2 ? 'Confirmado' : 'Aguardando' },
+                      { num: 3, label: 'Em separação', sub: etapaAtual > 3 ? 'Concluído' : (etapaAtual === 3 ? 'Separando peças' : 'Pendente') },
+                      { num: 4, label: 'Enviado', sub: etapaAtual >= 4 ? 'Postado na agência' : 'Pendente' },
+                      { num: 5, label: 'Em transporte', sub: etapaAtual >= 5 ? 'A caminho' : 'Pendente' },
+                      { num: 6, label: 'Entregue', sub: etapaAtual >= 6 ? 'Pacote recebido' : 'Pendente' },
                     ];
 
                     return (
                       <div className="conta-timeline">
                         {steps.map((st) => {
-                          const isCompleted = etapaAtual > st.num || (etapaAtual === 5 && st.num === 5);
-                          const isActive = etapaAtual === st.num && etapaAtual !== 5;
+                          const isCompleted = etapaAtual > st.num || (etapaAtual === 6 && st.num === 6);
+                          const isActive = etapaAtual === st.num && etapaAtual !== 6;
                           return (
                             <div
                               key={st.num}
@@ -710,16 +722,48 @@ function Senha() {
           <p className={msg.tipo === 'ok' ? 'conta-ok' : 'auth-error'}>{msg.texto}</p>
         )}
         <div className="auth-field">
-          <label htmlFor="s-atual">Senha atual</label>
-          <input id="s-atual" type="password" name="senha_atual" value={form.senha_atual} onChange={change} required />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <label htmlFor="s-atual">Senha atual</label>
+            <Link
+              to="/esqueci-minha-senha"
+              style={{ fontSize: '13px', color: '#111111', textDecoration: 'underline', marginBottom: '6px' }}
+            >
+              Esqueceu a senha atual?
+            </Link>
+          </div>
+          <input
+            id="s-atual"
+            type="password"
+            name="senha_atual"
+            placeholder="Digite sua senha atual"
+            value={form.senha_atual}
+            onChange={change}
+            required
+          />
         </div>
         <div className="auth-field">
           <label htmlFor="s-nova">Nova senha</label>
-          <input id="s-nova" type="password" name="password" value={form.password} onChange={change} required />
+          <input
+            id="s-nova"
+            type="password"
+            name="password"
+            placeholder="Mínimo de 8 caracteres"
+            value={form.password}
+            onChange={change}
+            required
+          />
         </div>
         <div className="auth-field">
           <label htmlFor="s-conf">Confirmar nova senha</label>
-          <input id="s-conf" type="password" name="password_confirmation" value={form.password_confirmation} onChange={change} required />
+          <input
+            id="s-conf"
+            type="password"
+            name="password_confirmation"
+            placeholder="Repita a nova senha"
+            value={form.password_confirmation}
+            onChange={change}
+            required
+          />
         </div>
         <button type="submit" className="auth-btn" disabled={salvando}>
           {salvando ? 'Salvando...' : 'Alterar senha'}
@@ -733,10 +777,31 @@ function Senha() {
 export default function MinhaContaPage() {
   const { user, isAuthenticated, loading, signOut, updateUser } = useAuth();
   const navigate = useNavigate();
-  const [aba, setAba] = useState('resumo');
+  const [searchParams] = useSearchParams();
+  const urlAba = searchParams.get('aba');
+  const urlPedido = searchParams.get('pedido');
+  const urlEmail = searchParams.get('email');
+
+  const [aba, setAba] = useState(() => (urlAba && TABS.some((t) => t.id === urlAba) ? urlAba : 'resumo'));
   const [pedidos, setPedidos] = useState([]);
   const [enderecos, setEnderecos] = useState([]);
   const [cartoes, setCartoes] = useState([]);
+
+  // Se o link do e-mail veio para outra conta e a conta atual não bate, desloga para que o usuário logue na conta correta
+  useEffect(() => {
+    if (isAuthenticated && urlEmail && user?.email && urlEmail.toLowerCase() !== user.email.toLowerCase()) {
+      signOut().then(() => {
+        navigate(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      });
+    }
+  }, [isAuthenticated, urlEmail, user, signOut, navigate]);
+
+  // Se a URL mudar de aba (ex: vindo de um link externo /minha-conta?aba=pedidos)
+  useEffect(() => {
+    if (urlAba && TABS.some((t) => t.id === urlAba)) {
+      setAba(urlAba);
+    }
+  }, [urlAba]);
 
   // Lê do cache local imediatamente para os números já aparecerem na tela no milissegundo 0
   const [resumo, setResumo] = useState(() => {
@@ -826,7 +891,7 @@ export default function MinhaContaPage() {
                 carregando={carregandoDados}
               />
             )}
-            {aba === 'pedidos' && <Pedidos pedidos={pedidos} />}
+            {aba === 'pedidos' && <Pedidos pedidos={pedidos} pedidoSelecionadoInicial={urlPedido} />}
             {aba === 'dados' && <DadosPessoais user={user} onSalvo={updateUser} />}
             {aba === 'enderecos' && (
               <Enderecos

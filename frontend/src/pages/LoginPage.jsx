@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import MainLayout from '../layouts/MainLayout';
 import '../styles/auth.css';
@@ -27,8 +27,9 @@ const BREADCRUMBS = [
 export default function LoginPage() {
   const { signIn } = useAuth();
   const navigate   = useNavigate();
+  const [searchParams] = useSearchParams();
   const location   = useLocation();
-  const from       = location.state?.from;
+  const from       = location.state?.from || searchParams.get('redirect');
 
   // ── estado (lógica intacta) ──────────────────────────────
   const [form, setForm]         = useState({ email: '', password: '' });
@@ -49,7 +50,7 @@ export default function LoginPage() {
       if (data?.user?.papel === 'admin') {
         navigate('/admin');
       } else {
-        navigate(from || '/');
+        navigate(from || '/minha-conta');
       }
     } catch (err) {
       const msg =

@@ -204,7 +204,7 @@ export default function ProdutoDetalhe() {
     }
   };
 
-  const { addItem } = useCart();
+  const { addItem, setCep: setGlobalCep } = useCart();
 
   const handleComprar = () => {
     const estoqueDisponivel = getEstoqueTamanho(tamanhoSelecionado);
@@ -224,20 +224,40 @@ export default function ProdutoDetalhe() {
     });
   };
 
-  const handleSimularFrete = (e) => {
+  const handleSimularFrete = async (e) => {
     e.preventDefault();
-    if (!cep || cep.replace(/\D/g, '').length < 8) {
+    const limpo = (cep || '').replace(/\D/g, '');
+    if (limpo.length !== 8) {
       alert('Digite um CEP válido com 8 dígitos.');
       return;
     }
     setCalculandoFrete(true);
-    setTimeout(() => {
+    setFreteResultado(null);
+    try {
+      const { data } = await api.post('/frete/calcular', {
+        cep: limpo,
+        subtotal: Number(produto.preco_base || 79.9) * quantidade,
+        quantidade: quantidade,
+      });
+
+      const formatado = `${limpo.slice(0, 5)}-${limpo.slice(5)}`;
+      setCep(formatado);
+      setGlobalCep(formatado); // Sincroniza com o carrinho e checkout
+
+      setFreteResultado({
+        local: data.cidade ? `${data.cidade}/${data.uf}` : '',
+        opcoes: (data.opcoes || []).map((o) => ({
+          tipo: o.nome,
+          prazo: o.prazo,
+          valor: o.preco === 0 ? 'GRÁTIS' : o.preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          gratis: o.preco === 0,
+        })),
+      });
+    } catch (err) {
+      alert(err.response?.data?.message || 'Não foi possível calcular o frete para este CEP.');
+    } finally {
       setCalculandoFrete(false);
-      setFreteResultado([
-        { tipo: 'PAC', prazo: '5 a 8 dias úteis', valor: 'R$ 18,90' },
-        { tipo: 'SEDEX', prazo: '2 a 3 dias úteis', valor: 'R$ 32,50' },
-      ]);
-    }, 500);
+    }
   };
 
   return (
@@ -453,14 +473,18 @@ export default function ProdutoDetalhe() {
               <form onSubmit={handleSimularFrete} className="pdp-shipping-inline-form">
                 <input
                   type="text"
-                  placeholder="Seu CEP"
+                  placeholder="00000-000"
                   maxLength="9"
                   value={cep}
-                  onChange={(e) => setCep(e.target.value)}
+                  onChange={(e) => {
+                    let v = e.target.value.replace(/\D/g, '').slice(0, 8);
+                    if (v.length > 5) v = `${v.slice(0, 5)}-${v.slice(5)}`;
+                    setCep(v);
+                  }}
                   className="pdp-cep-input"
                 />
-                <button type="submit" className="pdp-cep-calc-btn">
-                  {calculandoFrete ? '...' : 'CALCULAR'}
+                <button type="submit" className="pdp-cep-calc-btn" disabled={calculandoFrete}>
+                  {calculandoFrete ? 'CALCULANDO...' : 'CALCULAR'}
                 </button>
               </form>
               <button
@@ -472,11 +496,19 @@ export default function ProdutoDetalhe() {
               </button>
 
               {freteResultado && (
-                <div style={{ marginTop: '10px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {freteResultado.map((f, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#fff', borderRadius: '4px' }}>
-                      <span><strong>{f.tipo}</strong> ({f.prazo})</span>
-                      <span style={{ fontWeight: 'bold' }}>{f.valor}</span>
+                <div style={{ marginTop: '12px', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {freteResultado.local && (
+                    <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px' }}>
+                      📍 Destino: <strong>{freteResultado.local}</strong>
+                    </div>
+                  )}
+                  {freteResultado.opcoes?.map((f, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#fff', border: '1px solid #e9ecef', borderRadius: '4px' }}>
+                      <div>
+                        <div style={{ fontWeight: 700, color: '#111' }}>{f.tipo}</div>
+                        <div style={{ fontSize: '11px', color: '#666' }}>{f.prazo}</div>
+                      </div>
+                      <span style={{ fontWeight: 700, color: f.gratis ? '#1e8449' : '#111', fontSize: '13px' }}>{f.valor}</span>
                     </div>
                   ))}
                 </div>

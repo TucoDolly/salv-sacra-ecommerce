@@ -37,6 +37,14 @@ class ContatoController extends Controller
         unset($dados['recaptcha']);
         Log::info('Nova mensagem de contato', $dados);
 
+        // Envia cópia da mensagem para o e-mail da loja
+        try {
+            $destinatarioAdmin = env('MAIL_FROM_ADDRESS', 'salvsacra2@gmail.com');
+            \Illuminate\Support\Facades\Mail::to($destinatarioAdmin)->send(new \App\Mail\ContatoMail($dados));
+        } catch (\Throwable $e) {
+            Log::error('Erro ao enviar e-mail de contato: ' . $e->getMessage());
+        }
+
         return response()->json(['message' => 'Mensagem enviada com sucesso.']);
     }
 }

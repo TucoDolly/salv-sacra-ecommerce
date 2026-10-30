@@ -3,9 +3,7 @@
 namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -14,12 +12,19 @@ class RecuperarSenhaMail extends Mailable
 {
     use Queueable, SerializesModels;
 
+    public string $token;
+    public string $email;
+    public string $resetUrl;
+
     /**
      * Create a new message instance.
      */
-    public function __construct()
+    public function __construct(string $token, string $email)
     {
-        //
+        $this->token = $token;
+        $this->email = $email;
+        $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
+        $this->resetUrl = rtrim($frontendUrl, '/') . '/redefinir-senha?token=' . urlencode($token) . '&email=' . urlencode($email);
     }
 
     /**
@@ -28,7 +33,7 @@ class RecuperarSenhaMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Recuperar Senha Mail',
+            subject: 'Recuperação de Senha - Salv Sacra',
         );
     }
 
@@ -38,14 +43,12 @@ class RecuperarSenhaMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: 'view.name',
+            view: 'emails.recuperar_senha',
         );
     }
 
     /**
      * Get the attachments for the message.
-     *
-     * @return array<int, Attachment>
      */
     public function attachments(): array
     {

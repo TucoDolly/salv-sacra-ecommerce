@@ -6,7 +6,7 @@ import api from '../../services/api';
 import logoImg from '../../assets/logo.webp';
 import '../../styles/checkout.css';
 
-import { listarEnderecos, listarCartoes } from '../../services/contaService';
+import { listarEnderecos, listarCartoes, obterUltimoEndereco } from '../../services/contaService';
 
 // Ícones SVG inline
 const IconShieldCheck = () => (
@@ -80,7 +80,17 @@ const IconBarcode = () => (
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { user, isAuthenticated, loading: authLoading } = useAuth();
-  const { items, subtotal, selectedShipping, setSelectedShipping, openCart, clearCart } = useCart();
+  const {
+    items,
+    subtotal,
+    shippingOptions: opcoesFreteContext,
+    selectedShipping,
+    setSelectedShipping,
+    setCep: setGlobalCep,
+    loadingFrete,
+    openCart,
+    clearCart,
+  } = useCart();
 
   // Etapa atual do checkout: 'entrega' | 'pagamento'
   const [etapa, setEtapa] = useState('entrega');
@@ -107,19 +117,19 @@ export default function CheckoutPage() {
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [observacoes, setObservacoes] = useState('');
 
-  // Opções de envio disponíveis
-  const opcoesFrete = [
+  // Opções de envio dinâmicas calculadas pela API / CartContext
+  const opcoesFrete = opcoesFreteContext && opcoesFreteContext.length > 0 ? opcoesFreteContext : [
     {
       id: 'sedex',
-      nome: 'Nuvem Envio Correios SEDEX',
-      prazo: 'Chega terça-feira 12/05',
+      nome: 'Correios SEDEX',
+      prazo: 'Chega em 1 dia útil',
       preco: 12.47,
     },
     {
       id: 'jadlog',
-      nome: 'Nuvem Envio - Jadlog Rápido',
-      prazo: 'Chega segunda 18/05',
-      preco: 19.74,
+      nome: 'Transportadora Jadlog Rápido',
+      prazo: 'Chega em 2 dias úteis',
+      preco: 14.90,
     },
   ];
 
@@ -134,6 +144,65 @@ export default function CheckoutPage() {
 
   const [loading, setLoading] = useState(false);
   const [pedidoConcluido, setPedidoConcluido] = useState(null);
+  const [copiadoPix, setCopiadoPix] = useState(false);
+  const [tempoRestantePix, setTempoRestantePix] = useState(1800); // 30 minutos em segundos
+  const [confirmandoPagamento, setConfirmandoPagamento] = useState(false);
+
+  // Polling automático para verificar se o pagamento PIX/Boleto foi aprovado (no Mercado Pago ou pelo Admin)
+  useEffect(() => {
+    if (!pedidoConcluido || pedidoConcluido.status !== 'Pendente') return;
+
+    const timerPolling = setInterval(async () => {
+      try {
+        const { data } = await api.get(`/pedidos/${pedidoConcluido.id}`);
+        if (data && data.status && data.status !== 'Pendente') {
+          setPedidoConcluido(data);
+        }
+      } catch {
+        // Silencioso durante o polling
+      }
+    }, 3500);
+
+    return () => clearInterval(timerPolling);
+  }, [pedidoConcluido]);
+
+  // Cronômetro regressivo de 30 minutos para a tela de Aguardando Pagamento PIX
+  useEffect(() => {
+    if (!pedidoConcluido || pedidoConcluido.status !== 'Pendente' || metodoPagamento !== 'pix') return;
+
+    const timerCountdown = setInterval(() => {
+      setTempoRestantePix((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(timerCountdown);
+  }, [pedidoConcluido, metodoPagamento]);
+
+  const formatarCronometro = (segundos) => {
+    const min = String(Math.floor(segundos / 60)).padStart(2, '0');
+    const sec = String(segundos % 60).padStart(2, '0');
+    return `${min}:${sec}`;
+  };
+
+  const handleCopiarPix = (codigo) => {
+    navigator.clipboard.writeText(codigo);
+    setCopiadoPix(true);
+    setTimeout(() => setCopiadoPix(false), 3000);
+  };
+
+  const handleConfirmarPagamentoSimulado = async () => {
+    if (!pedidoConcluido) return;
+    setConfirmandoPagamento(true);
+    try {
+      const { data } = await api.post(`/pedidos/${pedidoConcluido.id}/confirmar-pagamento`);
+      if (data?.pedido) {
+        setPedidoConcluido(data.pedido);
+      }
+    } catch {
+      alert('Não foi possível confirmar o pagamento no momento.');
+    } finally {
+      setConfirmandoPagamento(false);
+    }
+  };
 
   // Carregar dados de perfil, endereços e cartões salvos
   useEffect(() => {
@@ -161,6 +230,37 @@ export default function CheckoutPage() {
               cidade: end.cidade || '',
               estado: end.estado || '',
             });
+            // Caso o cliente ainda não tenha telefone cadastrado no perfil, preenche com o da última compra
+            if (!user?.telefone) {
+              obterUltimoEndereco()
+                .then((resp) => {
+                  if (resp.data?.telefone) {
+                    setTelefone((prev) => prev || resp.data.telefone);
+                  }
+                })
+                .catch(() => {});
+            }
+          } else {
+            // Se o usuário não tem endereço salvo, busca o último endereço utilizado em pedidos anteriores
+            obterUltimoEndereco()
+              .then((resp) => {
+                if (resp.data) {
+                  const uEnd = resp.data;
+                  setEndereco({
+                    cep: uEnd.cep || '',
+                    logradouro: uEnd.logradouro || '',
+                    numero: uEnd.numero || '',
+                    complemento: uEnd.complemento || '',
+                    bairro: uEnd.bairro || '',
+                    cidade: uEnd.cidade || '',
+                    estado: uEnd.estado || '',
+                  });
+                  if (uEnd.telefone) {
+                    setTelefone((prev) => prev || uEnd.telefone);
+                  }
+                }
+              })
+              .catch(() => {});
           }
         })
         .catch(() => {});
@@ -199,10 +299,19 @@ export default function CheckoutPage() {
   const descontoBoletoPix = (metodoPagamento === 'pix' || metodoPagamento === 'boleto') ? totalBase * 0.05 : 0;
   const totalFinal = totalBase - descontoBoletoPix;
 
+  // Sincroniza o CEP do endereço do Checkout com o motor de cálculo de frete
+  useEffect(() => {
+    const cepLimpo = (endereco.cep || '').replace(/\D/g, '');
+    if (cepLimpo.length === 8) {
+      setGlobalCep(`${cepLimpo.slice(0, 5)}-${cepLimpo.slice(5)}`);
+    }
+  }, [endereco.cep, setGlobalCep]);
+
   // Busca automática do CEP via ViaCEP
   const handleCepBlur = async (e) => {
     const cepLimpo = e.target.value.replace(/\D/g, '');
     if (cepLimpo.length === 8) {
+      setGlobalCep(`${cepLimpo.slice(0, 5)}-${cepLimpo.slice(5)}`);
       setBuscandoCep(true);
       try {
         const res = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
@@ -302,8 +411,17 @@ export default function CheckoutPage() {
 
   if (authLoading || !isAuthenticated) return null;
 
-  // Sucesso
+  // Fluxo Pós-Finalização: Aguardando Pagamento (PIX/Boleto) vs. Pedido Confirmado
   if (pedidoConcluido) {
+    const aguardandoPix = metodoPagamento === 'pix' && pedidoConcluido.status === 'Pendente';
+    const aguardandoBoleto = metodoPagamento === 'boleto' && pedidoConcluido.status === 'Pendente';
+    const codigoPix =
+      pedidoConcluido.pix_copia_e_cola ||
+      `00020126580014br.gov.bcb.pix0120salvsacra2@gmail.com5204000053039865405${Number(pedidoConcluido.valor_total || totalFinal).toFixed(2)}5802BR5910SALV SACRA6007TUBARAO62140510PEDIDO${String(pedidoConcluido.id).padStart(4, '0')}6304B14F`;
+    const qrCodeUrl =
+      pedidoConcluido.pix_qr_code_base64 ||
+      `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodeURIComponent(codigoPix)}`;
+
     return (
       <div className="checkout-page">
         <header className="checkout-header">
@@ -318,41 +436,271 @@ export default function CheckoutPage() {
           </div>
         </header>
 
-        <div className="checkout-success-wrap">
-          <div className="checkout-success-icon">✓</div>
-          <h2>Pedido Realizado com Sucesso!</h2>
-          <p style={{ marginTop: '8px', color: '#666' }}>
-            Número do Pedido: <strong>#{pedidoConcluido.id}</strong>
-          </p>
-          <p style={{ fontSize: '13px', color: '#888', marginTop: '4px' }}>
-            Enviamos a confirmação para <strong>{pedidoConcluido.email_contato || email}</strong>
-          </p>
+        {/* ── TELA 1: AGUARDANDO PAGAMENTO PIX ── */}
+        {aguardandoPix ? (
+          <div className="checkout-success-wrap" style={{ maxWidth: '560px' }}>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: '#fff8e6',
+                color: '#b45309',
+                border: '1px solid #fde68a',
+                padding: '6px 16px',
+                borderRadius: '999px',
+                fontSize: '12px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                marginBottom: '14px',
+              }}
+            >
+              <span className="pix-pulse-dot" />
+              Aguardando Pagamento · Expira em {formatarCronometro(tempoRestantePix)}
+            </div>
 
-          {metodoPagamento === 'pix' && (
-            <div className="checkout-pix-box">
-              <h4 style={{ color: '#c4953a', marginBottom: '8px' }}>Chave PIX Copia e Cola</h4>
-              <code style={{ fontSize: '12px', background: '#fff', padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px', display: 'block', wordBreak: 'break-all' }}>
-                00020126580014br.gov.bcb.pix0136salvsacra-pix-demo-{pedidoConcluido.id}5204000053039865802BR5925SALV SACRA ECOMMERCE6009TUBARAO62070503***6304E2D1
+            <h2 style={{ fontSize: '24px', fontWeight: 800, color: '#111', margin: '0 0 6px' }}>
+              Escaneie o QR Code para pagar
+            </h2>
+            <p style={{ fontSize: '14px', color: '#666', margin: '0 0 18px' }}>
+              Pedido <strong>#{pedidoConcluido.id}</strong> · Valor com 5% de desconto:{' '}
+              <strong style={{ color: '#111', fontSize: '16px' }}>
+                R$ {Number(pedidoConcluido.valor_total || totalFinal).toFixed(2).replace('.', ',')}
+              </strong>
+            </p>
+
+            {/* QR Code PIX */}
+            <div
+              style={{
+                background: '#fff',
+                border: '2px solid #111',
+                borderRadius: '12px',
+                padding: '16px',
+                display: 'inline-block',
+                boxShadow: '0 6px 18px rgba(0,0,0,0.06)',
+                marginBottom: '18px',
+              }}
+            >
+              <img
+                src={qrCodeUrl}
+                alt="QR Code PIX Salv Sacra"
+                style={{ width: '210px', height: '210px', display: 'block' }}
+              />
+            </div>
+
+            {/* Chave PIX Copia e Cola */}
+            <div className="checkout-pix-box" style={{ marginTop: '0', textAlign: 'left' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <h4 style={{ color: '#926c15', margin: 0, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  PIX Copia e Cola
+                </h4>
+                <span style={{ fontSize: '11px', color: '#777' }}>Abra o app do seu banco e cole o código</span>
+              </div>
+
+              <code
+                style={{
+                  fontSize: '11px',
+                  background: '#fff',
+                  padding: '10px 12px',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  display: 'block',
+                  wordBreak: 'break-all',
+                  color: '#333',
+                  marginBottom: '10px',
+                }}
+              >
+                {codigoPix}
               </code>
-              <p style={{ fontSize: '11px', color: '#666', marginTop: '8px' }}>
-                Abra seu banco e pague com desconto: <strong>R$ {totalFinal.toFixed(2).replace('.', ',')}</strong>
+
+              <button
+                type="button"
+                onClick={() => handleCopiarPix(codigoPix)}
+                style={{
+                  width: '100%',
+                  padding: '11px 16px',
+                  background: copiadoPix ? '#15803d' : '#111',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s',
+                }}
+              >
+                {copiadoPix ? '✓ Código PIX Copiado!' : '📋 Copiar Código PIX'}
+              </button>
+            </div>
+
+            <div
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                fontSize: '12px',
+                color: '#475569',
+                lineHeight: 1.5,
+                marginTop: '16px',
+              }}
+            >
+              🔄 <strong>Atualização automática:</strong> Assim que você concluir o pagamento no aplicativo do seu banco, esta tela confirmará o seu pedido automaticamente em poucos segundos.
+            </div>
+
+            {/* Botão para confirmar/simular o pagamento em ambiente de apresentação/testes */}
+            <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px dashed #e5e7eb' }}>
+              <button
+                type="button"
+                onClick={handleConfirmarPagamentoSimulado}
+                disabled={confirmandoPagamento}
+                style={{
+                  width: '100%',
+                  padding: '12px 18px',
+                  background: '#f0fdf4',
+                  color: '#166534',
+                  border: '1.5px solid #86efac',
+                  borderRadius: '8px',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                }}
+              >
+                {confirmandoPagamento
+                  ? 'Verificando pagamento...'
+                  : '✓ Já realizei o pagamento / Confirmar PIX agora'}
+              </button>
+            </div>
+          </div>
+        ) : aguardandoBoleto ? (
+          /* ── TELA 2: AGUARDANDO PAGAMENTO BOLETO ── */
+          <div className="checkout-success-wrap" style={{ maxWidth: '560px' }}>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: '#fff8e6',
+                color: '#b45309',
+                border: '1px solid #fde68a',
+                padding: '6px 16px',
+                borderRadius: '999px',
+                fontSize: '12px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                marginBottom: '14px',
+              }}
+            >
+              Aguardando Compensação do Boleto
+            </div>
+
+            <h2>Boleto Gerado — Pedido #{pedidoConcluido.id}</h2>
+            <p style={{ fontSize: '13px', color: '#666', marginTop: '6px' }}>
+              Enviamos uma cópia do boleto para <strong>{pedidoConcluido.email_contato || email}</strong>
+            </p>
+
+            <div className="checkout-pix-box">
+              <h4 style={{ color: '#c4953a', marginBottom: '8px' }}>Linha Digitável do Boleto</h4>
+              <code style={{ fontSize: '13px', background: '#fff', padding: '10px 12px', border: '1px solid #ddd', borderRadius: '4px', display: 'block', fontWeight: 700 }}>
+                34191.79001 01043.510047 91020.150008 8 98450000009237
+              </code>
+              <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
+                Valor com 5% de desconto: <strong>R$ {Number(pedidoConcluido.valor_total || totalFinal).toFixed(2).replace('.', ',')}</strong>
               </p>
             </div>
-          )}
 
-          {metodoPagamento === 'boleto' && (
-            <div className="checkout-pix-box">
-              <h4 style={{ color: '#c4953a', marginBottom: '8px' }}>Boleto Bancário Gerado</h4>
-              <p style={{ fontSize: '12px', color: '#444' }}>Linha digitável: <strong>34191.79001 01043.510047 91020.150008 8 98450000009237</strong></p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '24px' }}>
+              <button
+                type="button"
+                onClick={handleConfirmarPagamentoSimulado}
+                disabled={confirmandoPagamento}
+                style={{
+                  width: '100%',
+                  padding: '12px 18px',
+                  background: '#f0fdf4',
+                  color: '#166534',
+                  border: '1.5px solid #86efac',
+                  borderRadius: '8px',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                }}
+              >
+                {confirmandoPagamento ? 'Confirmando...' : '✓ Simular Compensação do Boleto'}
+              </button>
+
+              <Link
+                to="/minha-conta?tab=pedidos"
+                className="checkout-submit-btn"
+                style={{ textDecoration: 'none', textAlign: 'center', lineHeight: '52px', display: 'block' }}
+              >
+                Acompanhar em Meus Pedidos
+              </Link>
             </div>
-          )}
-
-          <div style={{ marginTop: '30px' }}>
-            <Link to={logoDestino} className="checkout-submit-btn" style={{ textDecoration: 'none', textAlign: 'center', lineHeight: '52px' }}>
-              Voltar para a Loja
-            </Link>
           </div>
-        </div>
+        ) : (
+          /* ── TELA 3: PAGAMENTO CONFIRMADO / PEDIDO CONCLUÍDO COM SUCESSO ── */
+          <div className="checkout-success-wrap">
+            <div className="checkout-success-icon">✓</div>
+            <h2>Pagamento Confirmado!</h2>
+            <p style={{ marginTop: '8px', color: '#444', fontSize: '15px' }}>
+              Seu Pedido <strong>#{pedidoConcluido.id}</strong> foi aprovado e já entrou para separação.
+            </p>
+            <p style={{ fontSize: '13px', color: '#777', marginTop: '6px' }}>
+              Enviamos o comprovante e os detalhes de acompanhamento para <strong>{pedidoConcluido.email_contato || email}</strong>
+            </p>
+
+            <div
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '14px 18px',
+                margin: '22px 0',
+                textAlign: 'left',
+                fontSize: '13px',
+                color: '#334155',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span>Status atual:</span>
+                <strong style={{ color: '#15803d' }}>{pedidoConcluido.status === 'Pendente' ? 'Pago' : pedidoConcluido.status}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span>Modalidade de entrega:</span>
+                <strong>{pedidoConcluido.tipo_frete || tipoFreteNome}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total pago:</span>
+                <strong>R$ {Number(pedidoConcluido.valor_total || totalFinal).toFixed(2).replace('.', ',')}</strong>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '24px' }}>
+              <Link
+                to="/minha-conta?tab=pedidos"
+                className="checkout-submit-btn"
+                style={{ textDecoration: 'none', textAlign: 'center', lineHeight: '52px', display: 'block' }}
+              >
+                Acompanhar Meu Pedido
+              </Link>
+              <Link
+                to={logoDestino}
+                style={{
+                  textDecoration: 'none',
+                  textAlign: 'center',
+                  padding: '12px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  color: '#555',
+                }}
+              >
+                Voltar para a Loja
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -603,7 +951,7 @@ export default function CheckoutPage() {
                   {/* Seleção do Tipo de Envio */}
                   <div style={{ marginTop: '10px' }}>
                     <label style={{ fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', color: '#555' }}>
-                      Selecione a Modalidade de Envio:
+                      Selecione a Modalidade de Envio {loadingFrete && <small style={{ fontWeight: 400 }}>(atualizando valores para o CEP...)</small>}:
                     </label>
                     <div className="checkout-shipping-select-list">
                       {opcoesFrete.map((opt) => {
@@ -621,8 +969,8 @@ export default function CheckoutPage() {
                               <span className="shipping-name">{opt.nome}</span>
                               <span className="shipping-deadline">{opt.prazo}</span>
                             </div>
-                            <span className="shipping-price">
-                              R${opt.preco.toFixed(2).replace('.', ',')}
+                            <span className="shipping-price" style={{ color: opt.preco === 0 ? '#1e8449' : 'inherit' }}>
+                              {opt.preco === 0 ? 'GRÁTIS' : `R$ ${Number(opt.preco).toFixed(2).replace('.', ',')}`}
                             </span>
                           </div>
                         );
@@ -908,14 +1256,14 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                {/* Salvar dados Nuvem */}
+                {/* Salvar dados da compra */}
                 <div className="checkout-save-data-card">
                   <div className="checkout-save-data-left">
                     <input type="checkbox" id="salvar-dados" defaultChecked />
-                    <label htmlFor="salvar-dados">Salvar dados para <strong>comprar mais rápido</strong></label>
+                    <label htmlFor="salvar-dados">Salvar dados para <strong>comprar mais rápido</strong> na Salv Sacra</label>
                   </div>
                   <div className="checkout-nuvem-tag">
-                    <span>☁ nuvem</span>
+                    <span>🔒 Compra Segura</span>
                   </div>
                 </div>
 

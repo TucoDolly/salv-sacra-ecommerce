@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
+import ScrollToTop from './components/ScrollToTop';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminLayout from './components/AdminLayout';
 import PublicLayout from './components/PublicLayout';
@@ -7,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import EsqueciSenhaPage from './pages/EsqueciSenhaPage';
 import RedefinirSenhaPage from './pages/RedefinirSenhaPage';
+import VerificarEmailPage from './pages/VerificarEmailPage';
 import MinhaContaPage from './pages/MinhaContaPage';
 import Home from './pages/public/Home';
 import ProdutoDetalhe from './pages/public/ProdutoDetalhe';
@@ -44,7 +46,9 @@ function AdminRedirect() {
 
 function App() {
   return (
-    <Routes>
+    <>
+      <ScrollToTop />
+      <Routes>
       {/* ── Vitrine Pública ── */}
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
@@ -63,8 +67,10 @@ function App() {
       {/* ── Autenticação ── */}
       <Route path="/login"    element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/cadastro" element={<RegisterPage />} />
       <Route path="/esqueci-minha-senha" element={<EsqueciSenhaPage />} />
       <Route path="/redefinir-senha" element={<RedefinirSenhaPage />} />
+      <Route path="/verificar-email" element={<VerificarEmailPage />} />
       <Route path="/minha-conta" element={<MinhaContaPage />} />
 
       {/* ── Painel Administrativo (layout compartilhado) ── */}
@@ -103,6 +109,7 @@ function App() {
       {/* Qualquer rota não mapeada → vitrine */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }
 

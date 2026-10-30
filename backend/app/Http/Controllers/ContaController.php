@@ -79,6 +79,33 @@ class ContaController extends Controller
         return response()->json($request->user()->enderecos()->latest()->get());
     }
 
+    /**
+     * Retorna o endereço mais recente usado em compras pelo usuário, caso não possua endereço salvo no perfil.
+     */
+    public function ultimoEnderecoPedido(Request $request): JsonResponse
+    {
+        $ultimoPedido = Pedido::where('user_id', $request->user()->id)
+            ->whereNotNull('cep')
+            ->whereNotNull('logradouro')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $ultimoPedido) {
+            return response()->json(null);
+        }
+
+        return response()->json([
+            'cep'         => $ultimoPedido->cep,
+            'logradouro'  => $ultimoPedido->logradouro,
+            'numero'      => $ultimoPedido->numero,
+            'complemento' => $ultimoPedido->complemento,
+            'bairro'      => $ultimoPedido->bairro,
+            'cidade'      => $ultimoPedido->cidade,
+            'estado'      => $ultimoPedido->estado,
+            'telefone'    => $ultimoPedido->telefone,
+        ]);
+    }
+
     public function criarEndereco(Request $request): JsonResponse
     {
         $endereco = $request->user()->enderecos()->create($this->validarEndereco($request));

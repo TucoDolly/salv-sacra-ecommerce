@@ -10,10 +10,13 @@ export default function ConfiguracoesPage() {
 
     // Frete & Avisos
     frete_gratis_minimo: '',
+    cep_origem: '88702-280',
+    melhor_envio_token: '',
     aviso_topo_texto: '',
     aviso_topo_ativo: '1',
 
     // PIX & Pagamentos
+    mercadopago_access_token: '',
     pix_chave: '',
     pix_beneficiario: '',
     pix_cidade: '',
@@ -187,22 +190,58 @@ export default function ConfiguracoesPage() {
           {/* ════════ ABA 2: FRETE & BANNER DE TOPO ════════ */}
           {abaAtiva === 'frete' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
+                    CEP de Origem da Loja (Centro de Distribuição)
+                  </label>
+                  <input
+                    type="text"
+                    name="cep_origem"
+                    value={form.cep_origem || '88702-280'}
+                    onChange={handleChange}
+                    placeholder="Ex: 88702-280"
+                    style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
+                  />
+                  <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
+                    Utilizado como ponto de partida no cálculo do frete (Ex: Tubarão/SC).
+                  </span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
+                    Valor Mínimo para Frete Grátis (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    name="frete_gratis_minimo"
+                    value={form.frete_gratis_minimo}
+                    onChange={handleChange}
+                    placeholder="Ex: 500.00"
+                    style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
+                  />
+                  <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
+                    Pedidos iguais ou acima deste valor ganham envio econômico grátis.
+                  </span>
+                </div>
+              </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
-                  Valor Mínimo para Frete Grátis (R$)
+                  Token de API — Melhor Envio (Opcional para Cotação Oficial em Produção)
                 </label>
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  name="frete_gratis_minimo"
-                  value={form.frete_gratis_minimo}
+                  type="password"
+                  name="melhor_envio_token"
+                  value={form.melhor_envio_token || ''}
                   onChange={handleChange}
-                  placeholder="Ex: 500.00"
-                  style={{ width: '100%', maxWidth: '320px', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
+                  placeholder="Cole aqui o seu Bearer Token do Melhor Envio (se vazio, usa a tabela nacional Correios/Jadlog)"
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
                 />
                 <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
-                  Pedidos com subtotal igual ou superior a este valor receberão frete grátis automaticamente.
+                  Quando preenchido, conecta em tempo real na API do Melhor Envio. Caso esteja vazio, o sistema calcula automaticamente pela distância real via ViaCEP + Tabela Tarifária Correios/Jadlog.
                 </span>
               </div>
 
@@ -237,6 +276,23 @@ export default function ConfiguracoesPage() {
           {/* ════════ ABA 3: PAGAMENTOS & PIX ════════ */}
           {abaAtiva === 'pagamento' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
+                  Token de API — Mercado Pago (Access Token)
+                </label>
+                <input
+                  type="password"
+                  name="mercadopago_access_token"
+                  value={form.mercadopago_access_token || ''}
+                  onChange={handleChange}
+                  placeholder="Ex: APP_USR-123456789... ou TEST-123456789..."
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
+                />
+                <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
+                  Gera o QR Code PIX dinâmico e confirma o pagamento automaticamente via Mercado Pago. Você pode usar um token seu para testes e depois substituir pelo token da conta definitiva.
+                </span>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
@@ -317,7 +373,7 @@ export default function ConfiguracoesPage() {
                     name="contato_email"
                     value={form.contato_email}
                     onChange={handleChange}
-                    placeholder="Ex: salvsacra@gmail.com"
+                    placeholder="Ex: salvsacra2@gmail.com"
                     style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
                   />
                 </div>

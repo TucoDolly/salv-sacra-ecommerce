@@ -36,9 +36,13 @@ export function AuthProvider({ children }) {
 
   const signUp = useCallback(async (userData) => {
     const { data } = await registerService(userData);
-    localStorage.setItem(TOKEN_KEY, data.token);
-    setUser(data.user);
+    // Nota: O usuário só recebe token e sessão após validar o e-mail
     return data;
+  }, []);
+
+  const setSession = useCallback((token, user) => {
+    localStorage.setItem(TOKEN_KEY, token);
+    setUser(user);
   }, []);
 
   const signOut = useCallback(async () => {
@@ -51,8 +55,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, signIn, signUp, signOut, updateUser: setUser, isAuthenticated: !!user }),
-    [user, loading, signIn, signUp, signOut],
+    () => ({ user, loading, signIn, signUp, signOut, setSession, updateUser: setUser, isAuthenticated: !!user }),
+    [user, loading, signIn, signUp, signOut, setSession],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

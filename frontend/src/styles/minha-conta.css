@@ -148,11 +148,13 @@
   background: #eee;
   color: #444;
 }
-.conta-status.pendente  { background: #fff4d6; color: #8a6d00; }
-.conta-status.pago      { background: #dff3e4; color: #1e7a3c; }
-.conta-status.enviado   { background: #dcecfb; color: #1b5fa6; }
-.conta-status.entregue  { background: #dff3e4; color: #1e7a3c; }
-.conta-status.cancelado { background: #fdecea; color: #c0392b; }
+.conta-status.pendente      { background: #fff4d6; color: #8a6d00; }
+.conta-status.pago          { background: #dff3e4; color: #1e7a3c; }
+.conta-status.em-separacao  { background: #e8eaf6; color: #283593; }
+.conta-status.enviado       { background: #dcecfb; color: #1b5fa6; }
+.conta-status.em-transporte { background: #e0f2fe; color: #0369a1; }
+.conta-status.entregue      { background: #dff3e4; color: #1e7a3c; }
+.conta-status.cancelado     { background: #fdecea; color: #c0392b; }
 
 .conta-pedido-detalhe { margin-top: 16px; border-top: 1px solid #ececec; padding-top: 14px; }
 
@@ -217,7 +219,7 @@
 
 .conta-timeline {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   position: relative;
   margin-top: 10px;
   margin-bottom: 6px;

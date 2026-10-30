@@ -32,13 +32,13 @@ return new class extends Migration
             ['chave' => 'aviso_topo_ativo',    'valor' => '1',                             'grupo' => 'frete',     'descricao' => 'Exibir banner de topo (1=sim, 0=não)'],
 
             // Pagamento
-            ['chave' => 'pix_chave',           'valor' => 'salvsacra@gmail.com',           'grupo' => 'pagamento', 'descricao' => 'Chave PIX padrão'],
+            ['chave' => 'pix_chave',           'valor' => 'salvsacra2@gmail.com',          'grupo' => 'pagamento', 'descricao' => 'Chave PIX padrão'],
             ['chave' => 'pix_beneficiario',    'valor' => 'SALV SACRA ECOMMERCE LTDA',     'grupo' => 'pagamento', 'descricao' => 'Nome do titular da chave PIX'],
             ['chave' => 'pix_cidade',          'valor' => 'Tubarão',                       'grupo' => 'pagamento', 'descricao' => 'Cidade do titular PIX'],
             ['chave' => 'pix_desconto_pct',    'valor' => '5',                             'grupo' => 'pagamento', 'descricao' => 'Desconto percentual para pagamento via PIX'],
 
             // Contato & Atendimento
-            ['chave' => 'contato_email',       'valor' => 'salvsacra@gmail.com',           'grupo' => 'contato',   'descricao' => 'E-mail oficial de contato'],
+            ['chave' => 'contato_email',       'valor' => 'salvsacra2@gmail.com',          'grupo' => 'contato',   'descricao' => 'E-mail oficial de contato'],
             ['chave' => 'contato_telefone',    'valor' => '(48) 99620-5153',               'grupo' => 'contato',   'descricao' => 'Telefone fixo/celular'],
             ['chave' => 'contato_whatsapp',    'valor' => '5548996205153',                 'grupo' => 'contato',   'descricao' => 'WhatsApp com DDI/DDD'],
             ['chave' => 'contato_endereco',    'valor' => 'Rua Manoel Antunes Corrêa, 2171', 'grupo' => 'contato', 'descricao' => 'Endereço físico'],

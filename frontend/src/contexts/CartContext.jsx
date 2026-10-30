@@ -1,17 +1,38 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import api from '../services/api';
 
 const CartContext = createContext({});
+
+const OPCOES_PADRAO = [
+  {
+    id: 'pac',
+    nome: 'Correios PAC',
+    prazo: 'Chega em 2 dias úteis',
+    preco: 10.90,
+  },
+  {
+    id: 'sedex',
+    nome: 'Correios SEDEX',
+    prazo: 'Chega em 1 dia útil',
+    preco: 12.47,
+  },
+  {
+    id: 'jadlog',
+    nome: 'Transportadora Jadlog Rápido',
+    prazo: 'Chega em 2 dias úteis',
+    preco: 14.90,
+  },
+];
 
 export function CartProvider({ children }) {
   const [items, setItems] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [selectedShipping, setSelectedShipping] = useState({
-    id: 'sedex',
-    nome: 'Nuvem Envio Correios SEDEX',
-    prazo: 'Chega quarta 20/05',
-    preco: 12.47,
-  });
-  const [cep, setCep] = useState('88701-260');
+  const [shippingOptions, setShippingOptions] = useState(OPCOES_PADRAO);
+  const [selectedShipping, setSelectedShipping] = useState(OPCOES_PADRAO[1]); // SEDEX por padrão
+  const [cep, setCep] = useState(() => localStorage.getItem('@SalvSacra:cep') || '88701-260');
+  const [cidadeDestino, setCidadeDestino] = useState('');
+  const [ufDestino, setUfDestino] = useState('');
+  const [loadingFrete, setLoadingFrete] = useState(false);
 
   // Carregar do localStorage ao iniciar
   useEffect(() => {
@@ -33,6 +54,52 @@ export function CartProvider({ children }) {
       console.error('Erro ao salvar carrinho:', e);
     }
   };
+
+  // Totais básicos para o cálculo de frete
+  const subtotal = items.reduce((acc, item) => acc + (Number(item.preco) * Number(item.quantidade)), 0);
+  const totalItens = items.reduce((acc, item) => acc + item.quantidade, 0);
+
+  // Função para consultar a API real de frete
+  const calcularFretePorCep = useCallback(async (cepAlvo, sub = subtotal, qtd = totalItens) => {
+    const limpo = String(cepAlvo || '').replace(/\D/g, '');
+    if (limpo.length !== 8) return null;
+
+    setLoadingFrete(true);
+    try {
+      const { data } = await api.post('/frete/calcular', {
+        cep: limpo,
+        subtotal: sub > 0 ? sub : 79.90,
+        quantidade: qtd > 0 ? qtd : 1,
+      });
+
+      if (data?.opcoes?.length) {
+        setShippingOptions(data.opcoes);
+        setCidadeDestino(data.cidade || '');
+        setUfDestino(data.uf || '');
+
+        // Mantém a mesma modalidade selecionada se existir, senão pega a primeira
+        setSelectedShipping((atual) => {
+          const mesma = data.opcoes.find((o) => o.id === atual?.id);
+          return mesma || data.opcoes[0];
+        });
+      }
+      return data;
+    } catch (err) {
+      console.warn('Erro ao calcular frete:', err.response?.data?.message || err.message);
+      return null;
+    } finally {
+      setLoadingFrete(false);
+    }
+  }, [subtotal, totalItens]);
+
+  // Recalcula automaticamente quando o CEP, subtotal ou quantidade de itens mudar
+  useEffect(() => {
+    const limpo = String(cep || '').replace(/\D/g, '');
+    if (limpo.length === 8) {
+      localStorage.setItem('@SalvSacra:cep', cep);
+      calcularFretePorCep(limpo, subtotal, totalItens);
+    }
+  }, [cep, subtotal, totalItens, calcularFretePorCep]);
 
   const addItem = (item) => {
     const novos = [...items];
@@ -82,12 +149,9 @@ export function CartProvider({ children }) {
   const openCart = () => setIsCartOpen(true);
   const closeCart = () => setIsCartOpen(false);
 
-  // Totais
-  const subtotal = items.reduce((acc, item) => acc + (Number(item.preco) * Number(item.quantidade)), 0);
-  const fretePreco = items.length > 0 ? (selectedShipping?.preco || 0) : 0;
+  const fretePreco = items.length > 0 ? (selectedShipping?.preco ?? 0) : 0;
   const total = subtotal + fretePreco;
-  const totalBoleto = (total * 0.95); // 5% no boleto
-  const totalItens = items.reduce((acc, item) => acc + item.quantidade, 0);
+  const totalBoleto = total * 0.95; // 5% no boleto
 
   return (
     <CartContext.Provider
@@ -104,10 +168,15 @@ export function CartProvider({ children }) {
         total,
         totalBoleto,
         totalItens,
+        shippingOptions,
         selectedShipping,
         setSelectedShipping,
         cep,
         setCep,
+        cidadeDestino,
+        ufDestino,
+        loadingFrete,
+        calcularFretePorCep,
       }}
     >
       {children}

@@ -13,10 +13,12 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 Route::prefix('auth')->group(function () {
-    Route::post('/register', [AuthController::class, 'register']);
-    Route::post('/login',    [AuthController::class, 'login']);
-    Route::post('/esqueci-senha',   [\App\Http\Controllers\PasswordResetController::class, 'enviarLink']);
-    Route::post('/redefinir-senha', [\App\Http\Controllers\PasswordResetController::class, 'redefinirSenha']);
+    Route::post('/register',           [AuthController::class, 'register']);
+    Route::post('/verificar-email',    [AuthController::class, 'verificarEmail']);
+    Route::post('/reenviar-validacao', [AuthController::class, 'reenviarValidacao']);
+    Route::post('/login',              [AuthController::class, 'login']);
+    Route::post('/esqueci-senha',      [\App\Http\Controllers\PasswordResetController::class, 'enviarLink']);
+    Route::post('/redefinir-senha',    [\App\Http\Controllers\PasswordResetController::class, 'redefinirSenha']);
 });
 
 /*
@@ -34,8 +36,14 @@ Route::get('devocaos',           [DevocaoController::class,   'index']);
 // Configurações públicas da loja (banner de topo, frete grátis, contatos)
 Route::get('configuracoes', [\App\Http\Controllers\ConfiguracaoController::class, 'publicas']);
 
+// Cálculo real de frete e prazo por CEP
+Route::post('frete/calcular', [\App\Http\Controllers\FreteController::class, 'calcular']);
+
 // Formulário de contato (com reCAPTCHA)
 Route::post('contato', [\App\Http\Controllers\ContatoController::class, 'enviar']);
+
+// Webhook de pagamento do Mercado Pago
+Route::post('webhooks/mercadopago', [PedidoController::class, 'webhookMercadoPago']);
 
 /*
 |--------------------------------------------------------------------------
@@ -47,8 +55,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me',      [AuthController::class, 'me']);
 
     // Pedidos / Checkout (somente logado)
-    Route::post('pedidos',         [PedidoController::class, 'store']);
-    Route::get('pedidos/{pedido}', [PedidoController::class, 'show']);
+    Route::post('pedidos',                             [PedidoController::class, 'store']);
+    Route::get('pedidos/{pedido}',                     [PedidoController::class, 'show']);
+    Route::post('pedidos/{pedido}/confirmar-pagamento',[PedidoController::class, 'confirmarPagamento']);
 
     // ── Minha Conta (cliente autenticado) ─────────────────────────────
     Route::prefix('conta')->group(function () {
@@ -57,6 +66,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('senha',                [\App\Http\Controllers\ContaController::class, 'alterarSenha']);
         Route::get('pedidos',              [\App\Http\Controllers\ContaController::class, 'pedidos']);
         Route::get('enderecos',            [\App\Http\Controllers\ContaController::class, 'enderecos']);
+        Route::get('ultimo-endereco',      [\App\Http\Controllers\ContaController::class, 'ultimoEnderecoPedido']);
         Route::post('enderecos',           [\App\Http\Controllers\ContaController::class, 'criarEndereco']);
         Route::put('enderecos/{endereco}', [\App\Http\Controllers\ContaController::class, 'atualizarEndereco']);
         Route::delete('enderecos/{endereco}', [\App\Http\Controllers\ContaController::class, 'removerEndereco']);
