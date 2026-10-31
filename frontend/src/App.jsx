@@ -26,6 +26,7 @@ import EstoqueList from './pages/admin/EstoqueList';
 import RelatoriosPage from './pages/admin/RelatoriosPage';
 import ConfiguracoesPage from './pages/admin/ConfiguracoesPage';
 import CategoriasDevocoesPage from './pages/admin/CategoriasDevocoesPage';
+import AvaliacoesAdminPage from './pages/admin/AvaliacoesAdminPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import './App.css';
 
@@ -98,6 +99,9 @@ function App() {
 
         {/* Gestão de Estoque */}
         <Route path="estoque"             element={<EstoqueList />} />
+
+        {/* Moderação de Avaliações */}
+        <Route path="avaliacoes"          element={<AvaliacoesAdminPage />} />
 
         {/* Relatórios e Faturamento */}
         <Route path="relatorios"          element={<RelatoriosPage />} />

@@ -12,4 +12,7 @@ export const removerEndereco = (id) => api.delete(`/conta/enderecos/${id}`);
 export const listarCartoes = () => api.get('/conta/cartoes');
 export const criarCartao = (data) => api.post('/conta/cartoes', data);
 export const removerCartao = (id) => api.delete(`/conta/cartoes/${id}`);
+export const listarFavoritos = () => api.get('/conta/favoritos');
+export const toggleFavoritoApi = (produtoId) => api.post(`/conta/favoritos/${produtoId}`);
+export const sincronizarFavoritosApi = (produtoIds) => api.post('/conta/favoritos/sincronizar', { produto_ids: produtoIds });
 export const excluirConta = () => api.delete('/conta/excluir');

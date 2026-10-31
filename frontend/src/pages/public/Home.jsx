@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { getHexCor } from '../../constants/cores';
+import { useWishlist } from '../../contexts/WishlistContext';
 import '../../styles/home.css';
 import bannerSaoJose from '../../assets/banner-sao-jose.jpg';
 import bannerDesatadora from '../../assets/banner-desatadora.jpg';
@@ -87,6 +88,8 @@ const BENEFITS = [
 // ── Componente de card de produto ──────────────────────────────────────────────
 function ProdutoCard({ produto }) {
   const [hovered, setHovered] = useState(false);
+  const { isFavorite, toggleFavorite } = useWishlist();
+  const favoritado = isFavorite(produto.id);
 
   const preco = produto.preco_base
     ? Number(produto.preco_base).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -114,7 +117,40 @@ function ProdutoCard({ produto }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="produto-card-img">
+      <div className="produto-card-img" style={{ position: 'relative' }}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleFavorite(produto);
+          }}
+          title={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+          aria-label={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+          style={{
+            position: 'absolute',
+            top: '10px',
+            right: '10px',
+            zIndex: 5,
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            background: 'rgba(255, 255, 255, 0.92)',
+            border: '1px solid rgba(0, 0, 0, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)',
+            color: favoritado ? '#dc2626' : '#555',
+            transition: 'transform 0.15s ease, color 0.15s ease',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill={favoritado ? '#dc2626' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+        </button>
+
         {fotoExibida ? (
           <img
             src={fotoExibida}
@@ -143,6 +179,12 @@ function ProdutoCard({ produto }) {
       </div>
       <div className="produto-card-info">
         <p className="produto-card-nome">{produto.nome}</p>
+        {Number(produto.avaliacoes_count) > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '12px', color: '#c4953a', margin: '2px 0' }}>
+            <span>★ {Number(produto.avaliacoes_avg_nota || 0).toFixed(1).replace('.', ',')}</span>
+            <span style={{ color: '#888', fontSize: '11px' }}>({produto.avaliacoes_count})</span>
+          </div>
+        )}
         {preco && <p className="produto-card-preco">{preco}</p>}
       </div>
     </Link>

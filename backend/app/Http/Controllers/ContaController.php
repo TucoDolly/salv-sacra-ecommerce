@@ -29,6 +29,7 @@ class ContaController extends Controller
             'total_pedidos'   => $user->pedidos()->count(),
             'total_enderecos' => $user->enderecos()->count(),
             'total_cartoes'   => $user->cartoes()->count(),
+            'total_favoritos' => $user->favoritos()->count(),
             'ultimo_pedido'   => $ultimoPedido,
         ]);
     }
@@ -183,6 +184,69 @@ class ContaController extends Controller
         return response()->json(['message' => 'Cartão removido com sucesso.']);
     }
 
+    // ── Lista de Desejos (Favoritos / Wishlist) ─────────────────────────
+
+    public function favoritos(Request $request): JsonResponse
+    {
+        $favoritos = $request->user()
+            ->favoritos()
+            ->with([
+                'produto' => function ($q) {
+                    $q->with(['categoria', 'devocao', 'variacoes'])
+                      ->withCount('avaliacoes')
+                      ->withAvg('avaliacoes', 'nota');
+                },
+            ])
+            ->latest()
+            ->get()
+            ->map(fn ($fav) => $fav->produto)
+            ->filter()
+            ->values();
+
+        return response()->json($favoritos);
+    }
+
+    public function toggleFavorito(Request $request, \App\Models\Produto $produto): JsonResponse
+    {
+        $user = $request->user();
+
+        $existente = $user->favoritos()->where('produto_id', $produto->id)->first();
+
+        if ($existente) {
+            $existente->delete();
+            return response()->json([
+                'favoritado' => false,
+                'produto_id' => $produto->id,
+                'message'    => 'Produto removido da sua lista de desejos.',
+            ]);
+        }
+
+        $user->favoritos()->create([
+            'produto_id' => $produto->id,
+        ]);
+
+        return response()->json([
+            'favoritado' => true,
+            'produto_id' => $produto->id,
+            'message'    => 'Produto salvo na sua lista de desejos!',
+        ], 201);
+    }
+
+    public function sincronizarFavoritos(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'produto_ids'   => ['required', 'array'],
+            'produto_ids.*' => ['integer', 'exists:produtos,id'],
+        ]);
+
+        $user = $request->user();
+        foreach ($validated['produto_ids'] as $pid) {
+            $user->favoritos()->firstOrCreate(['produto_id' => $pid]);
+        }
+
+        return $this->favoritos($request);
+    }
+
     /**
      * Desativa a conta do usuário a seu pedido:
      * - Preserva os pedidos e dados cadastrais para consulta exclusiva do administrador (logística, emissão fiscal e histórico).
@@ -199,6 +263,7 @@ class ContaController extends Controller
             // 1. Remove dados sensíveis de pagamento e sessões ativas
             $user->cartoes()->delete();
             $user->enderecos()->delete();
+            $user->favoritos()->delete();
             $user->tokens()->delete();
 
             // 2. Preserva o nome do cliente original com a indicação "(Conta Desativada)"

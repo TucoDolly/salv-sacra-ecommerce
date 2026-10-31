@@ -16,7 +16,9 @@ class ProdutoController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = Produto::with(['categoria', 'devocao', 'variacoes']);
+        $query = Produto::with(['categoria', 'devocao', 'variacoes'])
+            ->withCount('avaliacoes')
+            ->withAvg('avaliacoes', 'nota');
 
         // Filtro por termo de busca
         if ($request->filled('busca')) {
@@ -171,9 +173,11 @@ class ProdutoController extends Controller
      */
     public function show(Produto $produto): JsonResponse
     {
-        return response()->json(
-            $produto->load(['categoria', 'devocao', 'variacoes'])
-        );
+        $produto->load(['categoria', 'devocao', 'variacoes']);
+        $produto->loadCount('avaliacoes');
+        $produto->loadAvg('avaliacoes', 'nota');
+
+        return response()->json($produto);
     }
 
     // ─── PUT/PATCH /api/produtos/{produto} ───────────────────────────────────

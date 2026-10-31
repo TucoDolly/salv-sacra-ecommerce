@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { getHexCor } from '../../constants/cores';
+import { useWishlist } from '../../contexts/WishlistContext';
 import '../../styles/catalogo.css';
 
 // Ícone de ordenação
@@ -16,6 +17,8 @@ const IconSort = () => (
 // Subcomponente de Card do Produto com suporte a foto 2 no hover e bolinhas de variações reais
 function CatalogoItemCard({ prod }) {
   const [hovered, setHovered] = useState(false);
+  const { isFavorite, toggleFavorite } = useWishlist();
+  const favoritado = isFavorite(prod.id);
 
   const vitrine = Array.isArray(prod.imagens_vitrine) && prod.imagens_vitrine.length > 0
     ? prod.imagens_vitrine
@@ -36,7 +39,40 @@ function CatalogoItemCard({ prod }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="catalogo-product-img-wrap">
+      <div className="catalogo-product-img-wrap" style={{ position: 'relative' }}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleFavorite(prod);
+          }}
+          title={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+          aria-label={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+          style={{
+            position: 'absolute',
+            top: '12px',
+            right: '12px',
+            zIndex: 5,
+            width: '34px',
+            height: '34px',
+            borderRadius: '50%',
+            background: 'rgba(255, 255, 255, 0.92)',
+            border: '1px solid rgba(0, 0, 0, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)',
+            color: favoritado ? '#dc2626' : '#555',
+            transition: 'transform 0.15s ease, color 0.15s ease',
+          }}
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill={favoritado ? '#dc2626' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+        </button>
+
         {fotoExibida ? (
           <img src={fotoExibida} alt={prod.nome} loading="lazy" />
         ) : (
@@ -58,6 +94,12 @@ function CatalogoItemCard({ prod }) {
 
       <div className="catalogo-product-info">
         <span className="catalogo-product-name">{prod.nome}</span>
+        {Number(prod.avaliacoes_count) > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '12px', color: '#c4953a', marginTop: '4px', fontWeight: 700 }}>
+            <span>★ {Number(prod.avaliacoes_avg_nota || 0).toFixed(1).replace('.', ',')}</span>
+            <span style={{ color: '#777', fontSize: '11px', fontWeight: 500 }}>({prod.avaliacoes_count})</span>
+          </div>
+        )}
       </div>
     </Link>
   );

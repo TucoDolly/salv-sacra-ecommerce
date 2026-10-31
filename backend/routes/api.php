@@ -28,6 +28,7 @@ Route::prefix('auth')->group(function () {
 */
 Route::get('produtos',           [ProdutoController::class, 'index']);
 Route::get('produtos/{produto}', [ProdutoController::class, 'show']);
+Route::get('produtos/{produto}/avaliacoes', [\App\Http\Controllers\AvaliacaoController::class, 'index']);
 Route::get('categorias',         [CategoriaController::class, 'index']);
 Route::get('devocaos',           [DevocaoController::class,   'index']);
 
@@ -62,6 +63,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('pedidos/{pedido}',                     [PedidoController::class, 'show']);
     Route::post('pedidos/{pedido}/confirmar-pagamento',[PedidoController::class, 'confirmarPagamento']);
 
+    // Avaliações de Produtos (cliente autenticado)
+    Route::post('produtos/{produto}/avaliacoes', [\App\Http\Controllers\AvaliacaoController::class, 'store']);
+    Route::delete('avaliacoes/{avaliacao}',      [\App\Http\Controllers\AvaliacaoController::class, 'destroy']);
+
     // ── Minha Conta (cliente autenticado) ─────────────────────────────
     Route::prefix('conta')->group(function () {
         Route::get('resumo',               [\App\Http\Controllers\ContaController::class, 'resumo']);
@@ -76,6 +81,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('cartoes',              [\App\Http\Controllers\ContaController::class, 'cartoes']);
         Route::post('cartoes',             [\App\Http\Controllers\ContaController::class, 'criarCartao']);
         Route::delete('cartoes/{cartao}',  [\App\Http\Controllers\ContaController::class, 'removerCartao']);
+        Route::get('favoritos',            [\App\Http\Controllers\ContaController::class, 'favoritos']);
+        Route::post('favoritos/sincronizar',[\App\Http\Controllers\ContaController::class, 'sincronizarFavoritos']);
+        Route::post('favoritos/{produto}', [\App\Http\Controllers\ContaController::class, 'toggleFavorito']);
         Route::delete('excluir',           [\App\Http\Controllers\ContaController::class, 'excluirConta']);
     });
 
@@ -123,5 +131,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // ── Dashboard Inicial (Administração) ─────────────────────────────
         Route::get('admin/dashboard', [\App\Http\Controllers\AdminDashboardController::class, 'index']);
+
+        // ── Moderação de Avaliações (Administração) ───────────────────────
+        Route::get('admin/avaliacoes',               [\App\Http\Controllers\AvaliacaoController::class, 'adminIndex']);
+        Route::delete('admin/avaliacoes/{avaliacao}', [\App\Http\Controllers\AvaliacaoController::class, 'destroy']);
     });
 });

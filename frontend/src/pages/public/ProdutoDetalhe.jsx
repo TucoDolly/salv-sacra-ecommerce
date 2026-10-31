@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCart } from '../../contexts/CartContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { useWishlist } from '../../contexts/WishlistContext';
 import api from '../../services/api';
 import { getHexCor } from '../../constants/cores';
 import '../../styles/produto-detalhe.css';
@@ -72,10 +74,35 @@ const IconEye = () => (
 
 export default function ProdutoDetalhe() {
   const { id } = useParams();
+  const { user, isAuthenticated } = useAuth();
+  const { isFavorite, toggleFavorite } = useWishlist();
   const [produto, setProduto] = useState(null);
   const [produtosSimilares, setProdutosSimilares] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
+
+  // Avaliações e Comentários
+  const [resumoAvaliacoes, setResumoAvaliacoes] = useState({
+    media: 0,
+    total: 0,
+    distribuicao: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+    avaliacoes: [],
+  });
+  const [notaForm, setNotaForm] = useState(5);
+  const [hoverNota, setHoverNota] = useState(0);
+  const [tituloForm, setTituloForm] = useState('');
+  const [comentarioForm, setComentarioForm] = useState('');
+  const [enviandoAvaliacao, setEnviandoAvaliacao] = useState(false);
+
+  const carregarAvaliacoes = (prodId = id) => {
+    api.get(`/produtos/${prodId}/avaliacoes`)
+      .then((res) => {
+        if (res.data) {
+          setResumoAvaliacoes(res.data);
+        }
+      })
+      .catch(() => {});
+  };
 
   // Estados de seleção
   const [modeloSelecionado, setModeloSelecionado] = useState('Regular Fit');
@@ -144,6 +171,9 @@ export default function ProdutoDetalhe() {
         setProdutosSimilares(outros);
       })
       .catch((err) => console.error('Erro ao buscar similares:', err));
+
+    // Carrega avaliações do produto
+    carregarAvaliacoes(id);
   }, [id]);
 
   const scrollSimilares = (dir) => {
@@ -327,6 +357,49 @@ export default function ProdutoDetalhe() {
     }
   };
 
+  const handleEnviarAvaliacao = async (e) => {
+    e.preventDefault();
+    if (!comentarioForm.trim()) {
+      alert('Por favor, escreva um comentário sobre o produto.');
+      return;
+    }
+    setEnviandoAvaliacao(true);
+    try {
+      await api.post(`/produtos/${id}/avaliacoes`, {
+        nota: notaForm,
+        titulo: tituloForm.trim() || null,
+        comentario: comentarioForm.trim(),
+      });
+      setTituloForm('');
+      setComentarioForm('');
+      setNotaForm(5);
+      carregarAvaliacoes(id);
+      setToastMessage('Sua avaliação foi salva com sucesso!');
+      setTimeout(() => setToastMessage(null), 4000);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Não foi possível enviar sua avaliação.');
+    } finally {
+      setEnviandoAvaliacao(false);
+    }
+  };
+
+  const handleExcluirAvaliacao = async (avId) => {
+    if (!window.confirm('Deseja realmente excluir esta avaliação?')) return;
+    try {
+      await api.delete(`/avaliacoes/${avId}`);
+      carregarAvaliacoes(id);
+    } catch {
+      alert('Não foi possível remover a avaliação.');
+    }
+  };
+
+  const renderEstrelas = (nota) => {
+    const arredondada = Math.round(Number(nota || 0));
+    return [1, 2, 3, 4, 5].map((i) => (
+      <span key={i} style={{ color: i <= arredondada ? '#c4953a' : '#d1d5db' }}>★</span>
+    ));
+  };
+
   return (
     <div className="pdp-wrapper">
       <div className="pdp-container">
@@ -379,6 +452,22 @@ export default function ProdutoDetalhe() {
 
             {/* Título */}
             <h1 className="pdp-product-title">{produto.nome}</h1>
+
+            {/* Resumo rápido de avaliações sob o título */}
+            <button
+              type="button"
+              className="pdp-rating-badge-top"
+              onClick={() => document.getElementById('secao-avaliacoes')?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              <span className="pdp-stars-inline">
+                {renderEstrelas(resumoAvaliacoes.total > 0 ? resumoAvaliacoes.media : 5)}
+              </span>
+              <span className="pdp-rating-count-text">
+                {resumoAvaliacoes.total > 0
+                  ? `${Number(resumoAvaliacoes.media).toFixed(1).replace('.', ',')} (${resumoAvaliacoes.total} ${resumoAvaliacoes.total === 1 ? 'avaliação' : 'avaliações'})`
+                  : 'Seja o primeiro a avaliar'}
+              </span>
+            </button>
 
             {/* Preços */}
             <div className="pdp-price-row">
@@ -532,6 +621,35 @@ export default function ProdutoDetalhe() {
               >
                 ADICIONAR AO CARRINHO
               </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const favoritou = await toggleFavorite(produto);
+                  setToastMessage(favoritou ? 'Peça salva na sua lista de desejos ❤️' : 'Peça removida da lista de desejos.');
+                  setTimeout(() => setToastMessage(null), 3000);
+                }}
+                title={isFavorite(produto.id) ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+                aria-label={isFavorite(produto.id) ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  flexShrink: 0,
+                  borderRadius: '6px',
+                  border: `1.5px solid ${isFavorite(produto.id) ? '#dc2626' : '#c8c8c8'}`,
+                  background: isFavorite(produto.id) ? '#fef2f2' : '#fff',
+                  color: isFavorite(produto.id) ? '#dc2626' : '#333',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill={isFavorite(produto.id) ? '#dc2626' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                </svg>
+              </button>
             </div>
 
             {/* Meios de Envio (Frete) */}
@@ -638,6 +756,161 @@ export default function ProdutoDetalhe() {
             <a href="https://facebook.com" target="_blank" rel="noreferrer" className="pdp-share-icon-btn" aria-label="Facebook">f</a>
             <a href="https://twitter.com" target="_blank" rel="noreferrer" className="pdp-share-icon-btn" aria-label="X">𝕏</a>
             <a href="https://pinterest.com" target="_blank" rel="noreferrer" className="pdp-share-icon-btn" aria-label="Pinterest">P</a>
+          </div>
+        </section>
+
+        {/* ── SEÇÃO DE AVALIAÇÕES DOS CLIENTES ── */}
+        <section id="secao-avaliacoes" className="pdp-reviews-section">
+          <h2 className="pdp-reviews-title">Avaliações de Clientes</h2>
+
+          <div className="pdp-reviews-grid">
+            {/* Coluna Esquerda: Média + Barras de Distribuição */}
+            <div className="pdp-reviews-summary-card">
+              <div className="pdp-reviews-big-score">
+                <span className="pdp-reviews-big-number">
+                  {resumoAvaliacoes.total > 0 ? Number(resumoAvaliacoes.media).toFixed(1).replace('.', ',') : '0,0'}
+                </span>
+                <span className="pdp-reviews-big-max">/ 5,0</span>
+              </div>
+              <div className="pdp-stars-inline" style={{ fontSize: '18px', marginBottom: '6px' }}>
+                {renderEstrelas(resumoAvaliacoes.media)}
+              </div>
+              <div style={{ fontSize: '12px', color: '#666' }}>
+                Baseado em <strong>{resumoAvaliacoes.total}</strong> {resumoAvaliacoes.total === 1 ? 'avaliação' : 'avaliações'}
+              </div>
+
+              <div className="pdp-reviews-bars">
+                {[5, 4, 3, 2, 1].map((estrela) => {
+                  const qtd = resumoAvaliacoes.distribuicao?.[estrela] || 0;
+                  const pct = resumoAvaliacoes.total > 0 ? Math.round((qtd / resumoAvaliacoes.total) * 100) : 0;
+                  return (
+                    <div key={estrela} className="pdp-review-bar-row">
+                      <span className="pdp-review-bar-label">{estrela} ★</span>
+                      <div className="pdp-review-bar-track">
+                        <div className="pdp-review-bar-fill" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="pdp-review-bar-count">{qtd}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Coluna Direita: Formulário + Lista de Depoimentos */}
+            <div>
+              {isAuthenticated ? (
+                <form className="pdp-reviews-form-card" onSubmit={handleEnviarAvaliacao}>
+                  <h3 className="pdp-reviews-form-title">Deixe sua avaliação sobre esta peça</h3>
+                  <div style={{ fontSize: '12px', color: '#555', marginBottom: '6px', fontWeight: 600 }}>
+                    Sua nota:
+                  </div>
+                  <div className="pdp-star-picker" onMouseLeave={() => setHoverNota(0)}>
+                    {[1, 2, 3, 4, 5].map((star) => {
+                      const ativa = star <= (hoverNota || notaForm);
+                      return (
+                        <button
+                          key={star}
+                          type="button"
+                          className={`pdp-star-picker-btn ${ativa ? 'active' : ''}`}
+                          onMouseEnter={() => setHoverNota(star)}
+                          onClick={() => setNotaForm(star)}
+                          aria-label={`${star} estrelas`}
+                        >
+                          ★
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <input
+                    type="text"
+                    className="pdp-review-input"
+                    placeholder="Título da avaliação (opcional, ex: Tecido excelente!)"
+                    maxLength={120}
+                    value={tituloForm}
+                    onChange={(e) => setTituloForm(e.target.value)}
+                  />
+
+                  <textarea
+                    rows={3}
+                    className="pdp-review-textarea"
+                    placeholder="Conte o que achou do caimento, tecido e acabamento da camiseta..."
+                    required
+                    value={comentarioForm}
+                    onChange={(e) => setComentarioForm(e.target.value)}
+                  />
+
+                  <button type="submit" className="pdp-review-submit-btn" disabled={enviandoAvaliacao}>
+                    {enviandoAvaliacao ? 'Publicando...' : 'Publicar Avaliação'}
+                  </button>
+                </form>
+              ) : (
+                <div className="pdp-reviews-form-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h3 className="pdp-reviews-form-title" style={{ marginBottom: '4px' }}>Já adquiriu esta peça?</h3>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+                      Entre na sua conta para deixar sua nota e compartilhar sua opinião com outros clientes.
+                    </p>
+                  </div>
+                  <Link
+                    to="/login"
+                    state={{ from: `/produto/${id}` }}
+                    className="pdp-review-submit-btn"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    Fazer Login para Avaliar
+                  </Link>
+                </div>
+              )}
+
+              {/* Lista de Comentários */}
+              {resumoAvaliacoes.avaliacoes.length === 0 ? (
+                <div className="pdp-review-item-card" style={{ textAlign: 'center', color: '#777', padding: '28px 20px' }}>
+                  Este produto ainda não possui avaliações. Seja o primeiro a avaliar!
+                </div>
+              ) : (
+                <div className="pdp-reviews-list">
+                  {resumoAvaliacoes.avaliacoes.map((av) => {
+                    const podeExcluir = isAuthenticated && (user?.papel === 'admin' || Number(user?.id) === Number(av.user_id));
+                    return (
+                      <div key={av.id} className="pdp-review-item-card">
+                        <div className="pdp-review-item-header">
+                          <div>
+                            <div className="pdp-review-author">
+                              <span>{av.autor_nome}</span>
+                              {av.compra_verificada && (
+                                <span className="pdp-verified-badge">✓ Compra verificada</span>
+                              )}
+                            </div>
+                            <div className="pdp-stars-inline" style={{ fontSize: '14px', marginTop: '4px' }}>
+                              {renderEstrelas(av.nota)}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span className="pdp-review-date">
+                              {av.created_at ? new Date(av.created_at).toLocaleDateString('pt-BR') : ''}
+                            </span>
+                            {podeExcluir && (
+                              <button
+                                type="button"
+                                onClick={() => handleExcluirAvaliacao(av.id)}
+                                style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                              >
+                                Excluir
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {av.titulo && <div className="pdp-review-item-title">{av.titulo}</div>}
+                        <p className="pdp-review-item-comment">{av.comentario}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </section>
 

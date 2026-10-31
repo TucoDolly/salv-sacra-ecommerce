@@ -60,6 +60,12 @@ const IconSettings = () => (
   </svg>
 );
 
+const IconStar = () => (
+  <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24">
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+  </svg>
+);
+
 const IconSearch = () => (
   <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -68,13 +74,14 @@ const IconSearch = () => (
 
 // ── Links de navegação ────────────────────────────────────────────────────────
 const NAV_ITEMS = [
-  { label: 'Início',                  to: '/admin',          icon: <IconHome />,     end: true  },
-  { label: 'Pedidos e Pagamentos',    to: '/admin/pedidos',  icon: <IconOrders />,   end: false },
-  { label: 'Catálogo de Produtos',    to: '/admin/produtos', icon: <IconCatalog />,  end: false },
-  { label: 'Categorias e Devoções',   to: '/admin/categorias', icon: <IconTag />,    end: false },
-  { label: 'Gestão de Estoque',       to: '/admin/estoque',  icon: <IconStock />,    end: false },
-  { label: 'Relatórios/Faturamento',  to: '/admin/relatorios',icon: <IconReports />, end: false },
-  { label: 'Configurações',           to: '/admin/config',   icon: <IconSettings />, end: false },
+  { label: 'Início',                  to: '/admin',           icon: <IconHome />,     end: true  },
+  { label: 'Pedidos e Pagamentos',    to: '/admin/pedidos',   icon: <IconOrders />,   end: false },
+  { label: 'Catálogo de Produtos',    to: '/admin/produtos',  icon: <IconCatalog />,  end: false },
+  { label: 'Categorias e Devoções',   to: '/admin/categorias',icon: <IconTag />,      end: false },
+  { label: 'Gestão de Estoque',       to: '/admin/estoque',   icon: <IconStock />,    end: false },
+  { label: 'Avaliações de Clientes',  to: '/admin/avaliacoes',icon: <IconStar />,     end: false },
+  { label: 'Relatórios/Faturamento',  to: '/admin/relatorios',icon: <IconReports />,  end: false },
+  { label: 'Configurações',           to: '/admin/config',    icon: <IconSettings />, end: false },
 ];
 
 // ── Inicial do avatar ─────────────────────────────────────────────────────────

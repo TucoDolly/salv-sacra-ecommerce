@@ -45,4 +45,14 @@ class Produto extends Model
     {
         return $this->belongsTo(Devocao::class);
     }
+
+    public function avaliacoes(): HasMany
+    {
+        return $this->hasMany(Avaliacao::class);
+    }
+
+    public function favoritos(): HasMany
+    {
+        return $this->hasMany(Favorito::class);
+    }
 }

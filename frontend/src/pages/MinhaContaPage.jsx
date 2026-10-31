@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useWishlist } from '../contexts/WishlistContext';
 import MainLayout from '../layouts/MainLayout';
 import {
   alterarSenha,
@@ -27,6 +28,7 @@ const BREADCRUMBS = [
 const TABS = [
   { id: 'resumo',     label: 'Resumo' },
   { id: 'pedidos',    label: 'Meus pedidos' },
+  { id: 'favoritos',  label: 'Lista de desejos' },
   { id: 'dados',      label: 'Informações pessoais' },
   { id: 'enderecos',  label: 'Endereços' },
   { id: 'pagamentos', label: 'Formas de pagamento' },
@@ -82,11 +84,12 @@ const primeiroErro = (err) => {
 };
 
 /* ───────────────────────── Resumo ───────────────────────── */
-function Resumo({ user, pedidos, enderecos, cartoes, resumo, irPara, carregando }) {
+function Resumo({ user, pedidos, enderecos, cartoes, totalFavoritos, resumo, irPara, carregando }) {
   const ultimo = resumo?.ultimo_pedido !== undefined ? resumo.ultimo_pedido : pedidos?.[0];
   const numPedidos = resumo?.total_pedidos !== undefined ? resumo.total_pedidos : (pedidos?.length || 0);
   const numEnderecos = resumo?.total_enderecos !== undefined ? resumo.total_enderecos : (enderecos?.length || 0);
   const numCartoes = resumo?.total_cartoes !== undefined ? resumo.total_cartoes : (cartoes?.length || 0);
+  const numFavoritos = totalFavoritos ?? resumo?.total_favoritos ?? 0;
 
   return (
     <>
@@ -99,6 +102,10 @@ function Resumo({ user, pedidos, enderecos, cartoes, resumo, irPara, carregando 
         <button type="button" className="conta-card" onClick={() => irPara('pedidos')}>
           <span className="conta-card-num">{numPedidos}</span>
           <span className="conta-card-label">Pedidos realizados</span>
+        </button>
+        <button type="button" className="conta-card" onClick={() => irPara('favoritos')}>
+          <span className="conta-card-num">{numFavoritos}</span>
+          <span className="conta-card-label">Lista de desejos</span>
         </button>
         <button type="button" className="conta-card" onClick={() => irPara('enderecos')}>
           <span className="conta-card-num">{numEnderecos}</span>
@@ -810,9 +817,158 @@ function Senha() {
   );
 }
 
+/* ───────────────────────── Lista de Desejos (Favoritos) ───────────────────────── */
+function Favoritos({ favoritos, onRemover, carregando }) {
+  return (
+    <>
+      <h2 className="conta-section-title">Lista de desejos</h2>
+      <p className="conta-section-sub">
+        Suas peças favoritas salvas para comprar quando quiser.
+      </p>
+
+      {carregando ? (
+        <div className="conta-box">
+          <p className="conta-vazio">Carregando sua lista de desejos...</p>
+        </div>
+      ) : !favoritos || favoritos.length === 0 ? (
+        <div className="conta-box" style={{ textAlign: 'center', padding: '40px 20px' }}>
+          <div style={{ fontSize: '32px', marginBottom: '10px', color: '#dc2626' }}>♡</div>
+          <p className="conta-vazio" style={{ marginBottom: '14px' }}>
+            Você ainda não salvou nenhuma peça na sua lista de desejos.
+          </p>
+          <Link to="/produtos" className="conta-link">
+            Explorar catálogo de camisetas →
+          </Link>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))',
+            gap: '18px',
+          }}
+        >
+          {favoritos.map((prod) => {
+            const vitrine = Array.isArray(prod.imagens_vitrine) && prod.imagens_vitrine.length > 0
+              ? prod.imagens_vitrine
+              : Array.isArray(prod.imagens) && prod.imagens.length > 0
+              ? prod.imagens
+              : [];
+            const foto = vitrine[0] || prod.imagem_url;
+
+            return (
+              <div
+                key={prod.id}
+                style={{
+                  background: '#fff',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '10px',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <Link
+                  to={`/produto/${prod.id}`}
+                  style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+                >
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '230px',
+                      background: '#f4f4f4',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {foto ? (
+                      <img
+                        src={foto}
+                        alt={prod.nome}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: '32px' }}>🕊️</span>
+                    )}
+                  </div>
+                  <div style={{ padding: '14px 14px 10px' }}>
+                    <div
+                      style={{
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        color: '#111',
+                        textTransform: 'uppercase',
+                        marginBottom: '4px',
+                      }}
+                    >
+                      {prod.nome}
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#222' }}>
+                      {moeda(prod.preco_base)}
+                    </div>
+                  </div>
+                </Link>
+
+                <div
+                  style={{
+                    padding: '0 14px 14px',
+                    display: 'flex',
+                    gap: '8px',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Link
+                    to={`/produto/${prod.id}`}
+                    style={{
+                      flex: 1,
+                      textAlign: 'center',
+                      background: '#1e1e1e',
+                      color: '#fff',
+                      textDecoration: 'none',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    Ver peça
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => onRemover(prod)}
+                    title="Remover da lista de desejos"
+                    style={{
+                      background: '#fef2f2',
+                      color: '#dc2626',
+                      border: '1px solid #fecaca',
+                      borderRadius: '6px',
+                      padding: '7px 10px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ───────────────────────── Página ───────────────────────── */
 export default function MinhaContaPage() {
   const { user, isAuthenticated, loading, signOut, updateUser, setSession } = useAuth();
+  const { favoritosProdutos, totalFavoritos, toggleFavorite, loadingWishlist, carregarFavoritos } = useWishlist();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const urlAba = searchParams.get('aba');
@@ -963,12 +1119,23 @@ export default function MinhaContaPage() {
                 pedidos={pedidos}
                 enderecos={enderecos}
                 cartoes={cartoes}
+                totalFavoritos={totalFavoritos}
                 resumo={resumo}
                 irPara={setAba}
                 carregando={carregandoDados}
               />
             )}
             {aba === 'pedidos' && <Pedidos pedidos={pedidos} pedidoSelecionadoInicial={urlPedido} />}
+            {aba === 'favoritos' && (
+              <Favoritos
+                favoritos={favoritosProdutos}
+                carregando={loadingWishlist}
+                onRemover={async (prod) => {
+                  await toggleFavorite(prod);
+                  carregarResumo();
+                }}
+              />
+            )}
             {aba === 'dados' && (
               <DadosPessoais
                 user={user}
