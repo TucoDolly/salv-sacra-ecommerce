@@ -763,19 +763,23 @@ export default function ProdutoForm() {
             <p className="admin-card-title" style={{ margin: 0, borderBottom: 'none', padding: 0 }}>
               Variações <span style={{ color: '#aaa', fontWeight: 400 }}>({variacoes.length})</span>
             </p>
-            <button
-              type="button"
-              className="admin-btn admin-btn-secondary admin-btn-sm"
-              onClick={addVariacao}
-            >
-              <IconPlus /> Adicionar Variação
-            </button>
           </div>
 
           {variacoes.length === 0 ? (
-            <p style={{ fontSize: '13px', color: '#aaa', marginTop: '16px' }}>
-              Nenhuma variação adicionada. Clique em "Adicionar Variação" para começar.
-            </p>
+            <div style={{ marginTop: '16px' }}>
+              <p style={{ fontSize: '13px', color: '#aaa', marginBottom: '16px' }}>
+                Nenhuma variação adicionada. Clique abaixo para adicionar a primeira variação.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary admin-btn-sm"
+                  onClick={addVariacao}
+                >
+                  <IconPlus /> Adicionar Variação
+                </button>
+              </div>
+            </div>
           ) : (
             <>
               {variacoes.map((variacao, index) => {

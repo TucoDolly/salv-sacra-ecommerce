@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { verificarEmail, reenviarValidacao } from '../services/authService';
@@ -23,6 +23,7 @@ export default function VerificarEmailPage() {
   const [mensagem, setMensagem] = useState('');
   const [reenviando, setReenviando] = useState(false);
   const [msgReenvio, setMsgReenvio] = useState('');
+  const executadoRef = useRef(false);
 
   useEffect(() => {
     if (!token || !email) {
@@ -31,10 +32,13 @@ export default function VerificarEmailPage() {
       return;
     }
 
+    if (executadoRef.current) return;
+    executadoRef.current = true;
+
     verificarEmail({ email, token })
       .then((res) => {
         setStatus('sucesso');
-        setMensagem(res.data.message || 'E-mail validado com sucesso!');
+        setMensagem(res.data.message || 'E-mail validado com sucesso! Sua conta está ativa.');
         if (res.data.token && res.data.user) {
           setSession(res.data.token, res.data.user);
         }

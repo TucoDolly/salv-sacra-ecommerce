@@ -122,9 +122,12 @@ class AuthController extends Controller
             // Verifica se o usuário já validou antes
             $usuarioExistente = User::where('email', $email)->first();
             if ($usuarioExistente) {
+                $token = $usuarioExistente->createToken('api-token')->plainTextToken;
                 return response()->json([
-                    'message'   => 'Este e-mail já foi validado anteriormente! Você já pode acessar sua conta.',
+                    'message'   => 'E-mail validado com sucesso! Sua conta está ativa.',
                     'ja_ativo'  => true,
+                    'token'     => $token,
+                    'user'      => $usuarioExistente,
                 ]);
             }
 

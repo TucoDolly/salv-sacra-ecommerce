@@ -87,7 +87,7 @@ function SiteHeader({ configs }) {
   };
 
   const exibirBanner = configs.aviso_topo_ativo !== '0';
-  const textoBanner = configs.aviso_topo_texto || '✦ FRETE GRÁTIS PARA COMPRAS ACIMA DE R$500 ✦';
+  const textoBanner = configs.aviso_topo_texto || '✦ SALV SACRA — VISTA A SUA FÉ COM ELEGÂNCIA E PROPÓSITO ✦';
 
   return (
     <header>

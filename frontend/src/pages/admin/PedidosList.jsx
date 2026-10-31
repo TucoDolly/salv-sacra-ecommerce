@@ -44,6 +44,22 @@ function obterEtapaRastreio(status) {
   }
 }
 
+function formatarCliente(user, emailContato) {
+  const nomeOriginal = user?.name || 'Cliente';
+  const isDesativada = Boolean(
+    user?.deleted_at ||
+    nomeOriginal.toLowerCase().includes('conta desativada')
+  );
+  const nomeLimpo = nomeOriginal.replace(/\s*\(Conta Desativada\)/i, '').trim() || 'Cliente';
+  const emailLimpo = emailContato || (user?.email ? user.email.replace(/^desativado_\d+_/, '') : '—');
+
+  return {
+    nome: nomeLimpo,
+    isDesativada,
+    email: emailLimpo,
+  };
+}
+
 export default function PedidosList() {
   const [pedidos, setPedidos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -196,7 +212,7 @@ export default function PedidosList() {
 
           <div class="destinatario">
             <div class="section-title">DESTINATÁRIO</div>
-            <div style="font-size: 16px; font-weight: bold; margin-bottom: 4px;">${p.user?.name || 'Cliente'}</div>
+            <div style="font-size: 16px; font-weight: bold; margin-bottom: 4px;">${formatarCliente(p.user, p.email_contato).nome}</div>
             <div style="font-size: 14px;">
               ${p.logradouro}, ${p.numero} ${p.complemento ? ' - ' + p.complemento : ''}<br/>
               Bairro: ${p.bairro}<br/>
@@ -319,8 +335,32 @@ export default function PedidosList() {
                   </td>
                   <td>{formatData(p.data_pedido)}</td>
                   <td>
-                    <div style={{ fontWeight: 600 }}>{p.user?.name || 'Cliente'}</div>
-                    <div style={{ fontSize: '12px', color: '#777' }}>{p.email_contato || p.user?.email}</div>
+                    {(() => {
+                      const clienteInfo = formatarCliente(p.user, p.email_contato);
+                      return (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600 }}>{clienteInfo.nome}</span>
+                            {clienteInfo.isDesativada && (
+                              <span
+                                style={{
+                                  fontSize: '10px',
+                                  background: '#fee2e2',
+                                  color: '#b91c1c',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  fontWeight: 700,
+                                  letterSpacing: '0.03em',
+                                }}
+                              >
+                                Conta Desativada
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#777' }}>{clienteInfo.email}</div>
+                        </>
+                      );
+                    })()}
                   </td>
                   <td>
                     <div style={{ fontSize: '12px', fontWeight: 600, color: '#222' }}>
@@ -353,8 +393,7 @@ export default function PedidosList() {
                   <td>
                     <button
                       type="button"
-                      className="admin-btn admin-btn-secondary"
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
+                      className="admin-btn admin-btn-secondary admin-btn-sm"
                       onClick={() => handleAbrirDetalhe(p)}
                     >
                       Gerenciar Entrega
@@ -483,9 +522,35 @@ export default function PedidosList() {
               <div className="admin-drawer-section">
                 <h4>Dados do Cliente</h4>
                 <div className="admin-pedido-info-card">
-                  <p><strong>Nome:</strong> {pedidoSelecionado.user?.name || 'Não informado'}</p>
-                  <p><strong>E-mail:</strong> {pedidoSelecionado.email_contato || pedidoSelecionado.user?.email}</p>
-                  <p><strong>Telefone:</strong> {pedidoSelecionado.telefone || pedidoSelecionado.user?.telefone || '—'}</p>
+                  {(() => {
+                    const cInfo = formatarCliente(pedidoSelecionado.user, pedidoSelecionado.email_contato);
+                    return (
+                      <>
+                        <p style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <strong>Nome:</strong> <span>{cInfo.nome}</span>
+                          {cInfo.isDesativada && (
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                background: '#fee2e2',
+                                color: '#b91c1c',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontWeight: 700,
+                              }}
+                            >
+                              Conta Desativada
+                            </span>
+                          )}
+                        </p>
+                        <p><strong>E-mail:</strong> {cInfo.email}</p>
+                        <p><strong>Telefone:</strong> {pedidoSelecionado.telefone || pedidoSelecionado.user?.telefone || '—'}</p>
+                        {pedidoSelecionado.user?.cpf && (
+                          <p><strong>CPF:</strong> {pedidoSelecionado.user.cpf}</p>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 

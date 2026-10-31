@@ -202,10 +202,6 @@ class PedidoController extends Controller
                 }
             }
 
-            if ($validated['metodo_pagamento'] === 'pix' || $validated['metodo_pagamento'] === 'boleto') {
-                $valorTotal = $valorTotal * 0.95; // 5% de desconto
-            }
-
             $statusInicial = $validated['metodo_pagamento'] === 'cartao' ? 'Pago' : 'Pendente';
 
             $pedido = Pedido::create([

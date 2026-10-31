@@ -178,9 +178,7 @@ export default function ProdutoDetalhe() {
 
   // Preços e cálculos
   const precoBase = Number(produto.preco_base || 79.9);
-  const precoOriginal = (precoBase * 1.12).toFixed(2); // Simula valor com desconto (ex: R$ 89,90)
-  const precoBoleto = (precoBase * 0.95).toFixed(2); // 5% de desconto no boleto
-  const parcela12x = (precoBase / 12 * 1.23).toFixed(2); // Com juros leves ou sem juros
+  const parcela12x = (precoBase / 12 * 1.23).toFixed(2); // Simulação de parcelamento no cartão
 
   // Aba 1: Galeria de fotos menores do lado esquerdo da foto grande
   const galeriaFotos = (() => {
@@ -351,12 +349,6 @@ export default function ProdutoDetalhe() {
             </div>
 
             <div className="pdp-main-image-container">
-              {/* Selo 11% OFF */}
-              <div className="pdp-discount-badge">
-                <span>11%</span>
-                <span>OFF</span>
-              </div>
-
               {imagemExibida ? (
                 <img
                   src={imagemExibida}
@@ -390,16 +382,9 @@ export default function ProdutoDetalhe() {
 
             {/* Preços */}
             <div className="pdp-price-row">
-              <span className="pdp-old-price">
-                {Number(precoOriginal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </span>
               <span className="pdp-current-price">
                 {Number(precoBase).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </span>
-            </div>
-
-            <div className="pdp-boleto-price">
-              {Number(precoBoleto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} com Boleto
             </div>
 
             {/* Condições de Pagamento */}
@@ -407,10 +392,6 @@ export default function ProdutoDetalhe() {
               <div className="pdp-condition-item">
                 <IconCard />
                 <span>12 x de R$ {parcela12x}</span>
-              </div>
-              <div className="pdp-condition-item highlight">
-                <IconBarcode />
-                <span><strong>5% de desconto</strong> pagando com Boleto</span>
               </div>
             </div>
 

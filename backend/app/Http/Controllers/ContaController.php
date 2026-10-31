@@ -184,26 +184,41 @@ class ContaController extends Controller
     }
 
     /**
-     * Exclui permanentemente a conta do usuário autenticado, apagando pedidos, itens, endereços, cartões e tokens.
+     * Desativa a conta do usuário a seu pedido:
+     * - Preserva os pedidos e dados cadastrais para consulta exclusiva do administrador (logística, emissão fiscal e histórico).
+     * - Mantém o nome do cliente original com o sufixo " (Conta Desativada)".
+     * - Libera o e-mail para eventuais novos cadastros futuros prefixando como desativado.
+     * - Remove cartões salvos e tokens de acesso para garantir a segurança.
+     * - Invalida a senha de acesso e aplica Soft Delete no usuário.
      */
     public function excluirConta(Request $request): JsonResponse
     {
         $user = $request->user();
 
         \Illuminate\Support\Facades\DB::transaction(function () use ($user) {
-            $pedidoIds = $user->pedidos()->pluck('id')->all();
-            if (! empty($pedidoIds)) {
-                \App\Models\ItemPedido::whereIn('pedido_id', $pedidoIds)->delete();
-                $user->pedidos()->delete();
-            }
-
-            $user->enderecos()->delete();
+            // 1. Remove dados sensíveis de pagamento e sessões ativas
             $user->cartoes()->delete();
+            $user->enderecos()->delete();
             $user->tokens()->delete();
+
+            // 2. Preserva o nome do cliente original com a indicação "(Conta Desativada)"
+            $nomeBase = trim(preg_replace('/\s*\(Conta Desativada\)/i', '', $user->name ?: 'Cliente'));
+            $nomeAtualizado = $nomeBase . ' (Conta Desativada)';
+
+            // Mantém os dados cadastrais (telefone, CPF, nascimento) disponíveis para o administrador
+            $user->update([
+                'name'     => $nomeAtualizado,
+                'email'    => 'desativado_' . $user->id . '_' . $user->email,
+                'password' => \Illuminate\Support\Facades\Hash::make(\Illuminate\Support\Str::random(60)),
+            ]);
+
+            // 3. Aplica Soft Delete para desativar o login e o acesso à conta
             $user->delete();
         });
 
-        return response()->json(['message' => 'Sua conta e todos os seus dados foram excluídos permanentemente.']);
+        return response()->json([
+            'message' => 'Sua conta foi desativada com sucesso.',
+        ]);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────

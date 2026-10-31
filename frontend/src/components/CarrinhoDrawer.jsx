@@ -130,7 +130,6 @@ export default function CarrinhoDrawer() {
               <div className="cart-items-list">
                 {items.map((item, index) => {
                   const precoNum = Number(item.preco || 79.9);
-                  const precoOriginal = (precoNum * 1.12).toFixed(2);
                   const precoTotal = (precoNum * item.quantidade).toFixed(2);
 
                   return (
@@ -183,10 +182,6 @@ export default function CarrinhoDrawer() {
 
                           {/* Preços */}
                           <div className="cart-item-pricing">
-                            <span className="cart-item-old-price">
-                              <span className="cart-item-discount-tag">-11%</span>
-                              R${precoOriginal}
-                            </span>
                             <span className="cart-item-price">
                               R${precoTotal}
                             </span>
@@ -208,24 +203,32 @@ export default function CarrinhoDrawer() {
 
               {/* Seção de CEP */}
               <div className="cart-cep-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>
-                    Entregas para: <strong>{cep}</strong>
-                    {cidadeDestino && <span style={{ color: '#666', fontSize: '12px' }}> ({cidadeDestino}/{ufDestino})</span>}
-                  </span>
-                  <button
-                    type="button"
-                    className="cart-change-cep-btn"
-                    onClick={() => {
-                      setCepInput(cep);
-                      setEditandoCep(!editandoCep);
-                    }}
-                  >
-                    {editandoCep ? 'CANCELAR' : 'ALTERAR CEP'}
-                  </button>
-                </div>
+                {cep ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>
+                      Entregas para: <strong>{cep}</strong>
+                      {cidadeDestino && <span style={{ color: '#666', fontSize: '12px' }}> ({cidadeDestino}/{ufDestino})</span>}
+                    </span>
+                    <button
+                      type="button"
+                      className="cart-change-cep-btn"
+                      onClick={() => {
+                        setCepInput(cep);
+                        setEditandoCep(!editandoCep);
+                      }}
+                    >
+                      {editandoCep ? 'CANCELAR' : 'ALTERAR CEP'}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#333' }}>
+                      Calcular frete e prazo de entrega:
+                    </span>
+                  </div>
+                )}
 
-                {editandoCep && (
+                {(!cep || editandoCep) && (
                   <form onSubmit={handleSalvarCep} style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
                     <input
                       type="text"
@@ -237,7 +240,7 @@ export default function CarrinhoDrawer() {
                       }}
                       placeholder="00000-000"
                       style={{ flex: 1, padding: '8px 10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px' }}
-                      autoFocus
+                      autoFocus={editandoCep}
                     />
                     <button
                       type="submit"
@@ -258,54 +261,60 @@ export default function CarrinhoDrawer() {
               </div>
 
               {/* Envio a domicílio */}
-              <div className="cart-shipping-section">
-                <div className="cart-shipping-title">
-                  <IconTruck />
-                  <span>Envio a domicílio {loadingFrete && <small style={{ fontWeight: 400, color: '#888' }}>(calculando...)</small>}</span>
-                </div>
+              {shippingOptions.length > 0 ? (
+                <div className="cart-shipping-section">
+                  <div className="cart-shipping-title">
+                    <IconTruck />
+                    <span>Envio a domicílio {loadingFrete && <small style={{ fontWeight: 400, color: '#888' }}>(calculando...)</small>}</span>
+                  </div>
 
-                <div className="cart-shipping-options">
-                  {shippingOptions.map((opt) => {
-                    const isSelected = selectedShipping?.id === opt.id;
-                    return (
-                      <div
-                        key={opt.id}
-                        className={`cart-shipping-card ${isSelected ? 'selected' : ''}`}
-                        onClick={() => setSelectedShipping(opt)}
-                      >
-                        <div className="cart-shipping-left">
-                          <div className="cart-shipping-radio-circle">
-                            {isSelected && <div className="cart-shipping-radio-circle-inner" />}
+                  <div className="cart-shipping-options">
+                    {shippingOptions.map((opt) => {
+                      const isSelected = selectedShipping?.id === opt.id;
+                      return (
+                        <div
+                          key={opt.id}
+                          className={`cart-shipping-card ${isSelected ? 'selected' : ''}`}
+                          onClick={() => setSelectedShipping(opt)}
+                        >
+                          <div className="cart-shipping-left">
+                            <div className="cart-shipping-radio-circle">
+                              {isSelected && <div className="cart-shipping-radio-circle-inner" />}
+                            </div>
+                            <div className="cart-shipping-info">
+                              <span className="cart-shipping-name">{opt.nome}</span>
+                              <span className="cart-shipping-deadline">
+                                <IconRotate /> {opt.prazo}
+                              </span>
+                            </div>
                           </div>
-                          <div className="cart-shipping-info">
-                            <span className="cart-shipping-name">{opt.nome}</span>
-                            <span className="cart-shipping-deadline">
-                              <IconRotate /> {opt.prazo}
-                            </span>
-                          </div>
+                          <span className="cart-shipping-price" style={{ color: opt.preco === 0 ? '#1e8449' : 'inherit' }}>
+                            {opt.preco === 0 ? 'GRÁTIS' : `R$ ${Number(opt.preco).toFixed(2).replace('.', ',')}`}
+                          </span>
                         </div>
-                        <span className="cart-shipping-price" style={{ color: opt.preco === 0 ? '#1e8449' : 'inherit' }}>
-                          {opt.preco === 0 ? 'GRÁTIS' : `R$ ${Number(opt.preco).toFixed(2).replace('.', ',')}`}
-                        </span>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="cart-more-shipping-btn"
+                    onClick={() => alert('Todas as opções disponíveis já estão visíveis.')}
+                  >
+                    Ver mais opções de envio
+                  </button>
+
+                  <p className="cart-shipping-note">
+                    O prazo de entrega <strong>não contabiliza feriados</strong>.
+                  </p>
+
+                  <CupomSelector />
                 </div>
-
-                <button
-                  type="button"
-                  className="cart-more-shipping-btn"
-                  onClick={() => alert('Todas as opções disponíveis já estão visíveis.')}
-                >
-                  Ver mais opções de envio
-                </button>
-
-                <p className="cart-shipping-note">
-                  O prazo de entrega <strong>não contabiliza feriados</strong>.
-                </p>
-
-                <CupomSelector />
-              </div>
+              ) : (
+                <div style={{ marginTop: '14px' }}>
+                  <CupomSelector />
+                </div>
+              )}
             </>
           )}
         </div>
@@ -324,9 +333,6 @@ export default function CarrinhoDrawer() {
               <span className="cart-total-value">
                 {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </span>
-            </div>
-            <div className="cart-total-boleto">
-              Ou {totalBoleto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} com Boleto
             </div>
 
             <button

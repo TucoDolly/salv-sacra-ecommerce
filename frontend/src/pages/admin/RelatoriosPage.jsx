@@ -387,8 +387,33 @@ export default function RelatoriosPage() {
                         #{p.id}
                       </td>
                       <td style={{ padding: '14px 20px', color: '#333' }}>
-                        <div><strong>{p.cliente}</strong></div>
-                        <div style={{ fontSize: '11px', color: '#888' }}>{p.email}</div>
+                        {(() => {
+                          const isDesativada = (p.cliente || '').toLowerCase().includes('conta desativada');
+                          const nomeLimpo = (p.cliente || 'Cliente').replace(/\s*\(Conta Desativada\)/i, '').trim();
+                          const emailLimpo = (p.email || '').replace(/^desativado_\d+_/, '');
+                          return (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <strong>{nomeLimpo}</strong>
+                                {isDesativada && (
+                                  <span
+                                    style={{
+                                      fontSize: '10px',
+                                      background: '#fee2e2',
+                                      color: '#b91c1c',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    Conta Desativada
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#888' }}>{emailLimpo}</div>
+                            </>
+                          );
+                        })()}
                       </td>
                       <td style={{ padding: '14px 20px', color: '#64748b' }}>
                         {p.data}

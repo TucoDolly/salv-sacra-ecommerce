@@ -49,15 +49,15 @@ class FreteController extends Controller
         $uf     = strtoupper($dadosCep['uf'] ?? 'SC');
         $cidade = $dadosCep['localidade'] ?? '';
 
-        // 2. Busca configurações de frete da loja (CEP de origem e valor de frete grátis)
-        $configs = Configuracao::whereIn('chave', ['frete_gratis_minimo', 'cep_origem', 'melhor_envio_token'])
+        // 2. Busca configurações de frete da loja (CEP de origem e token)
+        $configs = Configuracao::whereIn('chave', ['cep_origem', 'melhor_envio_token'])
             ->pluck('valor', 'chave');
 
-        $freteGratisMinimo = (float) ($configs['frete_gratis_minimo'] ?? 500.00);
-        $cepOrigem         = preg_replace('/\D/', '', $configs['cep_origem'] ?? env('FRETE_CEP_ORIGEM', '88702280'));
-        $tokenMelhorEnvio  = $configs['melhor_envio_token'] ?? env('MELHOR_ENVIO_TOKEN');
+        $cepOrigem        = preg_replace('/\D/', '', $configs['cep_origem'] ?? env('FRETE_CEP_ORIGEM', '88702280'));
+        $tokenMelhorEnvio = $configs['melhor_envio_token'] ?? env('MELHOR_ENVIO_TOKEN');
 
-        $temFreteGratis = ($freteGratisMinimo > 0 && $subtotal >= $freteGratisMinimo);
+        // Frete grátis apenas via cupom promocional
+        $temFreteGratis = false;
 
         // 3. Se houver Token do Melhor Envio configurado, tenta cotar direto na API oficial
         if (! empty($tokenMelhorEnvio)) {

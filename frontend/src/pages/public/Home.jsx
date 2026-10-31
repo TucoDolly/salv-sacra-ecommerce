@@ -78,8 +78,8 @@ const BANNER_SLIDES = [
 
 // ── Benefícios (faixa abaixo do banner) ───────────────────────────────────────
 const BENEFITS = [
-  { icon: <IconTruck />,      title: 'Frete grátis',      desc: 'Compras acima de R$500' },
-  { icon: <IconCreditCard />, title: 'Parcele em até 12x', desc: 'Em até 12x sem juros' },
+  { icon: <IconTruck />,      title: 'Envio seguro',      desc: 'Para todo o Brasil' },
+  { icon: <IconCreditCard />, title: 'Parcele em até 12x', desc: 'No cartão de crédito' },
   { icon: <IconShield />,     title: 'Loja 100% segura',  desc: 'Seus dados protegidos' },
   { icon: <IconHeadset />,    title: 'Precisa de ajuda?', desc: 'Fale conosco pelo WhatsApp' },
 ];

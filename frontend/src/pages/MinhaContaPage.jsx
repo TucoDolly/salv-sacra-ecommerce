@@ -720,7 +720,7 @@ function FormasPagamento({ cartoes, recarregar }) {
           <line x1="12" y1="8" x2="12.01" y2="8" />
         </svg>
         <div className="conta-payment-info-text">
-          <strong>Sobre Pix e Boleto Bancário:</strong> O Pix e o Boleto não exigem cadastro prévio de dados nesta tela. Eles geram QR Codes, chave copia-e-cola e código de barras exclusivos automaticamente na conclusão de cada pedido, com confirmação e desconto de 5%.
+          <strong>Sobre Pix e Boleto Bancário:</strong> O Pix e o Boleto não exigem cadastro prévio de dados nesta tela. Eles geram QR Codes, chave copia-e-cola e código de barras exclusivos automaticamente na conclusão de cada pedido com total segurança e praticidade.
         </div>
       </div>
     </>
@@ -812,7 +812,7 @@ function Senha() {
 
 /* ───────────────────────── Página ───────────────────────── */
 export default function MinhaContaPage() {
-  const { user, isAuthenticated, loading, signOut, updateUser } = useAuth();
+  const { user, isAuthenticated, loading, signOut, updateUser, setSession } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const urlAba = searchParams.get('aba');
@@ -904,12 +904,20 @@ export default function MinhaContaPage() {
     setExcluindoConta(true);
     try {
       await excluirConta();
+      localStorage.removeItem('sanctum_token');
       localStorage.removeItem('minha_conta_resumo');
       localStorage.removeItem('@SalvSacra:carrinho');
       localStorage.removeItem('@SalvSacra:cupom');
-      await signOut();
+      // Limpa a sessão diretamente sem chamar signOut() na API (pois a conta e tokens foram excluídos)
+      setSession('', null);
       navigate('/login');
     } catch (err) {
+      if (err.response?.status === 401) {
+        localStorage.removeItem('sanctum_token');
+        setSession('', null);
+        navigate('/login');
+        return;
+      }
       alert(primeiroErro(err));
     } finally {
       setExcluindoConta(false);

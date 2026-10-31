@@ -27,9 +27,21 @@ const OPCOES_PADRAO = [
 export function CartProvider({ children }) {
   const [items, setItems] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [shippingOptions, setShippingOptions] = useState(OPCOES_PADRAO);
-  const [selectedShipping, setSelectedShipping] = useState(OPCOES_PADRAO[1]); // SEDEX por padrão
-  const [cep, setCep] = useState(() => localStorage.getItem('@SalvSacra:cep') || '88701-260');
+  const [shippingOptions, setShippingOptions] = useState([]);
+  const [selectedShipping, setSelectedShipping] = useState(null);
+  const [cep, setCep] = useState(() => {
+    try {
+      const salvo = localStorage.getItem('@SalvSacra:cep');
+      // Limpa qualquer resíduo legado do CEP fixo de testes
+      if (!salvo || salvo === '88701-260') {
+        localStorage.removeItem('@SalvSacra:cep');
+        return '';
+      }
+      return salvo;
+    } catch {
+      return '';
+    }
+  });
   const [cidadeDestino, setCidadeDestino] = useState('');
   const [ufDestino, setUfDestino] = useState('');
   const [loadingFrete, setLoadingFrete] = useState(false);
@@ -98,6 +110,12 @@ export function CartProvider({ children }) {
     if (limpo.length === 8) {
       localStorage.setItem('@SalvSacra:cep', cep);
       calcularFretePorCep(limpo, subtotal, totalItens);
+    } else {
+      // Se não há CEP informado, limpa as opções de frete e desmarca frete
+      setShippingOptions([]);
+      setSelectedShipping(null);
+      setCidadeDestino('');
+      setUfDestino('');
     }
   }, [cep, subtotal, totalItens, calcularFretePorCep]);
 
@@ -184,7 +202,7 @@ export function CartProvider({ children }) {
 
   const descontoCupom = calcularDescontoCupom(cupom);
   const total = Math.max(0, subtotal + fretePreco - descontoCupom);
-  const totalBoleto = total * 0.95; // 5% no boleto
+  const totalBoleto = total;
 
   return (
     <CartContext.Provider

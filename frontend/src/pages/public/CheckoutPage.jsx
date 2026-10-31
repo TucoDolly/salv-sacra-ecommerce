@@ -100,10 +100,10 @@ export default function CheckoutPage() {
   // Etapa atual do checkout: 'entrega' | 'pagamento'
   const [etapa, setEtapa] = useState('entrega');
 
-  // Dados de contato e endereço
-  const [email, setEmail] = useState(user?.email || '');
-  const [nome, setNome] = useState(user?.name || '');
-  const [telefone, setTelefone] = useState(user?.telefone || '');
+  // Dados de contato e endereço (começam em branco para novos cadastros preencherem)
+  const [email, setEmail] = useState('');
+  const [nome, setNome] = useState('');
+  const [telefone, setTelefone] = useState('');
   const [endereco, setEndereco] = useState({
     cep: '',
     logradouro: '',
@@ -123,20 +123,7 @@ export default function CheckoutPage() {
   const [observacoes, setObservacoes] = useState('');
 
   // Opções de envio dinâmicas calculadas pela API / CartContext
-  const opcoesFrete = opcoesFreteContext && opcoesFreteContext.length > 0 ? opcoesFreteContext : [
-    {
-      id: 'sedex',
-      nome: 'Correios SEDEX',
-      prazo: 'Chega em 1 dia útil',
-      preco: 12.47,
-    },
-    {
-      id: 'jadlog',
-      nome: 'Transportadora Jadlog Rápido',
-      prazo: 'Chega em 2 dias úteis',
-      preco: 14.90,
-    },
-  ];
+  const opcoesFrete = opcoesFreteContext || [];
 
   // Pagamento: 'cartao' | 'pix' | 'boleto'
   const [metodoPagamento, setMetodoPagamento] = useState('cartao');
@@ -209,7 +196,7 @@ export default function CheckoutPage() {
     }
   };
 
-  // Carregar dados de perfil, endereços e cartões salvos
+  // Carregar dados de perfil, endereços e cartões salvos do usuário autenticado
   useEffect(() => {
     if (user) {
       if (user.email) setEmail(user.email);
@@ -225,7 +212,7 @@ export default function CheckoutPage() {
           const lista = res.data || [];
           setEnderecosSalvos(lista);
           if (lista.length > 0) {
-            const end = lista[0]; // Seleciona automaticamente o endereço cadastrado mais recente
+            const end = lista[0]; // Seleciona automaticamente o endereço cadastrado pelo próprio cliente
             setEndereco({
               cep: end.cep || '',
               logradouro: end.logradouro || '',
@@ -235,38 +222,8 @@ export default function CheckoutPage() {
               cidade: end.cidade || '',
               estado: end.estado || '',
             });
-            // Caso o cliente ainda não tenha telefone cadastrado no perfil, preenche com o da última compra
-            if (!user?.telefone) {
-              obterUltimoEndereco()
-                .then((resp) => {
-                  if (resp.data?.telefone) {
-                    setTelefone((prev) => prev || resp.data.telefone);
-                  }
-                })
-                .catch(() => {});
-            }
-          } else {
-            // Se o usuário não tem endereço salvo, busca o último endereço utilizado em pedidos anteriores
-            obterUltimoEndereco()
-              .then((resp) => {
-                if (resp.data) {
-                  const uEnd = resp.data;
-                  setEndereco({
-                    cep: uEnd.cep || '',
-                    logradouro: uEnd.logradouro || '',
-                    numero: uEnd.numero || '',
-                    complemento: uEnd.complemento || '',
-                    bairro: uEnd.bairro || '',
-                    cidade: uEnd.cidade || '',
-                    estado: uEnd.estado || '',
-                  });
-                  if (uEnd.telefone) {
-                    setTelefone((prev) => prev || uEnd.telefone);
-                  }
-                }
-              })
-              .catch(() => {});
           }
+          // Caso o usuário não tenha cadastrado endereços no perfil, os campos ficam limpos para ele preencher
         })
         .catch(() => {});
 
@@ -297,12 +254,11 @@ export default function CheckoutPage() {
   }, [authLoading, isAuthenticated, navigate]);
 
   // Cálculos de valor
-  const freteAtual = selectedShipping || opcoesFrete[0];
-  const freteValor = freteAtual.preco;
-  const tipoFreteNome = freteAtual.nome;
-  const totalBase = Math.max(0, (subtotal || 79.9) + freteValor - (descontoCupom || 0));
-  const descontoBoletoPix = (metodoPagamento === 'pix' || metodoPagamento === 'boleto') ? totalBase * 0.05 : 0;
-  const totalFinal = totalBase - descontoBoletoPix;
+  const freteAtual = selectedShipping || (opcoesFrete.length > 0 ? opcoesFrete[0] : null);
+  const freteValor = freteAtual ? Number(freteAtual.preco) : 0;
+  const tipoFreteNome = freteAtual ? freteAtual.nome : 'A calcular';
+  const totalFinal = Math.max(0, (subtotal || 79.9) + freteValor - (descontoCupom || 0));
+  const totalBase = totalFinal;
 
   // Sincroniza o CEP do endereço do Checkout com o motor de cálculo de frete
   useEffect(() => {
@@ -342,6 +298,10 @@ export default function CheckoutPage() {
     e.preventDefault();
     if (!email || !endereco.cep || !endereco.logradouro || !endereco.numero) {
       alert('Por favor, preencha os dados obrigatórios de entrega.');
+      return;
+    }
+    if (!freteAtual) {
+      alert('Por favor, informe um CEP válido e selecione uma modalidade de frete.');
       return;
     }
     setEtapa('pagamento');
@@ -471,7 +431,7 @@ export default function CheckoutPage() {
               Escaneie o QR Code para pagar
             </h2>
             <p style={{ fontSize: '14px', color: '#666', margin: '0 0 18px' }}>
-              Pedido <strong>#{pedidoConcluido.id}</strong> · Valor com 5% de desconto:{' '}
+              Pedido <strong>#{pedidoConcluido.id}</strong> · Valor total a pagar:{' '}
               <strong style={{ color: '#111', fontSize: '16px' }}>
                 R$ {Number(pedidoConcluido.valor_total || totalFinal).toFixed(2).replace('.', ',')}
               </strong>
@@ -613,7 +573,7 @@ export default function CheckoutPage() {
                 34191.79001 01043.510047 91020.150008 8 98450000009237
               </code>
               <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
-                Valor com 5% de desconto: <strong>R$ {Number(pedidoConcluido.valor_total || totalFinal).toFixed(2).replace('.', ',')}</strong>
+                Valor total do boleto: <strong>R$ {Number(pedidoConcluido.valor_total || totalFinal).toFixed(2).replace('.', ',')}</strong>
               </p>
             </div>
 
@@ -865,7 +825,7 @@ export default function CheckoutPage() {
                         value={telefone}
                         onChange={(e) => setTelefone(e.target.value)}
                         className="checkout-input"
-                        placeholder="(48) 99999-9999"
+                        placeholder="Ex: (11) 98765-4321"
                       />
                     </div>
                     <div className="checkout-input-group">
@@ -878,7 +838,7 @@ export default function CheckoutPage() {
                         onBlur={handleCepBlur}
                         onChange={(e) => setEndereco({ ...endereco, cep: e.target.value })}
                         className="checkout-input"
-                        placeholder="88701-260"
+                        placeholder="Ex: 01001-000"
                       />
                     </div>
                   </div>
@@ -892,7 +852,7 @@ export default function CheckoutPage() {
                         value={endereco.logradouro}
                         onChange={(e) => setEndereco({ ...endereco, logradouro: e.target.value })}
                         className="checkout-input"
-                        placeholder="Rua São José"
+                        placeholder="Ex: Av. Paulista"
                       />
                     </div>
                     <div className="checkout-input-group">
@@ -903,7 +863,7 @@ export default function CheckoutPage() {
                         value={endereco.numero}
                         onChange={(e) => setEndereco({ ...endereco, numero: e.target.value })}
                         className="checkout-input"
-                        placeholder="387"
+                        placeholder="Ex: 1000"
                       />
                     </div>
                     <div className="checkout-input-group">
@@ -913,7 +873,7 @@ export default function CheckoutPage() {
                         value={endereco.complemento}
                         onChange={(e) => setEndereco({ ...endereco, complemento: e.target.value })}
                         className="checkout-input"
-                        placeholder="Apto 102"
+                        placeholder="Ex: Apto 42"
                       />
                     </div>
                   </div>
@@ -927,7 +887,7 @@ export default function CheckoutPage() {
                         value={endereco.bairro}
                         onChange={(e) => setEndereco({ ...endereco, bairro: e.target.value })}
                         className="checkout-input"
-                        placeholder="Centro"
+                        placeholder="Ex: Bela Vista"
                       />
                     </div>
                     <div className="checkout-input-group">
@@ -938,7 +898,7 @@ export default function CheckoutPage() {
                         value={endereco.cidade}
                         onChange={(e) => setEndereco({ ...endereco, cidade: e.target.value })}
                         className="checkout-input"
-                        placeholder="Tubarão"
+                        placeholder="Ex: São Paulo"
                       />
                     </div>
                     <div className="checkout-input-group">
@@ -950,40 +910,46 @@ export default function CheckoutPage() {
                         value={endereco.estado}
                         onChange={(e) => setEndereco({ ...endereco, estado: e.target.value.toUpperCase() })}
                         className="checkout-input"
-                        placeholder="SC"
+                        placeholder="SP"
                       />
                     </div>
                   </div>
 
                   {/* Seleção do Tipo de Envio */}
-                  <div style={{ marginTop: '10px' }}>
-                    <label style={{ fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', color: '#555' }}>
-                      Selecione a Modalidade de Envio {loadingFrete && <small style={{ fontWeight: 400 }}>(atualizando valores para o CEP...)</small>}:
-                    </label>
-                    <div className="checkout-shipping-select-list">
-                      {opcoesFrete.map((opt) => {
-                        const isSelected = freteAtual.id === opt.id;
-                        return (
-                          <div
-                            key={opt.id}
-                            className={`checkout-shipping-option-card ${isSelected ? 'selected' : ''}`}
-                            onClick={() => setSelectedShipping(opt)}
-                          >
-                            <div className="shipping-radio">
-                              {isSelected && <div className="shipping-radio-dot" />}
+                  {opcoesFrete.length > 0 ? (
+                    <div style={{ marginTop: '10px' }}>
+                      <label style={{ fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', color: '#555' }}>
+                        Selecione a Modalidade de Envio {loadingFrete && <small style={{ fontWeight: 400 }}>(atualizando valores para o CEP...)</small>}:
+                      </label>
+                      <div className="checkout-shipping-select-list">
+                        {opcoesFrete.map((opt) => {
+                          const isSelected = freteAtual?.id === opt.id;
+                          return (
+                            <div
+                              key={opt.id}
+                              className={`checkout-shipping-option-card ${isSelected ? 'selected' : ''}`}
+                              onClick={() => setSelectedShipping(opt)}
+                            >
+                              <div className="shipping-radio">
+                                {isSelected && <div className="shipping-radio-dot" />}
+                              </div>
+                              <div className="shipping-details">
+                                <span className="shipping-name">{opt.nome}</span>
+                                <span className="shipping-deadline">{opt.prazo}</span>
+                              </div>
+                              <span className="shipping-price" style={{ color: opt.preco === 0 ? '#1e8449' : 'inherit' }}>
+                                {opt.preco === 0 ? 'GRÁTIS' : `R$ ${Number(opt.preco).toFixed(2).replace('.', ',')}`}
+                              </span>
                             </div>
-                            <div className="shipping-details">
-                              <span className="shipping-name">{opt.nome}</span>
-                              <span className="shipping-deadline">{opt.prazo}</span>
-                            </div>
-                            <span className="shipping-price" style={{ color: opt.preco === 0 ? '#1e8449' : 'inherit' }}>
-                              {opt.preco === 0 ? 'GRÁTIS' : `R$ ${Number(opt.preco).toFixed(2).replace('.', ',')}`}
-                            </span>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div style={{ marginTop: '16px', padding: '12px 14px', background: '#f8f9fa', borderRadius: '6px', border: '1px dashed #ccc', fontSize: '13px', color: '#666' }}>
+                      Informe um CEP válido acima para carregar as opções e prazos de frete.
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -1230,14 +1196,14 @@ export default function CheckoutPage() {
                         <span>Pix</span>
                       </div>
                       <div className="checkout-payment-right">
-                        <span>Pague R${(totalBase * 0.95).toFixed(2).replace('.', ',')}</span>
+                        <span>Pague R${totalFinal.toFixed(2).replace('.', ',')}</span>
                         <span className="checkout-payment-arrow">›</span>
                       </div>
                     </div>
 
                     {metodoPagamento === 'pix' && (
                       <div className="checkout-payment-body">
-                        <p>Ao clicar em fazer pedido, você receberá a chave PIX e o QR Code com <strong>5% de desconto</strong> para pagamento imediato.</p>
+                        <p>Ao clicar em fazer pedido, você receberá a chave PIX e o QR Code para pagamento imediato.</p>
                       </div>
                     )}
                   </div>
@@ -1250,7 +1216,7 @@ export default function CheckoutPage() {
                         <span>Boleto bancário</span>
                       </div>
                       <div className="checkout-payment-right">
-                        <span>Pague R${(totalBase * 0.95).toFixed(2).replace('.', ',')}</span>
+                        <span>Pague R${totalFinal.toFixed(2).replace('.', ',')}</span>
                         <span className="checkout-payment-arrow">›</span>
                       </div>
                     </div>
@@ -1344,12 +1310,6 @@ export default function CheckoutPage() {
                 <div className="checkout-total-line" style={{ color: '#1e8449', fontWeight: 'bold' }}>
                   <span>Cupom {cupom?.codigo} ({Number(cupom?.percentual)}% {cupom?.tipo === 'frete' ? 'no frete' : 'nas peças'})</span>
                   <span>- R${descontoCupom.toFixed(2).replace('.', ',')}</span>
-                </div>
-              )}
-              {descontoBoletoPix > 0 && etapa === 'pagamento' && (
-                <div className="checkout-total-line" style={{ color: '#c4953a', fontWeight: 'bold' }}>
-                  <span>Desconto 5% (Pix/Boleto)</span>
-                  <span>- R${descontoBoletoPix.toFixed(2).replace('.', ',')}</span>
                 </div>
               )}
               <div className="checkout-total-line final">
