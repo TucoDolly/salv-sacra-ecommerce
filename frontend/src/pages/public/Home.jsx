@@ -3,10 +3,13 @@ import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { getHexCor } from '../../constants/cores';
 import { useWishlist } from '../../contexts/WishlistContext';
+import { useAuth } from '../../contexts/AuthContext';
 import '../../styles/home.css';
 import bannerSaoJose from '../../assets/banner-sao-jose.jpg';
 import bannerDesatadora from '../../assets/banner-desatadora.jpg';
 import bannerPorVoce from '../../assets/banner-por-voce.jpg';
+
+const FALLBACK_BANNER_IMGS = [bannerSaoJose, bannerDesatadora, bannerPorVoce];
 
 // ── Ícones inline ──────────────────────────────────────────────────────────────
 const IconTruck = () => (
@@ -88,6 +91,7 @@ const BENEFITS = [
 // ── Componente de card de produto ──────────────────────────────────────────────
 function ProdutoCard({ produto }) {
   const [hovered, setHovered] = useState(false);
+  const { isAuthenticated } = useAuth();
   const { isFavorite, toggleFavorite } = useWishlist();
   const favoritado = isFavorite(produto.id);
 
@@ -118,38 +122,40 @@ function ProdutoCard({ produto }) {
       onMouseLeave={() => setHovered(false)}
     >
       <div className="produto-card-img" style={{ position: 'relative' }}>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            toggleFavorite(produto);
-          }}
-          title={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
-          aria-label={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
-          style={{
-            position: 'absolute',
-            top: '10px',
-            right: '10px',
-            zIndex: 5,
-            width: '32px',
-            height: '32px',
-            borderRadius: '50%',
-            background: 'rgba(255, 255, 255, 0.92)',
-            border: '1px solid rgba(0, 0, 0, 0.08)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)',
-            color: favoritado ? '#dc2626' : '#555',
-            transition: 'transform 0.15s ease, color 0.15s ease',
-          }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill={favoritado ? '#dc2626' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-          </svg>
-        </button>
+        {isAuthenticated && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleFavorite(produto);
+            }}
+            title={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+            aria-label={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+            style={{
+              position: 'absolute',
+              top: '10px',
+              right: '10px',
+              zIndex: 5,
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              background: 'rgba(255, 255, 255, 0.92)',
+              border: '1px solid rgba(0, 0, 0, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)',
+              color: favoritado ? '#dc2626' : '#555',
+              transition: 'transform 0.15s ease, color 0.15s ease',
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={favoritado ? '#dc2626' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+            </svg>
+          </button>
+        )}
 
         {fotoExibida ? (
           <img
@@ -179,12 +185,15 @@ function ProdutoCard({ produto }) {
       </div>
       <div className="produto-card-info">
         <p className="produto-card-nome">{produto.nome}</p>
-        {Number(produto.avaliacoes_count) > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '12px', color: '#c4953a', margin: '2px 0' }}>
-            <span>★ {Number(produto.avaliacoes_avg_nota || 0).toFixed(1).replace('.', ',')}</span>
-            <span style={{ color: '#888', fontSize: '11px' }}>({produto.avaliacoes_count})</span>
-          </div>
-        )}
+        {Number(produto.avaliacoes_count) > 0 && (() => {
+          const qtdEstrelas = Math.max(1, Math.min(5, Math.round(Number(produto.avaliacoes_avg_nota || 0))));
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '13px', color: '#c4953a', margin: '2px 0' }}>
+              <span style={{ letterSpacing: '1px' }}>{'★'.repeat(qtdEstrelas)}</span>
+              <span style={{ color: '#888', fontSize: '11px' }}>({produto.avaliacoes_count})</span>
+            </div>
+          );
+        })()}
         {preco && <p className="produto-card-preco">{preco}</p>}
       </div>
     </Link>
@@ -232,9 +241,14 @@ function CardCarousel({ items, loading, emptyMsg }) {
 }
 
 // ── Banner principal com slides ────────────────────────────────────────────────
-function HeroBanner() {
+function HeroBanner({ slidesConfig }) {
   const [current, setCurrent] = useState(0);
-  const total = BANNER_SLIDES.length;
+  const slides = Array.isArray(slidesConfig) && slidesConfig.length > 0 ? slidesConfig : BANNER_SLIDES;
+  const total = slides.length;
+
+  useEffect(() => {
+    if (current >= total) setCurrent(0);
+  }, [current, total]);
 
   // Auto-play a cada 7s (tempo mais confortável para leitura)
   useEffect(() => {
@@ -242,19 +256,19 @@ function HeroBanner() {
     return () => clearInterval(t);
   }, [total]);
 
-  const slide = BANNER_SLIDES[current];
+  const slide = slides[current] || slides[0];
 
   return (
     <section
-      className={`hero-banner hero-banner--${slide.tema}`}
+      className={`hero-banner hero-banner--${slide.tema || 'claro'}`}
       style={{ backgroundImage: `url(${slide.image})` }}
       aria-label="Banner principal"
     >
       {/* Conteúdo do slide (centralizado) */}
-      <div className="hero-content" key={slide.id}>
+      <div className="hero-content" key={slide.id || current}>
         <span className="hero-tag">{slide.tag}</span>
         <h1 className="hero-title">{slide.title}</h1>
-        <Link to={slide.link} className="hero-cta">{slide.cta}</Link>
+        <Link to={slide.link} className="hero-cta">{slide.cta || 'Saiba mais'}</Link>
       </div>
 
       {/* Setas */}
@@ -275,7 +289,7 @@ function HeroBanner() {
 
       {/* Indicadores (dots) */}
       <div className="hero-dots" role="tablist" aria-label="Slides">
-        {BANNER_SLIDES.map((_, i) => (
+        {slides.map((_, i) => (
           <button
             key={i}
             role="tab"
@@ -296,9 +310,35 @@ export default function Home() {
   const [vemPorAi, setVemPorAi]         = useState([]);
   const [loadingDestaques, setLoadingD] = useState(true);
   const [loadingVem, setLoadingV]       = useState(true);
+  const [slidesBanner, setSlidesBanner] = useState(BANNER_SLIDES);
 
-  // Busca produtos da API
+  // Busca produtos e configurações do carrossel da API
   useEffect(() => {
+    // Carrossel configurado pelo Admin
+    api.get('/configuracoes')
+      .then(({ data }) => {
+        if (data?.carrossel_slides) {
+          try {
+            const parsed = JSON.parse(data.carrossel_slides);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const normalizados = parsed.map((s, idx) => ({
+                id: s.id || idx + 1,
+                tag: s.tag || 'Camiseta Regular Fit',
+                title: s.title || `Slide ${idx + 1}`,
+                cta: s.cta || 'Saiba mais',
+                tema: s.tema || 'claro',
+                image: (s.image && String(s.image).trim()) ? String(s.image).trim() : FALLBACK_BANNER_IMGS[idx % FALLBACK_BANNER_IMGS.length],
+                link: s.produto_id ? `/produto/${s.produto_id}` : (s.link || '/produtos?categoria=camisetas'),
+              }));
+              setSlidesBanner(normalizados);
+            }
+          } catch {
+            // mantém slides padrão
+          }
+        }
+      })
+      .catch(() => {});
+
     // Destaques — primeiros 8 produtos
     api.get('/produtos', { params: { per_page: 8 } })
       .then(({ data }) => {
@@ -321,7 +361,7 @@ export default function Home() {
   return (
     <>
       {/* ── 1. Banner hero ──────────────────────────────────────────── */}
-      <HeroBanner />
+      <HeroBanner slidesConfig={slidesBanner} />
 
       {/* ── 2. Faixa de benefícios ──────────────────────────────────── */}
       <section className="benefits-bar" aria-label="Benefícios">

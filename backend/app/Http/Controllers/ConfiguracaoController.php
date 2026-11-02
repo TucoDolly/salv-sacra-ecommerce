@@ -34,6 +34,7 @@ class ConfiguracaoController extends Controller
             'contato_whatsapp',
             'contato_endereco',
             'instagram_url',
+            'carrossel_slides',
         ];
 
         $configs = Configuracao::whereIn('chave', $chavesPublicas)

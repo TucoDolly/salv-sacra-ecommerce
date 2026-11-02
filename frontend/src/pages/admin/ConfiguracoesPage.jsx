@@ -1,7 +1,43 @@
 import { useEffect, useState } from 'react';
 import { getConfiguracoesAdmin, updateConfiguracoesAdmin } from '../../services/configuracaoService';
+import api from '../../services/api';
+import bannerSaoJose from '../../assets/banner-sao-jose.jpg';
+import bannerDesatadora from '../../assets/banner-desatadora.jpg';
+import bannerPorVoce from '../../assets/banner-por-voce.jpg';
 import '../../styles/admin.css';
 import CuponsAdmin from './CuponsAdmin';
+
+const DEFAULT_CARROSSEL_SLIDES = [
+  {
+    id: 1,
+    tag: 'Camiseta Regular Fit',
+    title: 'São José',
+    cta: 'Saiba mais',
+    image: '',
+    tema: 'claro',
+    produto_id: '',
+  },
+  {
+    id: 2,
+    tag: 'Camiseta Regular Fit',
+    title: 'Desatadora',
+    cta: 'Saiba mais',
+    image: '',
+    tema: 'escuro',
+    produto_id: '',
+  },
+  {
+    id: 3,
+    tag: 'Camiseta Oversized',
+    title: 'Por Você',
+    cta: 'Saiba mais',
+    image: '',
+    tema: 'claro',
+    produto_id: '',
+  },
+];
+
+const FALLBACK_BANNER_IMGS = [bannerSaoJose, bannerDesatadora, bannerPorVoce];
 
 export default function ConfiguracoesPage() {
   const [form, setForm] = useState({
@@ -29,15 +65,23 @@ export default function ConfiguracoesPage() {
     contato_whatsapp: '',
     contato_endereco: '',
     instagram_url: '',
+
+    // Carrossel da Home (JSON)
+    carrossel_slides: '',
   });
 
+  const [slidesCarrossel, setSlidesCarrossel] = useState(DEFAULT_CARROSSEL_SLIDES);
+  const [produtosLista, setProdutosLista] = useState([]);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [feedback, setFeedback] = useState({ tipo: '', texto: '' });
-  const [abaAtiva, setAbaAtiva] = useState('loja'); // 'loja' | 'frete' | 'pagamento' | 'contato'
+  const [abaAtiva, setAbaAtiva] = useState('loja'); // 'loja' | 'carrossel' | 'frete' | 'pagamento' | 'cupons' | 'contato'
 
   useEffect(() => {
     carregarConfiguracoes();
+    api.get('/produtos')
+      .then((res) => setProdutosLista(res.data || []))
+      .catch(() => setProdutosLista([]));
   }, []);
 
   const carregarConfiguracoes = async () => {
@@ -49,12 +93,53 @@ export default function ConfiguracoesPage() {
           ...prev,
           ...data,
         }));
+        if (data.carrossel_slides) {
+          try {
+            const parsed = JSON.parse(data.carrossel_slides);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setSlidesCarrossel(parsed);
+            }
+          } catch {
+            // mantém padrão
+          }
+        }
       }
     } catch {
       setFeedback({ tipo: 'erro', texto: 'Não foi possível carregar as configurações da loja.' });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSlideChange = (idx, campo, valor) => {
+    setSlidesCarrossel((prev) => {
+      const novo = [...prev];
+      novo[idx] = { ...novo[idx], [campo]: valor };
+      return novo;
+    });
+  };
+
+  const handleAdicionarSlide = () => {
+    setSlidesCarrossel((prev) => [
+      ...prev,
+      {
+        id: Date.now(),
+        tag: 'Nova Coleção',
+        title: 'Título do Slide',
+        cta: 'Saiba mais',
+        image: '',
+        tema: 'claro',
+        produto_id: '',
+      },
+    ]);
+  };
+
+  const handleRemoverSlide = (idx) => {
+    if (slidesCarrossel.length <= 1) {
+      alert('O carrossel precisa ter pelo menos 1 slide.');
+      return;
+    }
+    setSlidesCarrossel((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const handleChange = (e) => {
@@ -68,7 +153,11 @@ export default function ConfiguracoesPage() {
     setFeedback({ tipo: '', texto: '' });
 
     try {
-      await updateConfiguracoesAdmin(form);
+      const payload = {
+        ...form,
+        carrossel_slides: JSON.stringify(slidesCarrossel),
+      };
+      await updateConfiguracoesAdmin(payload);
       setFeedback({ tipo: 'sucesso', texto: 'Configurações atualizadas com sucesso!' });
       setTimeout(() => setFeedback({ tipo: '', texto: '' }), 4000);
     } catch {
@@ -123,6 +212,7 @@ export default function ConfiguracoesPage() {
       }}>
         {[
           { id: 'loja', label: 'Identidade da Loja' },
+          { id: 'carrossel', label: 'Carrossel da Vitrine' },
           { id: 'frete', label: 'Frete & Banner de Topo' },
           { id: 'pagamento', label: 'Pagamentos & PIX' },
           { id: 'cupons', label: 'Cupons de Desconto' },
@@ -367,6 +457,167 @@ export default function ConfiguracoesPage() {
           )}
 
           {/* ════════ ABA 4: ATENDIMENTO & CONTATO ════════ */}
+          {abaAtiva === 'carrossel' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#111' }}>
+                    Slides do Carrossel Principal (Página Inicial)
+                  </h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#666' }}>
+                    Configure a foto de fundo de cada slide, os textos exibidos e para qual camiseta o botão &quot;Saiba mais&quot; deve levar o cliente.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAdicionarSlide}
+                  style={{
+                    background: '#f3f4f6',
+                    color: '#111',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    padding: '8px 14px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  + ADICIONAR SLIDE
+                </button>
+              </div>
+
+              {slidesCarrossel.map((slide, idx) => {
+                const previewImg = slide.image?.trim() || FALLBACK_BANNER_IMGS[idx % FALLBACK_BANNER_IMGS.length];
+                return (
+                  <div
+                    key={slide.id || idx}
+                    style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '10px',
+                      padding: '20px',
+                      background: '#fafafa',
+                      display: 'grid',
+                      gridTemplateColumns: '220px 1fr',
+                      gap: '20px',
+                      alignItems: 'start',
+                    }}
+                  >
+                    {/* Preview da Foto */}
+                    <div>
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '125px',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          background: '#e5e7eb',
+                          border: '1px solid #d1d5db',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <img
+                          src={previewImg}
+                          alt={`Slide ${idx + 1}`}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#333' }}>Slide #{idx + 1}</span>
+                        {slidesCarrossel.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoverSlide(idx)}
+                            style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '12px', fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                          >
+                            Remover
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Campos do Slide */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#333', marginBottom: '6px' }}>
+                          URL da Foto do Banner (deixe em branco para usar a imagem padrão do slide)
+                        </label>
+                        <input
+                          type="url"
+                          value={slide.image || ''}
+                          onChange={(e) => handleSlideChange(idx, 'image', e.target.value)}
+                          placeholder="https://exemplo.com/foto-banner.jpg"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '13px', background: '#fff' }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#333', marginBottom: '6px' }}>
+                            Título Principal
+                          </label>
+                          <input
+                            type="text"
+                            value={slide.title || ''}
+                            onChange={(e) => handleSlideChange(idx, 'title', e.target.value)}
+                            placeholder="Ex: São José"
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '13px', background: '#fff' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#333', marginBottom: '6px' }}>
+                            Subtítulo / Tag Superior
+                          </label>
+                          <input
+                            type="text"
+                            value={slide.tag || ''}
+                            onChange={(e) => handleSlideChange(idx, 'tag', e.target.value)}
+                            placeholder="Ex: Camiseta Regular Fit"
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '13px', background: '#fff' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#333', marginBottom: '6px' }}>
+                            Cor do Texto / Tema
+                          </label>
+                          <select
+                            value={slide.tema || 'claro'}
+                            onChange={(e) => handleSlideChange(idx, 'tema', e.target.value)}
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '13px', background: '#fff' }}
+                          >
+                            <option value="claro">Claro (Texto Branco)</option>
+                            <option value="escuro">Escuro (Texto Escuro)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#333', marginBottom: '6px' }}>
+                          Produto de destino do botão &quot;Saiba mais&quot;
+                        </label>
+                        <select
+                          value={slide.produto_id || ''}
+                          onChange={(e) => handleSlideChange(idx, 'produto_id', e.target.value)}
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '13px', background: '#fff' }}
+                        >
+                          <option value="">Catálogo Geral de Camisetas (/produtos?categoria=camisetas)</option>
+                          {produtosLista.map((prod) => (
+                            <option key={prod.id} value={String(prod.id)}>
+                              {prod.nome} — R$ {Number(prod.preco_base || 0).toFixed(2).replace('.', ',')}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {abaAtiva === 'contato' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>

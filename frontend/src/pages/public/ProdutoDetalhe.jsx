@@ -88,9 +88,8 @@ export default function ProdutoDetalhe() {
     distribuicao: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
     avaliacoes: [],
   });
-  const [notaForm, setNotaForm] = useState(5);
+  const [notaForm, setNotaForm] = useState(0);
   const [hoverNota, setHoverNota] = useState(0);
-  const [tituloForm, setTituloForm] = useState('');
   const [comentarioForm, setComentarioForm] = useState('');
   const [enviandoAvaliacao, setEnviandoAvaliacao] = useState(false);
 
@@ -359,6 +358,10 @@ export default function ProdutoDetalhe() {
 
   const handleEnviarAvaliacao = async (e) => {
     e.preventDefault();
+    if (!notaForm || notaForm < 1) {
+      alert('Por favor, clique nas estrelas para selecionar uma nota de 1 a 5.');
+      return;
+    }
     if (!comentarioForm.trim()) {
       alert('Por favor, escreva um comentário sobre o produto.');
       return;
@@ -367,12 +370,10 @@ export default function ProdutoDetalhe() {
     try {
       await api.post(`/produtos/${id}/avaliacoes`, {
         nota: notaForm,
-        titulo: tituloForm.trim() || null,
         comentario: comentarioForm.trim(),
       });
-      setTituloForm('');
       setComentarioForm('');
-      setNotaForm(5);
+      setNotaForm(0);
       carregarAvaliacoes(id);
       setToastMessage('Sua avaliação foi salva com sucesso!');
       setTimeout(() => setToastMessage(null), 4000);
@@ -395,8 +396,13 @@ export default function ProdutoDetalhe() {
 
   const renderEstrelas = (nota) => {
     const arredondada = Math.round(Number(nota || 0));
-    return [1, 2, 3, 4, 5].map((i) => (
-      <span key={i} style={{ color: i <= arredondada ? '#c4953a' : '#d1d5db' }}>★</span>
+    if (arredondada <= 0) {
+      return [1, 2, 3, 4, 5].map((i) => (
+        <span key={i} style={{ color: '#d1d5db' }}>★</span>
+      ));
+    }
+    return Array.from({ length: arredondada }, (_, i) => (
+      <span key={i} style={{ color: '#c4953a' }}>★</span>
     ));
   };
 
@@ -443,9 +449,7 @@ export default function ProdutoDetalhe() {
             <div className="pdp-breadcrumbs">
               <Link to="/">Início</Link>
               <span className="sep">&gt;</span>
-              <span>{produto.categoria?.nome || 'Camisetas'}</span>
-              <span className="sep">&gt;</span>
-              <span>{produto.colecao || 'Regular Fit'}</span>
+              <Link to="/produtos?categoria=camisetas">{produto.categoria?.nome || 'Camisetas'}</Link>
               <span className="sep">&gt;</span>
               <span style={{ color: '#1e1e1e' }}>{produto.nome}</span>
             </div>
@@ -460,11 +464,11 @@ export default function ProdutoDetalhe() {
               onClick={() => document.getElementById('secao-avaliacoes')?.scrollIntoView({ behavior: 'smooth' })}
             >
               <span className="pdp-stars-inline">
-                {renderEstrelas(resumoAvaliacoes.total > 0 ? resumoAvaliacoes.media : 5)}
+                {renderEstrelas(resumoAvaliacoes.total > 0 ? resumoAvaliacoes.media : 0)}
               </span>
               <span className="pdp-rating-count-text">
                 {resumoAvaliacoes.total > 0
-                  ? `${Number(resumoAvaliacoes.media).toFixed(1).replace('.', ',')} (${resumoAvaliacoes.total} ${resumoAvaliacoes.total === 1 ? 'avaliação' : 'avaliações'})`
+                  ? `(${resumoAvaliacoes.total} ${resumoAvaliacoes.total === 1 ? 'avaliação' : 'avaliações'})`
                   : 'Seja o primeiro a avaliar'}
               </span>
             </button>
@@ -622,34 +626,36 @@ export default function ProdutoDetalhe() {
                 ADICIONAR AO CARRINHO
               </button>
 
-              <button
-                type="button"
-                onClick={async () => {
-                  const favoritou = await toggleFavorite(produto);
-                  setToastMessage(favoritou ? 'Peça salva na sua lista de desejos ❤️' : 'Peça removida da lista de desejos.');
-                  setTimeout(() => setToastMessage(null), 3000);
-                }}
-                title={isFavorite(produto.id) ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
-                aria-label={isFavorite(produto.id) ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
-                style={{
-                  width: '44px',
-                  height: '44px',
-                  flexShrink: 0,
-                  borderRadius: '6px',
-                  border: `1.5px solid ${isFavorite(produto.id) ? '#dc2626' : '#c8c8c8'}`,
-                  background: isFavorite(produto.id) ? '#fef2f2' : '#fff',
-                  color: isFavorite(produto.id) ? '#dc2626' : '#333',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill={isFavorite(produto.id) ? '#dc2626' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                </svg>
-              </button>
+              {isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const favoritou = await toggleFavorite(produto);
+                    setToastMessage(favoritou ? 'Peça salva na sua lista de desejos ❤️' : 'Peça removida da lista de desejos.');
+                    setTimeout(() => setToastMessage(null), 3000);
+                  }}
+                  title={isFavorite(produto.id) ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+                  aria-label={isFavorite(produto.id) ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    flexShrink: 0,
+                    borderRadius: '6px',
+                    border: `1.5px solid ${isFavorite(produto.id) ? '#dc2626' : '#c8c8c8'}`,
+                    background: isFavorite(produto.id) ? '#fef2f2' : '#fff',
+                    color: isFavorite(produto.id) ? '#dc2626' : '#333',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill={isFavorite(produto.id) ? '#dc2626' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                  </svg>
+                </button>
+              )}
             </div>
 
             {/* Meios de Envio (Frete) */}
@@ -822,15 +828,6 @@ export default function ProdutoDetalhe() {
                     })}
                   </div>
 
-                  <input
-                    type="text"
-                    className="pdp-review-input"
-                    placeholder="Título da avaliação (opcional, ex: Tecido excelente!)"
-                    maxLength={120}
-                    value={tituloForm}
-                    onChange={(e) => setTituloForm(e.target.value)}
-                  />
-
                   <textarea
                     rows={3}
                     className="pdp-review-textarea"
@@ -903,7 +900,6 @@ export default function ProdutoDetalhe() {
                           </div>
                         </div>
 
-                        {av.titulo && <div className="pdp-review-item-title">{av.titulo}</div>}
                         <p className="pdp-review-item-comment">{av.comentario}</p>
                       </div>
                     );

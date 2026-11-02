@@ -128,31 +128,33 @@ function SiteHeader({ configs }) {
             <Link to="/contato" className="header-action-item">
               <IconHeadset /> Atendimento
             </Link>
-            <Link
-              to={isAuthenticated ? '/minha-conta?aba=favoritos' : '/login'}
-              className="header-action-item"
-              style={{ position: 'relative' }}
-            >
-              <IconHeart /> Favoritos
-              {totalFavoritos > 0 && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '-6px',
-                    left: '12px',
-                    background: '#dc2626',
-                    color: '#fff',
-                    borderRadius: '10px',
-                    padding: '1px 6px',
-                    fontSize: '11px',
-                    fontWeight: 'bold',
-                    boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
-                  }}
-                >
-                  {totalFavoritos}
-                </span>
-              )}
-            </Link>
+            {isAuthenticated && (
+              <Link
+                to="/minha-conta?aba=favoritos"
+                className="header-action-item"
+                style={{ position: 'relative' }}
+              >
+                <IconHeart /> Favoritos
+                {totalFavoritos > 0 && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '-6px',
+                      left: '12px',
+                      background: '#dc2626',
+                      color: '#fff',
+                      borderRadius: '10px',
+                      padding: '1px 6px',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
+                    }}
+                  >
+                    {totalFavoritos}
+                  </span>
+                )}
+              </Link>
+            )}
             <Link to={isAuthenticated ? '/minha-conta' : '/login'} className="header-action-item">
               <IconUser /> Minha conta
             </Link>

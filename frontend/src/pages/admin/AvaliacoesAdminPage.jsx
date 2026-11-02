@@ -47,12 +47,14 @@ export default function AvaliacoesAdminPage() {
       ? (avaliacoes.reduce((acc, a) => acc + Number(a.nota), 0) / avaliacoes.length).toFixed(1).replace('.', ',')
       : '0,0';
 
-  const renderEstrelas = (nota) =>
-    [1, 2, 3, 4, 5].map((i) => (
-      <span key={i} style={{ color: i <= Number(nota) ? '#c4953a' : '#d1d5db', fontSize: '14px' }}>
-        ★
+  const renderEstrelas = (nota) => {
+    const qtd = Math.max(1, Math.min(5, Math.round(Number(nota || 0))));
+    return (
+      <span style={{ color: '#c4953a', fontSize: '14px', letterSpacing: '1px' }}>
+        {'★'.repeat(qtd)}
       </span>
-    ));
+    );
+  };
 
   return (
     <div className="admin-page">

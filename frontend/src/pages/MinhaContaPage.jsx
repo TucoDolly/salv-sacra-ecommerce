@@ -876,7 +876,7 @@ function Favoritos({ favoritos, onRemover, carregando }) {
                   <div
                     style={{
                       width: '100%',
-                      height: '230px',
+                      aspectRatio: '3 / 4',
                       background: '#f4f4f4',
                       display: 'flex',
                       alignItems: 'center',
@@ -888,7 +888,7 @@ function Favoritos({ favoritos, onRemover, carregando }) {
                       <img
                         src={foto}
                         alt={prod.nome}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                       />
                     ) : (
                       <span style={{ fontSize: '32px' }}>🕊️</span>
