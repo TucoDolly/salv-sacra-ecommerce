@@ -13,13 +13,6 @@ const IconSearch = () => (
     <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
   </svg>
 );
-const IconHeadset = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
-    <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z" />
-    <path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
-  </svg>
-);
 const IconUser = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
@@ -81,6 +74,7 @@ function SiteHeader({ configs }) {
   const { isAuthenticated, user } = useAuth();
   const { totalFavoritos } = useWishlist();
   const [termoBusca, setTermoBusca] = useState('');
+  const [modalFavoritosLogin, setModalFavoritosLogin] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -90,6 +84,15 @@ function SiteHeader({ configs }) {
     e.preventDefault();
     if (termoBusca.trim()) {
       navigate(`/produtos?busca=${encodeURIComponent(termoBusca.trim())}`);
+    }
+  };
+
+  const handleFavoritosClick = (e) => {
+    e.preventDefault();
+    if (isAuthenticated) {
+      navigate('/minha-conta?aba=favoritos');
+    } else {
+      setModalFavoritosLogin(true);
     }
   };
 
@@ -125,36 +128,14 @@ function SiteHeader({ configs }) {
           </form>
 
           <nav className="header-actions">
-            <Link to="/contato" className="header-action-item">
-              <IconHeadset /> Atendimento
-            </Link>
-            {isAuthenticated && (
-              <Link
-                to="/minha-conta?aba=favoritos"
-                className="header-action-item"
-                style={{ position: 'relative' }}
-              >
-                <IconHeart /> Favoritos
-                {totalFavoritos > 0 && (
-                  <span
-                    style={{
-                      position: 'absolute',
-                      top: '-6px',
-                      left: '12px',
-                      background: '#dc2626',
-                      color: '#fff',
-                      borderRadius: '10px',
-                      padding: '1px 6px',
-                      fontSize: '11px',
-                      fontWeight: 'bold',
-                      boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
-                    }}
-                  >
-                    {totalFavoritos}
-                  </span>
-                )}
-              </Link>
-            )}
+            <button
+              type="button"
+              onClick={handleFavoritosClick}
+              className="header-action-item"
+              title="Favoritos"
+            >
+              <IconHeart /> Favoritos
+            </button>
             <Link to={isAuthenticated ? '/minha-conta' : '/login'} className="header-action-item">
               <IconUser /> Minha conta
             </Link>
@@ -195,18 +176,6 @@ function SiteHeader({ configs }) {
             Início
           </NavLink>
 
-          {/* Mais vendidos: ativo somente quando na rota /produtos sem categoria específica */}
-          <Link
-            to="/produtos"
-            className={`nav-link ${
-              location.pathname === '/produtos' && !location.search.includes('categoria=') && !location.search.includes('busca=')
-                ? 'active'
-                : ''
-            }`}
-          >
-            Mais vendidos
-          </Link>
-
           {/* Camisetas: link normal */}
           <Link
             to="/produtos?categoria=camisetas"
@@ -223,6 +192,108 @@ function SiteHeader({ configs }) {
           <Link to="/guia-de-medidas" className={`nav-link ${location.pathname === '/guia-de-medidas' ? 'active' : ''}`}>Guia de medidas</Link>
         </div>
       </nav>
+
+      {/* Modal de Aviso de Login para Favoritos */}
+      {modalFavoritosLogin && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+          }}
+          onClick={() => setModalFavoritosLogin(false)}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '12px',
+              maxWidth: '430px',
+              width: '100%',
+              padding: '28px 24px',
+              boxShadow: '0 20px 45px rgba(0, 0, 0, 0.35)',
+              textAlign: 'center',
+              position: 'relative',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                backgroundColor: '#fef3c7',
+                color: '#b45309',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+                fontSize: '26px',
+              }}
+            >
+              ❤️
+            </div>
+
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e1e1e', margin: '0 0 12px' }}>
+              Lista de Favoritos
+            </h3>
+
+            <p style={{ fontSize: '14px', color: '#4b5563', lineHeight: '1.6', margin: '0 0 22px' }}>
+              Você deve realizar login para favoritar os produtos.
+            </p>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setModalFavoritosLogin(false)}
+                style={{
+                  flex: 1,
+                  padding: '10px 16px',
+                  borderRadius: '6px',
+                  border: '1px solid #d1d5db',
+                  background: '#fff',
+                  color: '#374151',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <Link
+                to="/login?redirect=%2Fminha-conta%3Faba%3Dfavoritos"
+                onClick={() => {
+                  sessionStorage.setItem('salv_redirect_after_auth', '/minha-conta?aba=favoritos');
+                  setModalFavoritosLogin(false);
+                }}
+                style={{
+                  flex: 1,
+                  padding: '10px 16px',
+                  borderRadius: '6px',
+                  background: '#1e1e1e',
+                  color: '#fff',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  textAlign: 'center',
+                  textDecoration: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                Fazer login
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

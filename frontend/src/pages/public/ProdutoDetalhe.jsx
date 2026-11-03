@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../../contexts/CartContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useWishlist } from '../../contexts/WishlistContext';
@@ -74,6 +74,7 @@ const IconEye = () => (
 
 export default function ProdutoDetalhe() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
   const { isFavorite, toggleFavorite } = useWishlist();
   const [produto, setProduto] = useState(null);
@@ -117,6 +118,9 @@ export default function ProdutoDetalhe() {
 
   // Toast
   const [toastMessage, setToastMessage] = useState(null);
+  const [modalLoginNecessario, setModalLoginNecessario] = useState(false);
+  const [avaliacaoParaExcluir, setAvaliacaoParaExcluir] = useState(null);
+  const [excluindoAvaliacao, setExcluindoAvaliacao] = useState(false);
 
   // Ref do carrossel similar
   const similarTrackRef = useRef(null);
@@ -291,6 +295,12 @@ export default function ProdutoDetalhe() {
   const { addItem, setCep: setGlobalCep } = useCart();
 
   const handleComprar = () => {
+    if (!isAuthenticated) {
+      sessionStorage.setItem('salv_redirect_after_auth', `/produto/${id}`);
+      setModalLoginNecessario(true);
+      return;
+    }
+
     const estoqueDisponivel = getEstoqueTamanho(tamanhoSelecionado);
     if (estoqueDisponivel <= 0) {
       alert(`O tamanho ${tamanhoSelecionado} (${modeloSelecionado}) para a cor ${corSelecionada} não está disponível no estoque.`);
@@ -340,8 +350,15 @@ export default function ProdutoDetalhe() {
       setCep(formatado);
       setGlobalCep(formatado); // Sincroniza com o carrinho e checkout
 
+      // Monta localização detalhada com Rua, Bairro e Cidade/UF
+      const partesLocal = [];
+      if (data.logradouro) partesLocal.push(data.logradouro);
+      if (data.bairro) partesLocal.push(data.bairro);
+      if (data.cidade) partesLocal.push(`${data.cidade}/${data.uf}`);
+      else if (data.uf) partesLocal.push(data.uf);
+
       setFreteResultado({
-        local: data.cidade ? `${data.cidade}/${data.uf}` : '',
+        local: partesLocal.join(', ') || (data.cidade ? `${data.cidade}/${data.uf}` : ''),
         opcoes: (data.opcoes || []).map((o) => ({
           tipo: o.nome,
           prazo: o.prazo,
@@ -384,13 +401,23 @@ export default function ProdutoDetalhe() {
     }
   };
 
-  const handleExcluirAvaliacao = async (avId) => {
-    if (!window.confirm('Deseja realmente excluir esta avaliação?')) return;
+  const handleExcluirAvaliacao = (avId) => {
+    setAvaliacaoParaExcluir(avId);
+  };
+
+  const confirmarExcluirAvaliacao = async () => {
+    if (!avaliacaoParaExcluir) return;
+    setExcluindoAvaliacao(true);
     try {
-      await api.delete(`/avaliacoes/${avId}`);
+      await api.delete(`/avaliacoes/${avaliacaoParaExcluir}`);
+      setAvaliacaoParaExcluir(null);
       carregarAvaliacoes(id);
+      setToastMessage('Avaliação excluída com sucesso.');
+      setTimeout(() => setToastMessage(null), 3000);
     } catch {
       alert('Não foi possível remover a avaliação.');
+    } finally {
+      setExcluindoAvaliacao(false);
     }
   };
 
@@ -805,52 +832,63 @@ export default function ProdutoDetalhe() {
             {/* Coluna Direita: Formulário + Lista de Depoimentos */}
             <div>
               {isAuthenticated ? (
-                <form className="pdp-reviews-form-card" onSubmit={handleEnviarAvaliacao}>
-                  <h3 className="pdp-reviews-form-title">Deixe sua avaliação sobre esta peça</h3>
-                  <div style={{ fontSize: '12px', color: '#555', marginBottom: '6px', fontWeight: 600 }}>
-                    Sua nota:
-                  </div>
-                  <div className="pdp-star-picker" onMouseLeave={() => setHoverNota(0)}>
-                    {[1, 2, 3, 4, 5].map((star) => {
-                      const ativa = star <= (hoverNota || notaForm);
-                      return (
-                        <button
-                          key={star}
-                          type="button"
-                          className={`pdp-star-picker-btn ${ativa ? 'active' : ''}`}
-                          onMouseEnter={() => setHoverNota(star)}
-                          onClick={() => setNotaForm(star)}
-                          aria-label={`${star} estrelas`}
-                        >
-                          ★
-                        </button>
-                      );
-                    })}
-                  </div>
+                (resumoAvaliacoes.pode_avaliar || user?.papel === 'admin') ? (
+                  <form className="pdp-reviews-form-card" onSubmit={handleEnviarAvaliacao}>
+                    <h3 className="pdp-reviews-form-title">Deixe sua avaliação sobre esta peça</h3>
+                    <div style={{ fontSize: '12px', color: '#555', marginBottom: '6px', fontWeight: 600 }}>
+                      Sua nota:
+                    </div>
+                    <div className="pdp-star-picker" onMouseLeave={() => setHoverNota(0)}>
+                      {[1, 2, 3, 4, 5].map((star) => {
+                        const ativa = star <= (hoverNota || notaForm);
+                        return (
+                          <button
+                            key={star}
+                            type="button"
+                            className={`pdp-star-picker-btn ${ativa ? 'active' : ''}`}
+                            onMouseEnter={() => setHoverNota(star)}
+                            onClick={() => setNotaForm(star)}
+                            aria-label={`${star} estrelas`}
+                          >
+                            ★
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                  <textarea
-                    rows={3}
-                    className="pdp-review-textarea"
-                    placeholder="Conte o que achou do caimento, tecido e acabamento da camiseta..."
-                    required
-                    value={comentarioForm}
-                    onChange={(e) => setComentarioForm(e.target.value)}
-                  />
+                    <textarea
+                      rows={3}
+                      className="pdp-review-textarea"
+                      placeholder="Conte o que achou do caimento, tecido e acabamento da camiseta..."
+                      required
+                      value={comentarioForm}
+                      onChange={(e) => setComentarioForm(e.target.value)}
+                    />
 
-                  <button type="submit" className="pdp-review-submit-btn" disabled={enviandoAvaliacao}>
-                    {enviandoAvaliacao ? 'Publicando...' : 'Publicar Avaliação'}
-                  </button>
-                </form>
+                    <button type="submit" className="pdp-review-submit-btn" disabled={enviandoAvaliacao}>
+                      {enviandoAvaliacao ? 'Publicando...' : 'Publicar Avaliação'}
+                    </button>
+                  </form>
+                ) : (
+                  <div className="pdp-reviews-form-card" style={{ padding: '24px 28px', background: '#fafafa', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                    <h3 className="pdp-reviews-form-title" style={{ marginBottom: '6px', fontSize: '15px' }}>
+                      Avaliação liberada após a entrega
+                    </h3>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#666', lineHeight: '1.5' }}>
+                      {resumoAvaliacoes.motivo_bloqueio || 'Você poderá avaliar esta peça assim que o seu pedido for entregue. Agradecemos sua preferência!'}
+                    </p>
+                  </div>
+                )
               ) : (
                 <div className="pdp-reviews-form-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                   <div>
-                    <h3 className="pdp-reviews-form-title" style={{ marginBottom: '4px' }}>Já adquiriu esta peça?</h3>
+                    <h3 className="pdp-reviews-form-title" style={{ marginBottom: '4px' }}>Já recebeu esta peça?</h3>
                     <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
-                      Entre na sua conta para deixar sua nota e compartilhar sua opinião com outros clientes.
+                      Entre na sua conta para deixar sua avaliação após a entrega da sua encomenda.
                     </p>
                   </div>
                   <Link
-                    to="/login"
+                    to={`/login?redirect=${encodeURIComponent(`/produto/${id}`)}`}
                     state={{ from: `/produto/${id}` }}
                     className="pdp-review-submit-btn"
                     style={{ textDecoration: 'none' }}
@@ -863,7 +901,7 @@ export default function ProdutoDetalhe() {
               {/* Lista de Comentários */}
               {resumoAvaliacoes.avaliacoes.length === 0 ? (
                 <div className="pdp-review-item-card" style={{ textAlign: 'center', color: '#777', padding: '28px 20px' }}>
-                  Este produto ainda não possui avaliações. Seja o primeiro a avaliar!
+                  Este produto ainda não possui avaliações.
                 </div>
               ) : (
                 <div className="pdp-reviews-list">
@@ -875,9 +913,6 @@ export default function ProdutoDetalhe() {
                           <div>
                             <div className="pdp-review-author">
                               <span>{av.autor_nome}</span>
-                              {av.compra_verificada && (
-                                <span className="pdp-verified-badge">✓ Compra verificada</span>
-                              )}
                             </div>
                             <div className="pdp-stars-inline" style={{ fontSize: '14px', marginTop: '4px' }}>
                               {renderEstrelas(av.nota)}
@@ -977,6 +1012,197 @@ export default function ProdutoDetalhe() {
           <Link to="/" style={{ color: '#c4953a', fontWeight: 'bold', marginLeft: '8px' }}>
             Continuar comprando
           </Link>
+        </div>
+      )}
+
+      {/* Modal de Confirmação para Excluir Avaliação */}
+      {avaliacaoParaExcluir && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+          }}
+          onClick={() => !excluindoAvaliacao && setAvaliacaoParaExcluir(null)}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              maxWidth: '430px',
+              width: '100%',
+              padding: '28px',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.25)',
+              textAlign: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: '50%',
+                backgroundColor: '#fee2e2',
+                color: '#dc2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+                fontSize: '24px',
+              }}
+            >
+              ⚠️
+            </div>
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#111', margin: '0 0 8px' }}>
+              Confirmar exclusão de avaliação
+            </h3>
+            <p style={{ fontSize: '14px', color: '#666', lineHeight: 1.5, margin: '0 0 24px' }}>
+              Tem certeza de que deseja excluir esta avaliação? Esta ação não poderá ser desfeita.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setAvaliacaoParaExcluir(null)}
+                disabled={excluindoAvaliacao}
+                style={{
+                  flex: 1,
+                  padding: '11px 18px',
+                  borderRadius: '6px',
+                  border: '1px solid #d1d5db',
+                  background: '#fff',
+                  color: '#374151',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarExcluirAvaliacao}
+                disabled={excluindoAvaliacao}
+                style={{
+                  flex: 1,
+                  padding: '11px 18px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {excluindoAvaliacao ? 'Excluindo...' : 'Sim, excluir avaliação'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal de Login Necessário para Adicionar ao Carrinho */}
+      {modalLoginNecessario && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+          }}
+          onClick={() => setModalLoginNecessario(false)}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              maxWidth: '430px',
+              width: '100%',
+              padding: '28px',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.25)',
+              textAlign: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                backgroundColor: '#fef3c7',
+                color: '#b45309',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+                fontSize: '26px',
+              }}
+            >
+              🛍️
+            </div>
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#111', margin: '0 0 8px' }}>
+              Faça login para continuar
+            </h3>
+            <p style={{ fontSize: '14px', color: '#666', lineHeight: 1.5, margin: '0 0 24px' }}>
+              Para adicionar peças à sua sacola de compras e finalizar pedidos, é necessário entrar na sua conta.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setModalLoginNecessario(false)}
+                style={{
+                  flex: 1,
+                  padding: '11px 18px',
+                  borderRadius: '6px',
+                  border: '1px solid #d1d5db',
+                  background: '#fff',
+                  color: '#374151',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setModalLoginNecessario(false);
+                  sessionStorage.setItem('salv_redirect_after_auth', `/produto/${id}`);
+                  navigate(`/login?redirect=${encodeURIComponent(`/produto/${id}`)}`, {
+                    state: { from: `/produto/${id}` },
+                  });
+                }}
+                style={{
+                  flex: 1,
+                  padding: '11px 18px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: '#1e1e1e',
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Fazer login
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

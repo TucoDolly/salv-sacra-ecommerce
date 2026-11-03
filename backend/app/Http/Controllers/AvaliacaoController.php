@@ -13,8 +13,35 @@ class AvaliacaoController extends Controller
     /**
      * Lista as avaliações de um produto específico com resumo de notas (média e distribuição).
      */
-    public function index(Produto $produto): JsonResponse
+    public function index(Request $request, Produto $produto): JsonResponse
     {
+        $user = auth('sanctum')->user();
+        $podeAvaliar = false;
+        $motivoBloqueio = null;
+
+        if ($user) {
+            if ($user->papel === 'admin') {
+                $podeAvaliar = true;
+            } else {
+                $comprouEntregue = ItemPedido::whereHas('variacao', function ($q) use ($produto) {
+                        $q->where('produto_id', $produto->id);
+                    })
+                    ->whereHas('pedido', function ($q) use ($user) {
+                        $q->where('user_id', $user->id)
+                          ->where('status', 'Entregue');
+                    })
+                    ->exists();
+
+                if ($comprouEntregue) {
+                    $podeAvaliar = true;
+                } else {
+                    $motivoBloqueio = 'Você só poderá avaliar este produto após o seu pedido ter sido entregue.';
+                }
+            }
+        } else {
+            $motivoBloqueio = 'Faça login na sua conta para avaliar este produto.';
+        }
+
         $avaliacoes = $produto->avaliacoes()
             ->with(['user:id,name,deleted_at'])
             ->latest()
@@ -49,10 +76,12 @@ class AvaliacaoController extends Controller
         ];
 
         return response()->json([
-            'media'        => $media,
-            'total'        => $total,
-            'distribuicao' => $distribuicao,
-            'avaliacoes'   => $avaliacoes->values(),
+            'media'           => $media,
+            'total'           => $total,
+            'distribuicao'    => $distribuicao,
+            'avaliacoes'      => $avaliacoes->values(),
+            'pode_avaliar'    => $podeAvaliar,
+            'motivo_bloqueio' => $motivoBloqueio,
         ]);
     }
 
@@ -73,15 +102,21 @@ class AvaliacaoController extends Controller
 
         $user = $request->user();
 
-        // Verifica se o cliente já comprou este produto em um pedido pago/enviado/entregue
-        $comprou = ItemPedido::whereHas('variacao', function ($q) use ($produto) {
+        // Regra restrita: o cliente só pode avaliar se tiver um pedido com status 'Entregue' para este produto
+        $comprouEntregue = ItemPedido::whereHas('variacao', function ($q) use ($produto) {
                 $q->where('produto_id', $produto->id);
             })
             ->whereHas('pedido', function ($q) use ($user) {
                 $q->where('user_id', $user->id)
-                  ->whereIn('status', ['Pago', 'Enviado', 'Entregue']);
+                  ->where('status', 'Entregue');
             })
             ->exists();
+
+        if (! $comprouEntregue && $user->papel !== 'admin') {
+            return response()->json([
+                'message' => 'Você só pode avaliar este produto após o seu pedido ter sido entregue.',
+            ], 403);
+        }
 
         $avaliacao = Avaliacao::updateOrCreate(
             [
@@ -92,7 +127,7 @@ class AvaliacaoController extends Controller
                 'nota'              => $validated['nota'],
                 'titulo'            => $validated['titulo'] ?? null,
                 'comentario'        => $validated['comentario'],
-                'compra_verificada' => $comprou,
+                'compra_verificada' => true,
             ]
         );
 

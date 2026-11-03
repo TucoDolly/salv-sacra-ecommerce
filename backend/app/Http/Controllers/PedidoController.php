@@ -167,7 +167,7 @@ class PedidoController extends Controller
             'estado'             => ['required', 'string', 'max:2'],
             'tipo_frete'         => ['nullable', 'string', 'max:100'],
             'valor_frete'        => ['required', 'numeric', 'min:0'],
-            'metodo_pagamento'   => ['required', 'in:cartao,pix,boleto'],
+            'metodo_pagamento'   => ['required', 'in:cartao,pix,cartao_credito,cartao_debito'],
             'observacoes'        => ['nullable', 'string'],
             'cupom_codigo'       => ['nullable', 'string', 'max:50'],
             'itens'              => ['required', 'array', 'min:1'],
@@ -268,6 +268,13 @@ class PedidoController extends Controller
             }
         } catch (\Throwable $e) {
             \Log::error('Erro ao enviar e-mail de pedido criado: ' . $e->getMessage());
+        }
+
+        // Dispara e-mail de notificação de novo pedido para o administrador
+        try {
+            \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovoPedidoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
+        } catch (\Throwable $e) {
+            \Log::error('Erro ao enviar e-mail de novo pedido para o admin: ' . $e->getMessage());
         }
 
         return response()->json([

@@ -1,5 +1,7 @@
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, NavLink, Outlet, useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import api from '../services/api';
 import logo from '../assets/logo.webp';
 import '../styles/admin-layout.css';
 
@@ -98,6 +100,34 @@ function getInitials(name = '') {
 export default function AdminLayout() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const [novosPedidosCount, setNovosPedidosCount] = useState(0);
+
+  // Proteção contra acesso por usuários que não são admin
+  if (user && user.papel !== 'admin') {
+    return <Navigate to="/login?admin=1" replace />;
+  }
+
+  useEffect(() => {
+    const buscarNovos = () => {
+      api.get('/admin/pedidos')
+        .then(({ data }) => {
+          const lista = Array.isArray(data) ? data : (data.data || []);
+          // Pedidos novos aguardando início do processamento.
+          // Só deixam de contar como notificação quando forem movidos para 'Em separação' (ou posteriores).
+          const novos = lista.filter((p) => p.status === 'Pendente' || p.status === 'Pago').length;
+          setNovosPedidosCount(novos);
+        })
+        .catch(() => {});
+    };
+
+    buscarNovos();
+    const timer = setInterval(buscarNovos, 20000); // atualiza a cada 20 segundos
+    window.addEventListener('salv-pedidos-atualizados', buscarNovos);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('salv-pedidos-atualizados', buscarNovos);
+    };
+  }, []);
 
   const handleSignOut = async () => {
     await signOut();
@@ -119,19 +149,40 @@ export default function AdminLayout() {
         {/* Navegação */}
         <nav className="al-nav" aria-label="Menu principal">
           <div className="al-nav-section">
-            {NAV_ITEMS.map(({ label, to, icon, end }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive }) =>
-                  `al-nav-link${isActive ? ' active' : ''}`
-                }
-              >
-                {icon}
-                {label}
-              </NavLink>
-            ))}
+            {NAV_ITEMS.map(({ label, to, icon, end }) => {
+              const isPedidos = to === '/admin/pedidos';
+              return (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  className={({ isActive }) =>
+                    `al-nav-link${isActive ? ' active' : ''}`
+                  }
+                >
+                  {icon}
+                  <span style={{ flex: 1 }}>{label}</span>
+                  {isPedidos && novosPedidosCount > 0 && (
+                    <span
+                      style={{
+                        background: '#dc2626',
+                        color: '#fff',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        padding: '2px 7px',
+                        borderRadius: '999px',
+                        lineHeight: 1,
+                        boxShadow: '0 2px 5px rgba(220, 38, 38, 0.4)',
+                        textTransform: 'uppercase',
+                      }}
+                      title={`${novosPedidosCount} pedido(s) pendente(s)`}
+                    >
+                      {novosPedidosCount}
+                    </span>
+                  )}
+                </NavLink>
+              );
+            })}
           </div>
         </nav>
 

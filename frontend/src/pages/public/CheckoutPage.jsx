@@ -378,10 +378,9 @@ export default function CheckoutPage() {
 
   if (authLoading || !isAuthenticated) return null;
 
-  // Fluxo Pós-Finalização: Aguardando Pagamento (PIX/Boleto) vs. Pedido Confirmado
+  // Fluxo Pós-Finalização: Aguardando Pagamento (PIX) vs. Pedido Confirmado
   if (pedidoConcluido) {
     const aguardandoPix = metodoPagamento === 'pix' && pedidoConcluido.status === 'Pendente';
-    const aguardandoBoleto = metodoPagamento === 'boleto' && pedidoConcluido.status === 'Pendente';
     const codigoPix =
       pedidoConcluido.pix_copia_e_cola ||
       `00020126580014br.gov.bcb.pix0120salvsacra2@gmail.com5204000053039865405${Number(pedidoConcluido.valor_total || totalFinal).toFixed(2)}5802BR5910SALV SACRA6007TUBARAO62140510PEDIDO${String(pedidoConcluido.id).padStart(4, '0')}6304B14F`;
@@ -540,74 +539,8 @@ export default function CheckoutPage() {
               </button>
             </div>
           </div>
-        ) : aguardandoBoleto ? (
-          /* ── TELA 2: AGUARDANDO PAGAMENTO BOLETO ── */
-          <div className="checkout-success-wrap" style={{ maxWidth: '560px' }}>
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                background: '#fff8e6',
-                color: '#b45309',
-                border: '1px solid #fde68a',
-                padding: '6px 16px',
-                borderRadius: '999px',
-                fontSize: '12px',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                marginBottom: '14px',
-              }}
-            >
-              Aguardando Compensação do Boleto
-            </div>
-
-            <h2>Boleto Gerado — Pedido #{pedidoConcluido.id}</h2>
-            <p style={{ fontSize: '13px', color: '#666', marginTop: '6px' }}>
-              Enviamos uma cópia do boleto para <strong>{pedidoConcluido.email_contato || email}</strong>
-            </p>
-
-            <div className="checkout-pix-box">
-              <h4 style={{ color: '#c4953a', marginBottom: '8px' }}>Linha Digitável do Boleto</h4>
-              <code style={{ fontSize: '13px', background: '#fff', padding: '10px 12px', border: '1px solid #ddd', borderRadius: '4px', display: 'block', fontWeight: 700 }}>
-                34191.79001 01043.510047 91020.150008 8 98450000009237
-              </code>
-              <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
-                Valor total do boleto: <strong>R$ {Number(pedidoConcluido.valor_total || totalFinal).toFixed(2).replace('.', ',')}</strong>
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '24px' }}>
-              <button
-                type="button"
-                onClick={handleConfirmarPagamentoSimulado}
-                disabled={confirmandoPagamento}
-                style={{
-                  width: '100%',
-                  padding: '12px 18px',
-                  background: '#f0fdf4',
-                  color: '#166534',
-                  border: '1.5px solid #86efac',
-                  borderRadius: '8px',
-                  fontWeight: 700,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                }}
-              >
-                {confirmandoPagamento ? 'Confirmando...' : '✓ Simular Compensação do Boleto'}
-              </button>
-
-              <Link
-                to="/minha-conta?tab=pedidos"
-                className="checkout-submit-btn"
-                style={{ textDecoration: 'none', textAlign: 'center', lineHeight: '52px', display: 'block' }}
-              >
-                Acompanhar em Meus Pedidos
-              </Link>
-            </div>
-          </div>
         ) : (
-          /* ── TELA 3: PAGAMENTO CONFIRMADO / PEDIDO CONCLUÍDO COM SUCESSO ── */
+          /* ── TELA 2: PAGAMENTO CONFIRMADO / PEDIDO CONCLUÍDO COM SUCESSO ── */
           <div className="checkout-success-wrap">
             <div className="checkout-success-icon">✓</div>
             <h2>Pagamento Confirmado!</h2>
@@ -1043,7 +976,7 @@ export default function CheckoutPage() {
                     <div className="checkout-payment-header" onClick={() => setMetodoPagamento('cartao')}>
                       <div className="checkout-payment-left">
                         <IconCreditCard />
-                        <span>Cartão de crédito</span>
+                        <span>Cartão de crédito ou débito</span>
                       </div>
                       <span className="checkout-payment-arrow">›</span>
                     </div>
@@ -1204,26 +1137,6 @@ export default function CheckoutPage() {
                     {metodoPagamento === 'pix' && (
                       <div className="checkout-payment-body">
                         <p>Ao clicar em fazer pedido, você receberá a chave PIX e o QR Code para pagamento imediato.</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Boleto Bancário */}
-                  <div className={`checkout-payment-card ${metodoPagamento === 'boleto' ? 'selected' : ''}`}>
-                    <div className="checkout-payment-header" onClick={() => setMetodoPagamento('boleto')}>
-                      <div className="checkout-payment-left">
-                        <IconBarcode />
-                        <span>Boleto bancário</span>
-                      </div>
-                      <div className="checkout-payment-right">
-                        <span>Pague R${totalFinal.toFixed(2).replace('.', ',')}</span>
-                        <span className="checkout-payment-arrow">›</span>
-                      </div>
-                    </div>
-
-                    {metodoPagamento === 'boleto' && (
-                      <div className="checkout-payment-body">
-                        <p>O boleto será gerado com vencimento em até 3 dias úteis. Compensação em até 48 horas.</p>
                       </div>
                     )}
                   </div>

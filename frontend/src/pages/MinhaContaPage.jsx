@@ -103,10 +103,6 @@ function Resumo({ user, pedidos, enderecos, cartoes, totalFavoritos, resumo, irP
           <span className="conta-card-num">{numPedidos}</span>
           <span className="conta-card-label">Pedidos realizados</span>
         </button>
-        <button type="button" className="conta-card" onClick={() => irPara('favoritos')}>
-          <span className="conta-card-num">{numFavoritos}</span>
-          <span className="conta-card-label">Lista de desejos</span>
-        </button>
         <button type="button" className="conta-card" onClick={() => irPara('enderecos')}>
           <span className="conta-card-num">{numEnderecos}</span>
           <span className="conta-card-label">Endereços salvos</span>

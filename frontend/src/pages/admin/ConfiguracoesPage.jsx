@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getConfiguracoesAdmin, updateConfiguracoesAdmin } from '../../services/configuracaoService';
+import { uploadArquivoImagem } from '../../services/uploadService';
 import api from '../../services/api';
 import bannerSaoJose from '../../assets/banner-sao-jose.jpg';
 import bannerDesatadora from '../../assets/banner-desatadora.jpg';
@@ -541,14 +542,54 @@ export default function ConfiguracoesPage() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#333', marginBottom: '6px' }}>
-                          URL da Foto do Banner (deixe em branco para usar a imagem padrão do slide)
+                          Foto do Banner
                         </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                          <label
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '8px 14px',
+                              borderRadius: '6px',
+                              background: '#1e1e1e',
+                              color: '#fff',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            📁 Escolher Foto do Computador
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={async (e) => {
+                                if (e.target.files?.[0]) {
+                                  try {
+                                    const url = await uploadArquivoImagem(e.target.files[0]);
+                                    handleSlideChange(idx, 'image', url);
+                                  } catch (err) {
+                                    alert(err.response?.data?.message || 'Erro ao enviar a imagem.');
+                                  }
+                                }
+                              }}
+                              style={{ display: 'none' }}
+                            />
+                          </label>
+
+                          {slide.image && (
+                            <span style={{ fontSize: '11px', color: '#64748b' }}>
+                              Arquivo atual: <strong>{slide.image.split('/').pop()}</strong>
+                            </span>
+                          )}
+                        </div>
+
                         <input
-                          type="url"
+                          type="text"
                           value={slide.image || ''}
                           onChange={(e) => handleSlideChange(idx, 'image', e.target.value)}
-                          placeholder="https://exemplo.com/foto-banner.jpg"
-                          style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '13px', background: '#fff' }}
+                          placeholder="Ou cole a URL direta da imagem aqui (ou deixe vazio para foto padrão)"
+                          style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '12px', background: '#fff', color: '#555' }}
                         />
                       </div>
 

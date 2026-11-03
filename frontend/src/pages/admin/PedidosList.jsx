@@ -124,6 +124,7 @@ export default function PedidosList() {
         }
       }
       setSuccess(`Status do Pedido #${id} alterado para "${novoStatus}".`);
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
       setTimeout(() => setSuccess(''), 4000);
     } catch {
       setError('Erro ao atualizar o status do pedido.');
@@ -328,11 +329,34 @@ export default function PedidosList() {
               </tr>
             </thead>
             <tbody>
-              {pedidos.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <strong>#{p.id}</strong>
-                  </td>
+              {pedidos.map((p) => {
+                // Notificação de novo pedido só sai quando for alterado para 'Em separação' (ou posteriores)
+                const isNovo = p.status === 'Pendente' || p.status === 'Pago';
+                return (
+                  <tr key={p.id} style={{ background: isNovo ? '#f0fdf4' : 'transparent' }}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <strong>#{p.id}</strong>
+                        {isNovo && (
+                          <span
+                            style={{
+                              background: '#15803d',
+                              color: '#fff',
+                              fontSize: '10px',
+                              fontWeight: 800,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              letterSpacing: '0.5px',
+                              textTransform: 'uppercase',
+                              lineHeight: 1,
+                            }}
+                            title="Pedido novo aguardando processamento"
+                          >
+                            NOVO
+                          </span>
+                        )}
+                      </div>
+                    </td>
                   <td>{formatData(p.data_pedido)}</td>
                   <td>
                     {(() => {
@@ -400,7 +424,8 @@ export default function PedidosList() {
                     </button>
                   </td>
                 </tr>
-              ))}
+              );
+            })}
             </tbody>
           </table>
         </div>

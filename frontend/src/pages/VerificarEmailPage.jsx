@@ -85,9 +85,17 @@ export default function VerificarEmailPage() {
                 type="button"
                 className="auth-btn"
                 style={{ maxWidth: 280, margin: '0 auto' }}
-                onClick={() => navigate('/minha-conta')}
+                onClick={() => {
+                  const redirectTarget = sessionStorage.getItem('salv_redirect_after_auth');
+                  if (redirectTarget) {
+                    sessionStorage.removeItem('salv_redirect_after_auth');
+                    navigate(redirectTarget);
+                  } else {
+                    navigate('/minha-conta');
+                  }
+                }}
               >
-                Acessar Minha Conta
+                {sessionStorage.getItem('salv_redirect_after_auth') ? 'Continuar Comprando' : 'Acessar Minha Conta'}
               </button>
             </>
           )}

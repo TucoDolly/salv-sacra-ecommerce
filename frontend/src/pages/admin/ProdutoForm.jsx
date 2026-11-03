@@ -7,6 +7,7 @@ import {
   getProduto,
   updateProduto,
 } from '../../services/produtoService';
+import { uploadArquivoImagem } from '../../services/uploadService';
 import { CORES_PADRAO } from '../../constants/cores';
 import '../../styles/admin.css';
 
@@ -57,6 +58,7 @@ export default function ProdutoForm() {
   const [imagens, setImagens]                 = useState(['']);
   const [imagensVitrine, setImagensVitrine]   = useState(['']);
   const [variacoes, setVariacoes]             = useState([]);
+  const [uploading, setUploading]             = useState(null); // { tipo: 'galeria'|'vitrine', idx: number }
   const [errors, setErrors]       = useState({});
   const [apiError, setApiError]   = useState('');
   const [loading, setLoading]     = useState(false);
@@ -194,6 +196,23 @@ export default function ProdutoForm() {
     });
   };
 
+  const handleFileUpload = async (file, index, tipo) => {
+    if (!file) return;
+    setUploading({ tipo, index });
+    try {
+      const url = await uploadArquivoImagem(file);
+      if (tipo === 'galeria') {
+        handleImagemChange(index, url);
+      } else {
+        handleImagemVitrineChange(index, url);
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Erro ao enviar a imagem. Tente novamente.');
+    } finally {
+      setUploading(null);
+    }
+  };
+
   // ── Handlers de variações ────────────────────────────────────────────────────
   const addVariacao = () => {
     const modeloPadrao =
@@ -219,16 +238,16 @@ export default function ProdutoForm() {
                                          errs.preco_base = 'O preço é obrigatório.';
     if (Number(form.preco_base) < 0)    errs.preco_base = 'O preço não pode ser negativo.';
 
-    // Valida cada URL de imagem preenchida
+    // Valida cada URL/caminho de imagem preenchida
     imagens.forEach((imgUrl, i) => {
-      if (imgUrl && !/^https?:\/\/.+/.test(imgUrl.trim())) {
-        errs[`imagem_${i}`] = 'Informe uma URL válida (http/https).';
+      if (imgUrl && !/^(https?:\/\/|\/storage\/|\/assets\/)/i.test(imgUrl.trim())) {
+        errs[`imagem_${i}`] = 'Informe um arquivo ou URL válida.';
       }
     });
 
     imagensVitrine.forEach((imgUrl, i) => {
-      if (imgUrl && !/^https?:\/\/.+/.test(imgUrl.trim())) {
-        errs[`imagem_vitrine_${i}`] = 'Informe uma URL válida (http/https).';
+      if (imgUrl && !/^(https?:\/\/|\/storage\/|\/assets\/)/i.test(imgUrl.trim())) {
+        errs[`imagem_vitrine_${i}`] = 'Informe um arquivo ou URL válida.';
       }
     });
 
@@ -449,92 +468,136 @@ export default function ProdutoForm() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
-                  {imagens.map((imgUrl, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        background: '#f8fafc',
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        border: '1px solid #e2e8f0',
-                      }}
-                    >
-                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569', minWidth: '85px' }}>
-                        Miniatura {idx + 1}:
-                      </span>
+                  {imagens.map((imgUrl, idx) => {
+                    const isUploadingThis = uploading?.tipo === 'galeria' && uploading?.index === idx;
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '14px',
+                          background: '#f8fafc',
+                          padding: '12px 16px',
+                          borderRadius: '8px',
+                          border: '1px solid #e2e8f0',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569', minWidth: '85px' }}>
+                          Miniatura {idx + 1}:
+                        </span>
 
-                      <div style={{ flex: 1 }}>
-                        <input
-                          type="url"
-                          value={imgUrl}
-                          onChange={(e) => handleImagemChange(idx, e.target.value)}
-                          placeholder={`https://... (Foto ${idx + 1} da coluna lateral esquerda)`}
-                          style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            borderRadius: '6px',
-                            border: errors[`imagem_${idx}`] ? '1px solid #ef4444' : '1px solid #cbd5e1',
-                            fontSize: '13px',
-                            outline: 'none',
-                            background: '#fff',
-                          }}
-                        />
-                        {errors[`imagem_${idx}`] && (
-                          <span className="admin-field-error" style={{ display: 'block', marginTop: '4px', fontSize: '11px' }}>
-                            {errors[`imagem_${idx}`]}
-                          </span>
-                        )}
-                      </div>
+                        {/* Preview da Imagem */}
+                        <div style={{
+                          width: '54px',
+                          height: '54px',
+                          borderRadius: '6px',
+                          border: '1.5px solid #cbd5e1',
+                          background: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                          flexShrink: 0,
+                        }}>
+                          {imgUrl ? (
+                            <img
+                              src={imgUrl}
+                              alt={`Preview Galeria ${idx + 1}`}
+                              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: '11px', color: '#94a3b8' }}>Sem foto</span>
+                          )}
+                        </div>
 
-                      <div style={{
-                        width: '46px',
-                        height: '46px',
-                        borderRadius: '6px',
-                        border: '1.5px solid #cbd5e1',
-                        background: '#fff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        overflow: 'hidden',
-                        flexShrink: 0,
-                      }}>
-                        {imgUrl && /^https?:\/\/.+/.test(imgUrl) ? (
-                          <img
-                            src={imgUrl}
-                            alt={`Preview Galeria ${idx + 1}`}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            onError={(e) => { e.target.style.display = 'none'; }}
+                        {/* Ações de Seleção de Arquivo e URL */}
+                        <div style={{ flex: 1, minWidth: '220px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <label
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '7px 14px',
+                                borderRadius: '6px',
+                                background: isUploadingThis ? '#64748b' : '#1e1e1e',
+                                color: '#fff',
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                cursor: isUploadingThis ? 'wait' : 'pointer',
+                                transition: 'all 0.2s',
+                              }}
+                            >
+                              📁 {isUploadingThis ? 'Enviando foto...' : (imgUrl ? 'Trocar Arquivo' : 'Escolher Arquivo de Imagem')}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                disabled={isUploadingThis}
+                                onChange={(e) => {
+                                  if (e.target.files?.[0]) {
+                                    handleFileUpload(e.target.files[0], idx, 'galeria');
+                                  }
+                                }}
+                                style={{ display: 'none' }}
+                              />
+                            </label>
+
+                            {imgUrl && (
+                              <span style={{ fontSize: '11px', color: '#64748b', wordBreak: 'break-all' }}>
+                                Arquivo atual: <strong>{imgUrl.split('/').pop()}</strong>
+                              </span>
+                            )}
+                          </div>
+
+                          <input
+                            type="text"
+                            value={imgUrl}
+                            onChange={(e) => handleImagemChange(idx, e.target.value)}
+                            placeholder="Ou cole a URL direta da imagem aqui..."
+                            style={{
+                              width: '100%',
+                              padding: '6px 10px',
+                              borderRadius: '4px',
+                              border: errors[`imagem_${idx}`] ? '1px solid #ef4444' : '1px solid #cbd5e1',
+                              fontSize: '11px',
+                              color: '#555',
+                              background: '#fff',
+                            }}
                           />
-                        ) : (
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Foto</span>
+
+                          {errors[`imagem_${idx}`] && (
+                            <span className="admin-field-error" style={{ fontSize: '11px' }}>
+                              {errors[`imagem_${idx}`]}
+                            </span>
+                          )}
+                        </div>
+
+                        {imagens.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeImagem(idx)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#ef4444',
+                              cursor: 'pointer',
+                              padding: '6px',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                            title="Remover esta foto"
+                          >
+                            <IconTrash />
+                          </button>
                         )}
                       </div>
-
-                      {imagens.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeImagem(idx)}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: '#ef4444',
-                            cursor: 'pointer',
-                            padding: '6px',
-                            borderRadius: '4px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                          title="Remover esta foto"
-                        >
-                          <IconTrash />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -562,17 +625,19 @@ export default function ProdutoForm() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
                       {imagensVitrine.map((imgUrl, idx) => {
                         const corRef = coresUnicas[idx];
+                        const isUploadingThis = uploading?.tipo === 'vitrine' && uploading?.index === idx;
                         return (
                           <div
                             key={idx}
                             style={{
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '12px',
+                              gap: '14px',
                               background: '#fdfbf7',
-                              padding: '10px 14px',
+                              padding: '12px 16px',
                               borderRadius: '8px',
                               border: '1px solid #e5dec9',
+                              flexWrap: 'wrap',
                             }}
                           >
                             <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569', minWidth: '130px' }}>
@@ -583,38 +648,10 @@ export default function ProdutoForm() {
                                 : `${idx + 1}ª Cor${corRef ? ` (${corRef})` : ''}:`}
                             </span>
 
-                            <div style={{ flex: 1 }}>
-                              <input
-                                type="url"
-                                value={imgUrl}
-                                onChange={(e) => handleImagemVitrineChange(idx, e.target.value)}
-                                placeholder={
-                                  idx === 0
-                                    ? 'https://... (Foto de capa na vitrine e da 1ª cor)'
-                                    : idx === 1
-                                    ? 'https://... (Foto ao passar o mouse na vitrine e da 2ª cor)'
-                                    : `https://... (Foto correspondente à ${idx + 1}ª cor)`
-                                }
-                                style={{
-                                  width: '100%',
-                                  padding: '8px 12px',
-                                  borderRadius: '6px',
-                                  border: errors[`imagem_vitrine_${idx}`] ? '1px solid #ef4444' : '1px solid #cbd5e1',
-                                  fontSize: '13px',
-                                  outline: 'none',
-                                  background: '#fff',
-                                }}
-                              />
-                              {errors[`imagem_vitrine_${idx}`] && (
-                                <span className="admin-field-error" style={{ display: 'block', marginTop: '4px', fontSize: '11px' }}>
-                                  {errors[`imagem_vitrine_${idx}`]}
-                                </span>
-                              )}
-                            </div>
-
+                            {/* Preview da Imagem */}
                             <div style={{
-                              width: '46px',
-                              height: '46px',
+                              width: '54px',
+                              height: '54px',
                               borderRadius: '6px',
                               border: '1.5px solid #cbd5e1',
                               background: '#fff',
@@ -624,15 +661,77 @@ export default function ProdutoForm() {
                               overflow: 'hidden',
                               flexShrink: 0,
                             }}>
-                              {imgUrl && /^https?:\/\/.+/.test(imgUrl) ? (
+                              {imgUrl ? (
                                 <img
                                   src={imgUrl}
                                   alt={`Preview Vitrine ${idx + 1}`}
-                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                                   onError={(e) => { e.target.style.display = 'none'; }}
                                 />
                               ) : (
-                                <span style={{ fontSize: '11px', color: '#94a3b8' }}>Foto</span>
+                                <span style={{ fontSize: '11px', color: '#94a3b8' }}>Sem foto</span>
+                              )}
+                            </div>
+
+                            {/* Ações de Seleção de Arquivo e URL */}
+                            <div style={{ flex: 1, minWidth: '220px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                <label
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '7px 14px',
+                                    borderRadius: '6px',
+                                    background: isUploadingThis ? '#64748b' : '#c4953a',
+                                    color: '#fff',
+                                    fontSize: '12px',
+                                    fontWeight: 700,
+                                    cursor: isUploadingThis ? 'wait' : 'pointer',
+                                    transition: 'all 0.2s',
+                                  }}
+                                >
+                                  📁 {isUploadingThis ? 'Enviando foto...' : (imgUrl ? 'Trocar Arquivo' : 'Escolher Arquivo de Imagem')}
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    disabled={isUploadingThis}
+                                    onChange={(e) => {
+                                      if (e.target.files?.[0]) {
+                                        handleFileUpload(e.target.files[0], idx, 'vitrine');
+                                      }
+                                    }}
+                                    style={{ display: 'none' }}
+                                  />
+                                </label>
+
+                                {imgUrl && (
+                                  <span style={{ fontSize: '11px', color: '#64748b', wordBreak: 'break-all' }}>
+                                    Arquivo atual: <strong>{imgUrl.split('/').pop()}</strong>
+                                  </span>
+                                )}
+                              </div>
+
+                              <input
+                                type="text"
+                                value={imgUrl}
+                                onChange={(e) => handleImagemVitrineChange(idx, e.target.value)}
+                                placeholder="Ou cole a URL direta da imagem aqui..."
+                                style={{
+                                  width: '100%',
+                                  padding: '6px 10px',
+                                  borderRadius: '4px',
+                                  border: errors[`imagem_vitrine_${idx}`] ? '1px solid #ef4444' : '1px solid #cbd5e1',
+                                  fontSize: '11px',
+                                  color: '#555',
+                                  background: '#fff',
+                                }}
+                              />
+
+                              {errors[`imagem_vitrine_${idx}`] && (
+                                <span className="admin-field-error" style={{ fontSize: '11px' }}>
+                                  {errors[`imagem_vitrine_${idx}`]}
+                                </span>
                               )}
                             </div>
 

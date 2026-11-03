@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import ReCAPTCHA from 'react-google-recaptcha';
 import { useAuth } from '../contexts/AuthContext';
 import MainLayout from '../layouts/MainLayout';
@@ -31,6 +31,15 @@ const BREADCRUMBS = [
 export default function RegisterPage() {
   const { signUp } = useAuth();
   const navigate   = useNavigate();
+  const [searchParams] = useSearchParams();
+  const location   = useLocation();
+  const redirectTarget = searchParams.get('redirect') || location.state?.from || sessionStorage.getItem('salv_redirect_after_auth');
+
+  useEffect(() => {
+    if (redirectTarget) {
+      sessionStorage.setItem('salv_redirect_after_auth', redirectTarget);
+    }
+  }, [redirectTarget]);
 
   // ── estado ──────────────────────────────────────────────
   const [form, setForm] = useState({
@@ -249,7 +258,7 @@ export default function RegisterPage() {
 
             <p className="auth-alt-link">
               Já possui uma conta?{' '}
-              <Link to="/login">Iniciar sessão</Link>
+              <Link to={redirectTarget ? `/login?redirect=${encodeURIComponent(redirectTarget)}` : '/login'}>Iniciar sessão</Link>
             </p>
           </>
         )}

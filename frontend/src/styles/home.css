@@ -310,7 +310,12 @@
 }
 
 .produto-card-info {
-  padding: 10px 12px 12px;
+  padding: 12px 12px 14px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .produto-card-nome {
@@ -323,6 +328,8 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: center;
+  width: 100%;
 }
 
 .produto-card-preco {
@@ -330,6 +337,8 @@
   font-weight: 600;
   color: #c4953a;
   margin: 0;
+  text-align: center;
+  width: 100%;
 }
 
 /* ── 6. SKELETON (loading) ───────────────────────────────────── */

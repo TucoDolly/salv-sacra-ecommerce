@@ -7,6 +7,8 @@ export default function AvaliacoesAdminPage() {
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState('');
   const [filtroNota, setFiltroNota] = useState('todas');
+  const [avaliacaoParaExcluir, setAvaliacaoParaExcluir] = useState(null);
+  const [excluindo, setExcluindo] = useState(false);
 
   const carregar = () => {
     setLoading(true);
@@ -20,13 +22,21 @@ export default function AvaliacoesAdminPage() {
     carregar();
   }, []);
 
-  const handleExcluir = async (id) => {
-    if (!window.confirm('Deseja realmente excluir esta avaliação permanentemente?')) return;
+  const handleExcluir = (id) => {
+    setAvaliacaoParaExcluir(id);
+  };
+
+  const confirmarExcluir = async () => {
+    if (!avaliacaoParaExcluir) return;
+    setExcluindo(true);
     try {
-      await api.delete(`/admin/avaliacoes/${id}`);
-      setAvaliacoes((prev) => prev.filter((a) => a.id !== id));
+      await api.delete(`/admin/avaliacoes/${avaliacaoParaExcluir}`);
+      setAvaliacoes((prev) => prev.filter((a) => a.id !== avaliacaoParaExcluir));
+      setAvaliacaoParaExcluir(null);
     } catch {
       alert('Não foi possível excluir a avaliação.');
+    } finally {
+      setExcluindo(false);
     }
   };
 
@@ -68,7 +78,7 @@ export default function AvaliacoesAdminPage() {
       </div>
 
       {/* Cards de resumo */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '18px 20px' }}>
           <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Total de Avaliações</div>
           <div style={{ fontSize: '26px', fontWeight: 800, color: '#111', marginTop: '4px' }}>{avaliacoes.length}</div>
@@ -76,12 +86,6 @@ export default function AvaliacoesAdminPage() {
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '18px 20px' }}>
           <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Média Geral da Loja</div>
           <div style={{ fontSize: '26px', fontWeight: 800, color: '#c4953a', marginTop: '4px' }}>★ {mediaGeral}</div>
-        </div>
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '18px 20px' }}>
-          <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Compras Verificadas</div>
-          <div style={{ fontSize: '26px', fontWeight: 800, color: '#15803d', marginTop: '4px' }}>
-            {avaliacoes.filter((a) => a.compra_verificada).length}
-          </div>
         </div>
       </div>
 
@@ -143,11 +147,7 @@ export default function AvaliacoesAdminPage() {
                   </td>
                   <td>
                     <div style={{ fontSize: '13px', fontWeight: 600, color: '#222' }}>{av.autor_nome}</div>
-                    {av.compra_verificada && (
-                      <span style={{ display: 'inline-block', marginTop: '3px', fontSize: '10px', fontWeight: 700, color: '#15803d', background: '#dcfce7', padding: '2px 7px', borderRadius: '99px' }}>
-                        ✓ Compra verificada
-                      </span>
-                    )}
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>{av.autor_email}</div>
                   </td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>{renderEstrelas(av.nota)}</div>
@@ -174,6 +174,100 @@ export default function AvaliacoesAdminPage() {
           </table>
         )}
       </div>
+
+      {/* Modal de Confirmação para Excluir Avaliação */}
+      {avaliacaoParaExcluir && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+          }}
+          onClick={() => !excluindo && setAvaliacaoParaExcluir(null)}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              maxWidth: '430px',
+              width: '100%',
+              padding: '28px',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.25)',
+              textAlign: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: '50%',
+                backgroundColor: '#fee2e2',
+                color: '#dc2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+                fontSize: '24px',
+              }}
+            >
+              ⚠️
+            </div>
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#111', margin: '0 0 8px' }}>
+              Confirmar exclusão de avaliação
+            </h3>
+            <p style={{ fontSize: '14px', color: '#666', lineHeight: 1.5, margin: '0 0 24px' }}>
+              Tem certeza de que deseja excluir permanentemente esta avaliação da loja? Esta ação não pode ser desfeita.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setAvaliacaoParaExcluir(null)}
+                disabled={excluindo}
+                style={{
+                  flex: 1,
+                  padding: '11px 18px',
+                  borderRadius: '6px',
+                  border: '1px solid #d1d5db',
+                  background: '#fff',
+                  color: '#374151',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarExcluir}
+                disabled={excluindo}
+                style={{
+                  flex: 1,
+                  padding: '11px 18px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {excluindo ? 'Excluindo...' : 'Sim, excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

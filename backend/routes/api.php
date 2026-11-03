@@ -135,5 +135,8 @@ Route::middleware('auth:sanctum')->group(function () {
         // ── Moderação de Avaliações (Administração) ───────────────────────
         Route::get('admin/avaliacoes',               [\App\Http\Controllers\AvaliacaoController::class, 'adminIndex']);
         Route::delete('admin/avaliacoes/{avaliacao}', [\App\Http\Controllers\AvaliacaoController::class, 'destroy']);
+
+        // ── Upload de Arquivos / Imagens ──────────────────────────────────
+        Route::post('admin/upload', [\App\Http\Controllers\UploadController::class, 'upload']);
     });
 });

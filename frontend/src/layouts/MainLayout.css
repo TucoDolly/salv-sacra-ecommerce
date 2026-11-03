@@ -99,13 +99,15 @@
   height: 17px;
 }
 
-/* --- Ações (Atendimento / Minha conta / Carrinho) --- */
+/* --- Ações (Favoritos / Minha conta / Carrinho) --- */
 .header-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 22px;
+  justify-self: center;
+  gap: 26px;
   flex-shrink: 0;
+  margin-right: 24px;
 }
 
 .header-action-item {
