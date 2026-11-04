@@ -127,6 +127,11 @@ export default function CheckoutPage() {
 
   // Pagamento: 'cartao' | 'pix' | 'boleto'
   const [metodoPagamento, setMetodoPagamento] = useState('cartao');
+  const [tipoCartao, setTipoCartao] = useState('credito'); // 'credito' | 'debito'
+  const [parcelasCartao, setParcelasCartao] = useState(1);
+  const [maxParcelas, setMaxParcelas] = useState(6);
+  const [cpfTitular, setCpfTitular] = useState('');
+  const [salvarDadosCompra, setSalvarDadosCompra] = useState(true);
   const [cartao, setCartao] = useState({
     numero: '',
     titular: '',
@@ -134,11 +139,64 @@ export default function CheckoutPage() {
     cvv: '',
   });
 
+  const detectarBandeiraCartao = (num) => {
+    const limpo = (num || '').replace(/\D/g, '');
+    if (!limpo) return '';
+    if (/^(636368|438935|504175|451416|636297|5067|4576|4011)/.test(limpo)) return 'Elo';
+    if (/^(34|37)/.test(limpo)) return 'Amex';
+    if (/^(606282|3841)/.test(limpo)) return 'Hipercard';
+    if (/^(5[1-5]|2[2-7])/.test(limpo)) return 'Mastercard';
+    if (/^4/.test(limpo)) return 'Visa';
+    return 'Cartão';
+  };
+
+  const formatarCpfInput = (val) => {
+    const d = (val || '').replace(/\D/g, '').slice(0, 11);
+    if (d.length <= 3) return d;
+    if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+    if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+    return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9, 11)}`;
+  };
+
   const [loading, setLoading] = useState(false);
   const [pedidoConcluido, setPedidoConcluido] = useState(null);
   const [copiadoPix, setCopiadoPix] = useState(false);
   const [tempoRestantePix, setTempoRestantePix] = useState(1800); // 30 minutos em segundos
   const [confirmandoPagamento, setConfirmandoPagamento] = useState(false);
+
+  // Modal para avisos e recusas de pagamento (sem usar o alert nativo do navegador)
+  const [modalAviso, setModalAviso] = useState({
+    aberto: false,
+    tipo: 'erro', // 'erro' | 'alerta' | 'info'
+    titulo: '',
+    mensagem: '',
+    sugestaoPix: false,
+  });
+
+  const abrirModalAviso = ({ titulo, mensagem, sugestaoPix = false, tipo = 'erro' }) => {
+    setModalAviso({
+      aberto: true,
+      tipo,
+      titulo: titulo || 'Atenção',
+      mensagem: mensagem || '',
+      sugestaoPix,
+    });
+  };
+
+  const fecharModalAviso = () => {
+    setModalAviso((prev) => ({ ...prev, aberto: false }));
+  };
+
+  // Fecha o modal ao pressionar ESC
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && modalAviso.aberto) {
+        fecharModalAviso();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [modalAviso.aberto]);
 
   // Polling automático para verificar se o pagamento PIX/Boleto foi aprovado (no Mercado Pago ou pelo Admin)
   useEffect(() => {
@@ -190,7 +248,11 @@ export default function CheckoutPage() {
         setPedidoConcluido(data.pedido);
       }
     } catch {
-      alert('Não foi possível confirmar o pagamento no momento.');
+      abrirModalAviso({
+        titulo: 'Erro ao Confirmar',
+        mensagem: 'Não foi possível confirmar o pagamento no momento. Tente novamente em instantes.',
+        tipo: 'alerta',
+      });
     } finally {
       setConfirmandoPagamento(false);
     }
@@ -202,8 +264,20 @@ export default function CheckoutPage() {
       if (user.email) setEmail(user.email);
       if (user.name) setNome(user.name);
       if (user.telefone) setTelefone(user.telefone);
+      if (user.cpf) setCpfTitular(formatarCpfInput(user.cpf));
     }
   }, [user]);
+
+  useEffect(() => {
+    api.get('/configuracoes/publicas')
+      .then((res) => {
+        if (res.data?.cartao_parcelas_max) {
+          const max = parseInt(res.data.cartao_parcelas_max, 10);
+          if (max >= 1 && max <= 12) setMaxParcelas(max);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -234,6 +308,7 @@ export default function CheckoutPage() {
           if (lista.length > 0) {
             const primeiro = lista[0];
             setCartaoSelecionadoId(primeiro.id);
+            setTipoCartao(primeiro.tipo === 'debito' ? 'debito' : 'credito');
             setCartao({
               numero: primeiro.numero,
               titular: primeiro.titular,
@@ -259,6 +334,15 @@ export default function CheckoutPage() {
   const tipoFreteNome = freteAtual ? freteAtual.nome : 'A calcular';
   const totalFinal = Math.max(0, (subtotal || 79.9) + freteValor - (descontoCupom || 0));
   const totalBase = totalFinal;
+
+  // Calcula o número máximo de parcelas permitidas (parcela mínima de R$ 5,00 no Mercado Pago)
+  const maxParcelasDisponiveis = Math.max(1, Math.min(Number(maxParcelas) || 6, Math.floor(totalFinal / 5.00)));
+
+  useEffect(() => {
+    if (parcelasCartao > maxParcelasDisponiveis) {
+      setParcelasCartao(1);
+    }
+  }, [maxParcelasDisponiveis, parcelasCartao]);
 
   // Sincroniza o CEP do endereço do Checkout com o motor de cálculo de frete
   useEffect(() => {
@@ -297,11 +381,19 @@ export default function CheckoutPage() {
   const handleAvancarParaPagamento = (e) => {
     e.preventDefault();
     if (!email || !endereco.cep || !endereco.logradouro || !endereco.numero) {
-      alert('Por favor, preencha os dados obrigatórios de entrega.');
+      abrirModalAviso({
+        titulo: 'Dados de Entrega Incompletos',
+        mensagem: 'Por favor, preencha todos os campos obrigatórios de contato e entrega (E-mail, CEP, Endereço e Número).',
+        tipo: 'alerta',
+      });
       return;
     }
     if (!freteAtual) {
-      alert('Por favor, informe um CEP válido e selecione uma modalidade de frete.');
+      abrirModalAviso({
+        titulo: 'Selecione a Opção de Frete',
+        mensagem: 'Por favor, informe um CEP válido e selecione uma modalidade de frete para continuar.',
+        tipo: 'alerta',
+      });
       return;
     }
     setEtapa('pagamento');
@@ -310,24 +402,47 @@ export default function CheckoutPage() {
 
   const handleFinalizarPedido = async () => {
     if (items.length === 0) {
-      alert('Seu carrinho está vazio.');
+      abrirModalAviso({
+        titulo: 'Carrinho Vazio',
+        mensagem: 'Seu carrinho de compras está vazio.',
+        tipo: 'alerta',
+      });
       navigate('/');
       return;
     }
     if (metodoPagamento === 'cartao') {
+      if (totalFinal < 1.00) {
+        abrirModalAviso({
+          titulo: 'Valor Mínimo para Cartão',
+          mensagem: 'O valor mínimo para pagamentos com Cartão de Crédito é de R$ 1,00. Para valores menores, utilize o PIX.',
+          tipo: 'alerta',
+          sugestaoPix: true,
+        });
+        return;
+      }
       if (!cartao.cvv || cartao.cvv.length < 3) {
-        alert('Por favor, informe o código de segurança (CVV) do cartão para autorizar o pagamento.');
+        abrirModalAviso({
+          titulo: 'Código de Segurança Obrigatório',
+          mensagem: 'Por favor, informe o código de segurança (CVV - 3 dígitos no verso do cartão) para autorizar o pagamento.',
+          tipo: 'alerta',
+        });
         return;
       }
       if (cartaoSelecionadoId === 'novo') {
         if (!cartao.numero || !cartao.titular || !cartao.validade) {
-          alert('Por favor, preencha todos os dados do novo cartão.');
+          abrirModalAviso({
+            titulo: 'Dados do Cartão Incompletos',
+            mensagem: 'Por favor, preencha todos os dados obrigatórios do cartão (Número, Nome impresso e Validade).',
+            tipo: 'alerta',
+          });
           return;
         }
       }
     }
 
     setLoading(true);
+
+    const metodoEnvio = metodoPagamento === 'cartao' ? 'cartao_credito' : metodoPagamento;
 
     const payload = {
       email_contato: email,
@@ -341,9 +456,23 @@ export default function CheckoutPage() {
       estado: endereco.estado,
       tipo_frete: tipoFreteNome,
       valor_frete: freteValor,
-      metodo_pagamento: metodoPagamento,
+      metodo_pagamento: metodoEnvio,
       observacoes: observacoes,
       cupom_codigo: descontoCupom > 0 ? cupom?.codigo : null,
+      salvar_cartao: salvarDadosCompra,
+      cartao_dados:
+        metodoPagamento === 'cartao'
+          ? {
+              tipo: 'credito',
+              numero: cartao.numero,
+              titular: cartao.titular,
+              validade: cartao.validade,
+              cvv: cartao.cvv,
+              cpf: cpfTitular,
+              parcelas: Number(parcelasCartao) || 1,
+              bandeira: detectarBandeiraCartao(cartao.numero) || 'Cartão',
+            }
+          : null,
       itens: items.map((i) => ({
         produto_id: i.produtoId,
         variacao_id: i.variacaoId || null,
@@ -363,11 +492,18 @@ export default function CheckoutPage() {
         navigate('/login', { state: { from: '/checkout' } });
       } else {
         const errs = err.response?.data?.errors;
-        alert(
+        const msg =
           (errs && Object.values(errs)[0]?.[0]) ||
           err.response?.data?.message ||
-          'Não foi possível finalizar o pedido. Tente novamente.'
-        );
+          'Não foi possível finalizar o pedido. Tente novamente.';
+
+        const ehErroCartao = metodoPagamento === 'cartao' || metodoEnvio.includes('cartao');
+        abrirModalAviso({
+          titulo: ehErroCartao ? 'Cartão Não Autorizado' : 'Aviso no Pagamento',
+          mensagem: msg,
+          sugestaoPix: ehErroCartao,
+          tipo: 'erro',
+        });
       }
     } finally {
       setLoading(false);
@@ -976,7 +1112,14 @@ export default function CheckoutPage() {
                     <div className="checkout-payment-header" onClick={() => setMetodoPagamento('cartao')}>
                       <div className="checkout-payment-left">
                         <IconCreditCard />
-                        <span>Cartão de crédito ou débito</span>
+                        <div>
+                          <span style={{ fontWeight: 700, display: 'block', fontSize: '14px', color: '#111' }}>
+                            Cartão de Crédito
+                          </span>
+                          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500, display: 'block', marginTop: '2px' }}>
+                            À vista ou em até {maxParcelas}x sem juros (aceita cartões de crédito e múltiplos)
+                          </span>
+                        </div>
                       </div>
                       <span className="checkout-payment-arrow">›</span>
                     </div>
@@ -985,8 +1128,8 @@ export default function CheckoutPage() {
                       <div className="checkout-payment-body">
                         {/* Seletor de cartões salvos */}
                         {cartoesSalvos.length > 0 && (
-                          <div style={{ marginBottom: '14px' }}>
-                            <label style={{ fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', color: '#555', display: 'block', marginBottom: '6px' }}>
+                          <div style={{ marginBottom: '16px' }}>
+                            <label style={{ fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', color: '#555', display: 'block', marginBottom: '8px' }}>
                               Escolha um cartão salvo:
                             </label>
                             <div className="checkout-saved-cards-list">
@@ -1010,7 +1153,7 @@ export default function CheckoutPage() {
                                       <div className="checkout-saved-card-radio" />
                                       <div>
                                         <strong>•••• •••• •••• {c.ultimos_digitos}</strong>
-                                        <span className="checkout-saved-card-badge">{c.tipo === 'credito' ? 'Crédito' : 'Débito'}</span>
+                                        <span className="checkout-saved-card-badge">Crédito</span>
                                         <div style={{ fontSize: '11px', color: '#666' }}>
                                           {c.titular} · Validade: {c.validade}
                                         </div>
@@ -1044,11 +1187,19 @@ export default function CheckoutPage() {
                           {cartaoSelecionadoId === 'novo' ? (
                             <>
                               <div className="checkout-input-group">
-                                <label>Número do Cartão</label>
+                                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span>Número do Cartão *</span>
+                                  {detectarBandeiraCartao(cartao.numero) && (
+                                    <span style={{ fontSize: '11px', background: '#1e1e1e', color: '#fff', padding: '1px 8px', borderRadius: '4px' }}>
+                                      {detectarBandeiraCartao(cartao.numero)}
+                                    </span>
+                                  )}
+                                </label>
                                 <input
                                   type="text"
                                   placeholder="0000 0000 0000 0000"
                                   maxLength="19"
+                                  autoComplete="off"
                                   value={cartao.numero}
                                   onChange={(e) => {
                                     let v = e.target.value.replace(/\D/g, '').slice(0, 16);
@@ -1058,23 +1209,39 @@ export default function CheckoutPage() {
                                   className="checkout-input"
                                 />
                               </div>
-                              <div className="checkout-input-group">
-                                <label>Nome impresso no Cartão</label>
-                                <input
-                                  type="text"
-                                  placeholder="Nome como no cartão"
-                                  value={cartao.titular}
-                                  onChange={(e) => setCartao({ ...cartao, titular: e.target.value.toUpperCase() })}
-                                  className="checkout-input"
-                                />
+                              <div className="checkout-input-row">
+                                <div className="checkout-input-group">
+                                  <label>Nome impresso no Cartão *</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Nome como no cartão"
+                                    autoComplete="off"
+                                    value={cartao.titular}
+                                    onChange={(e) => setCartao({ ...cartao, titular: e.target.value.toUpperCase() })}
+                                    className="checkout-input"
+                                  />
+                                </div>
+                                <div className="checkout-input-group">
+                                  <label>CPF do Titular</label>
+                                  <input
+                                    type="text"
+                                    placeholder="000.000.000-00"
+                                    maxLength="14"
+                                    autoComplete="off"
+                                    value={cpfTitular}
+                                    onChange={(e) => setCpfTitular(formatarCpfInput(e.target.value))}
+                                    className="checkout-input"
+                                  />
+                                </div>
                               </div>
                               <div className="checkout-input-row">
                                 <div className="checkout-input-group">
-                                  <label>Validade</label>
+                                  <label>Validade *</label>
                                   <input
                                     type="text"
                                     placeholder="MM/AA"
                                     maxLength="5"
+                                    autoComplete="off"
                                     value={cartao.validade}
                                     onChange={(e) => {
                                       let v = e.target.value.replace(/\D/g, '').slice(0, 4);
@@ -1090,6 +1257,7 @@ export default function CheckoutPage() {
                                     type="password"
                                     placeholder="123"
                                     maxLength="4"
+                                    autoComplete="off"
                                     value={cartao.cvv}
                                     onChange={(e) => setCartao({ ...cartao, cvv: e.target.value })}
                                     className="checkout-input"
@@ -1116,6 +1284,29 @@ export default function CheckoutPage() {
                               </div>
                             </div>
                           )}
+
+                          {/* Parcelamento (Crédito) */}
+                          <div className="checkout-input-group" style={{ marginTop: '8px' }}>
+                            <label>Opções de Parcelamento</label>
+                            <select
+                              value={parcelasCartao}
+                              onChange={(e) => setParcelasCartao(Number(e.target.value))}
+                              className="checkout-input"
+                              style={{ cursor: 'pointer', background: '#fff' }}
+                            >
+                              {Array.from({ length: maxParcelasDisponiveis }, (_, i) => i + 1).map((n) => {
+                                const valorParcela = (totalFinal / n).toFixed(2).replace('.', ',');
+                                return (
+                                  <option key={n} value={n}>
+                                    {n}x de R$ {valorParcela} sem juros {n === 1 ? '(À vista)' : ''}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                            <span style={{ display: 'block', fontSize: '11px', color: '#64748b', marginTop: '6px' }}>
+                              💡 Cartões múltiplos (com função crédito e débito) são processados à vista em 1x pela operadora.
+                            </span>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1126,7 +1317,14 @@ export default function CheckoutPage() {
                     <div className="checkout-payment-header" onClick={() => setMetodoPagamento('pix')}>
                       <div className="checkout-payment-left">
                         <IconPix />
-                        <span>Pix</span>
+                        <div>
+                          <span style={{ fontWeight: 700, display: 'block', fontSize: '14px', color: '#111' }}>
+                            PIX — Débito Instantâneo em Conta
+                          </span>
+                          <span style={{ fontSize: '11px', color: '#059669', fontWeight: 600, display: 'block', marginTop: '2px' }}>
+                            Aprovação em segundos · Saída direta do saldo bancário
+                          </span>
+                        </div>
                       </div>
                       <div className="checkout-payment-right">
                         <span>Pague R${totalFinal.toFixed(2).replace('.', ',')}</span>
@@ -1136,7 +1334,12 @@ export default function CheckoutPage() {
 
                     {metodoPagamento === 'pix' && (
                       <div className="checkout-payment-body">
-                        <p>Ao clicar em fazer pedido, você receberá a chave PIX e o QR Code para pagamento imediato.</p>
+                        <p style={{ margin: '0 0 6px', fontSize: '13px', color: '#334155', lineHeight: '1.5' }}>
+                          ⚡ <strong>Débito instantâneo da sua conta bancária:</strong> Ao clicar em &quot;Fazer Pedido&quot;, será gerado o QR Code e a chave Copia e Cola para pagamento no app do seu banco (Nubank, Caixa, Itaú, Inter, etc.).
+                        </p>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
+                          O valor é debitado na hora do saldo da sua conta e o pedido é aprovado em segundos sem precisar de maquininha ou cartão físico.
+                        </p>
                       </div>
                     )}
                   </div>
@@ -1145,7 +1348,12 @@ export default function CheckoutPage() {
                 {/* Salvar dados da compra */}
                 <div className="checkout-save-data-card">
                   <div className="checkout-save-data-left">
-                    <input type="checkbox" id="salvar-dados" defaultChecked />
+                    <input
+                      type="checkbox"
+                      id="salvar-dados"
+                      checked={salvarDadosCompra}
+                      onChange={(e) => setSalvarDadosCompra(e.target.checked)}
+                    />
                     <label htmlFor="salvar-dados">Salvar dados para <strong>comprar mais rápido</strong> na Salv Sacra</label>
                   </div>
                   <div className="checkout-nuvem-tag">
@@ -1237,6 +1445,78 @@ export default function CheckoutPage() {
 
         </div>
       </div>
+
+      {/* ── Modal de Aviso / Erro no Cartão ── */}
+      {modalAviso.aberto && (
+        <div
+          className="checkout-modal-overlay"
+          onClick={fecharModalAviso}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="checkout-modal-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="checkout-modal-close"
+              onClick={fecharModalAviso}
+              aria-label="Fechar"
+            >
+              ×
+            </button>
+
+            <div className={`checkout-modal-icon-wrap ${modalAviso.tipo === 'info' ? 'info' : 'alert'}`}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+
+            <h3 className="checkout-modal-title">{modalAviso.titulo}</h3>
+            <p className="checkout-modal-desc">{modalAviso.mensagem}</p>
+
+            <div className="checkout-modal-actions">
+              {modalAviso.sugestaoPix ? (
+                <>
+                  <button
+                    type="button"
+                    className="checkout-modal-btn-pix"
+                    onClick={() => {
+                      setMetodoPagamento('pix');
+                      fecharModalAviso();
+                      setTimeout(() => {
+                        const el = document.querySelector('.checkout-payment-heading');
+                        if (el) el.scrollIntoView({ behavior: 'smooth' });
+                      }, 100);
+                    }}
+                  >
+                    <IconPix /> Pagar via PIX (Aprovação Instantânea)
+                  </button>
+
+                  <button
+                    type="button"
+                    className="checkout-modal-btn-secondary"
+                    onClick={fecharModalAviso}
+                  >
+                    Tentar outro cartão ou Crédito
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="checkout-modal-btn-primary"
+                  onClick={fecharModalAviso}
+                >
+                  Entendi
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

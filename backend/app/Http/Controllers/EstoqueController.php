@@ -88,6 +88,10 @@ class EstoqueController extends Controller
         $variacao->estoque = (int) $request->input('estoque');
         $variacao->save();
 
+        if ($variacao->estoque > 0) {
+            \App\Services\AvisoEstoqueService::processarReposicao($variacao);
+        }
+
         return response()->json([
             'message'  => 'Estoque atualizado com sucesso.',
             'variacao' => $variacao,

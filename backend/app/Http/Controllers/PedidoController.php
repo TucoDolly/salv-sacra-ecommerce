@@ -150,6 +150,234 @@ class PedidoController extends Controller
             'pix_copia_e_cola' => $brCode,
         ]);
     }
+
+    /**
+     * Identifica o payment_method_id do Mercado Pago a partir do número do cartão.
+     */
+    private function identificarPaymentMethodMp(string $numeroLimpo): string
+    {
+        if (preg_match('/^(636368|438935|504175|451416|636297|5067|4576|4011)/', $numeroLimpo)) {
+            return 'elo';
+        }
+        if (preg_match('/^(34|37)/', $numeroLimpo)) {
+            return 'amex';
+        }
+        if (preg_match('/^(606282|3841)/', $numeroLimpo)) {
+            return 'hipercard';
+        }
+        if (preg_match('/^(5[1-5]|2[2-7])/', $numeroLimpo)) {
+            return 'master';
+        }
+
+        return 'visa';
+    }
+
+    /**
+     * Traduz códigos de erro do Mercado Pago para mensagens claras e amigáveis em português.
+     */
+    private function traduzirErroMercadoPago(?string $statusDetail, ?string $rawMessage): string
+    {
+        $map = [
+            'cc_rejected_bad_filled_card_number'   => 'Número do cartão inválido.',
+            'cc_rejected_bad_filled_date'          => 'Data de validade do cartão incorreta.',
+            'cc_rejected_bad_filled_security_code' => 'Código de segurança (CVV) inválido. Verifique os 3 dígitos no verso do cartão.',
+            'cc_rejected_bad_filled_other'         => 'Dados do cartão incorretos. Revise as informações digitadas.',
+            'cc_rejected_insufficient_amount'      => 'Saldo ou limite insuficiente no cartão.',
+            'cc_rejected_call_for_authorize'       => 'O banco solicitou autorização prévia. Autorize compras na internet no aplicativo do seu banco ou entre em contato com ele.',
+            'cc_rejected_card_type_not_allowed'    => 'Este tipo de cartão não é aceito para compras online. Para débito de conta poupança/corrente, utilize pagamento via PIX ou a função Crédito.',
+            'cc_rejected_high_risk'                => 'A transação não foi aprovada pelas políticas de segurança do banco emissor.',
+            'cc_rejected_duplicated_payment'       => 'Um pagamento com mesmo valor e dados já foi processado recentemente.',
+        ];
+
+        if ($statusDetail && isset($map[$statusDetail])) {
+            return $map[$statusDetail];
+        }
+
+        if ($statusDetail === 'cc_rejected_high_risk') {
+            return 'Transação não autorizada pelas políticas de segurança antifraude do emissor. Lembre-se: o Mercado Pago proíbe o uso de cartões da mesma conta/CPF que recebe os pagamentos da loja. Para compras com saldo próprio, utilize o PIX.';
+        }
+
+        if ($rawMessage && (str_contains(strtolower($rawMessage), 'invalid transaction_amount') || str_contains(strtolower($rawMessage), 'amount'))) {
+            return 'O valor mínimo para pagamentos com cartão no Mercado Pago é de R$ 1,00. Ajuste o valor da compra ou utilize o PIX.';
+        }
+
+        if ($rawMessage && (str_contains($rawMessage, 'collector') || str_contains(strtolower($rawMessage), 'same payer') || str_contains(strtolower($rawMessage), 'self'))) {
+            return 'Você não pode utilizar um cartão da mesma conta Mercado Pago que recebe as vendas (regra antifraude de autopagamento). Utilize um cartão de outro banco/CPF ou realize os testes no Modo Simulação no painel Admin.';
+        }
+
+        if ($rawMessage === 'not_result_by_params') {
+            return 'Método de pagamento não autorizado para este cartão pelo emissor. Se estiver usando cartão de débito físico/poupança, utilize o PIX (aprovação imediata) ou pague na função Crédito à vista.';
+        }
+
+        return $rawMessage
+            ? "A operadora não aprovou a transação ({$rawMessage}). Verifique os dados ou utilize o PIX."
+            : 'A operadora recusou o pagamento. Verifique se o cartão está liberado para compras online ou tente via PIX.';
+    }
+
+    /**
+     * Processa pagamento via Cartão de Crédito ou Débito (Mercado Pago API /v1/card_tokens + /v1/payments ou Modo Simulação).
+     */
+    private function processarPagamentoCartao(Pedido $pedido, array $dadosCartao, $user): array
+    {
+        $modo = Configuracao::where('chave', 'cartao_gateway_modo')->value('valor') ?: 'mercadopago';
+        $mpToken = Configuracao::where('chave', 'mercadopago_access_token')->value('valor')
+            ?: env('MERCADOPAGO_ACCESS_TOKEN');
+        $mpPublicKey = Configuracao::where('chave', 'mercadopago_public_key')->value('valor')
+            ?: env('MERCADOPAGO_PUBLIC_KEY');
+
+        $numeroLimpo = preg_replace('/\D/', '', $dadosCartao['numero'] ?? '');
+        $cvvLimpo = preg_replace('/\D/', '', $dadosCartao['cvv'] ?? '');
+        $valLimpa = preg_replace('/\D/', '', $dadosCartao['validade'] ?? '');
+        $cpfLimpo = preg_replace('/\D/', '', ($dadosCartao['cpf'] ?? '') ?: ($user->cpf ?? ''));
+        $titular = trim($dadosCartao['titular'] ?? $user->name ?? 'CLIENTE SALV SACRA');
+        $tipo = ($dadosCartao['tipo'] ?? 'credito') === 'debito' ? 'debito' : 'credito';
+        $parcelas = $tipo === 'debito' ? 1 : max(1, (int) ($dadosCartao['parcelas'] ?? 1));
+
+        // No Mercado Pago, cada parcela exige no mínimo R$ 5,00. Se o valor total for pequeno (ex: R$ 1,00), ajusta para 1x à vista.
+        if ($parcelas > 1 && ((float) $pedido->valor_total / $parcelas) < 5.00) {
+            $parcelas = max(1, (int) floor((float) $pedido->valor_total / 5.00));
+        }
+
+        // Modo padrão: Produção Real via API do Mercado Pago
+        if ($modo === 'mercadopago' && ! empty($mpToken)) {
+            if ((float) $pedido->valor_total < 1.00) {
+                return [
+                    'aprovado' => false,
+                    'mensagem' => 'O valor mínimo para processamento com Cartão de Crédito é de R$ 1,00. Para valores menores, selecione a opção PIX.',
+                ];
+            }
+
+            if (strlen($numeroLimpo) < 13 || str_contains($dadosCartao['numero'] ?? '', '*')) {
+                return [
+                    'aprovado' => false,
+                    'mensagem' => 'Para processar o pagamento real, selecione "+ Usar outro cartão" e informe a numeração completa do cartão.',
+                ];
+            }
+
+            if (strlen($valLimpa) < 4) {
+                return [
+                    'aprovado' => false,
+                    'mensagem' => 'Informe a data de validade completa do cartão (MM/AA).',
+                ];
+            }
+
+            try {
+                $mesVal = (int) substr($valLimpa, 0, 2);
+                $anoVal = (int) substr($valLimpa, 2);
+                if ($anoVal < 100) {
+                    $anoVal += 2000;
+                }
+
+                $urlToken = 'https://api.mercadopago.com/v1/card_tokens';
+                if (! empty($mpPublicKey)) {
+                    $urlToken .= '?public_key=' . urlencode(trim($mpPublicKey));
+                }
+
+                $payloadToken = [
+                    'card_number'      => $numeroLimpo,
+                    'expiration_month' => $mesVal,
+                    'expiration_year'  => $anoVal,
+                    'security_code'    => $cvvLimpo,
+                    'cardholder'       => [
+                        'name' => $titular,
+                    ],
+                ];
+
+                if (strlen($cpfLimpo) === 11) {
+                    $payloadToken['cardholder']['identification'] = [
+                        'type'   => 'CPF',
+                        'number' => $cpfLimpo,
+                    ];
+                }
+
+                $respToken = Http::withoutVerifying()
+                    ->withHeaders([
+                        'Authorization' => 'Bearer ' . trim($mpToken),
+                        'Content-Type'  => 'application/json',
+                    ])->timeout(10)->post($urlToken, $payloadToken);
+
+                if (! $respToken->successful() || ! $respToken->json('id')) {
+                    \Illuminate\Support\Facades\Log::warning('Aviso Tokenização Cartão MP: ' . $respToken->body());
+                    return [
+                        'aprovado' => false,
+                        'mensagem' => 'Não foi possível validar os dados do cartão no Mercado Pago. Verifique o número do cartão, validade, CVV e CPF do titular.',
+                    ];
+                }
+
+                $cardTokenId = $respToken->json('id');
+                $partesNome = explode(' ', trim($user->name ?: $titular), 2);
+                $primeiroNome = $partesNome[0] ?? 'Cliente';
+                $sobrenome = $partesNome[1] ?? 'Salv Sacra';
+
+                $payloadMp = [
+                    'transaction_amount' => round((float) $pedido->valor_total, 2),
+                    'token'              => $cardTokenId,
+                    'description'        => "Pedido #{$pedido->id} - Salv Sacra",
+                    'installments'       => $parcelas,
+                    'payment_method_id'  => $this->identificarPaymentMethodMp($numeroLimpo),
+                    'external_reference' => (string) $pedido->id,
+                    'payer'              => [
+                        'email'      => $pedido->email_contato ?: $user->email,
+                        'first_name' => $primeiroNome,
+                        'last_name'  => $sobrenome,
+                    ],
+                ];
+
+                if (strlen($cpfLimpo) === 11) {
+                    $payloadMp['payer']['identification'] = [
+                        'type'   => 'CPF',
+                        'number' => $cpfLimpo,
+                    ];
+                }
+
+                $respPay = Http::withoutVerifying()
+                    ->withHeaders([
+                        'Authorization'     => 'Bearer ' . trim($mpToken),
+                        'X-Idempotency-Key' => 'pedido-card-' . $pedido->id . '-' . Str::uuid(),
+                        'Content-Type'      => 'application/json',
+                    ])->timeout(12)->post('https://api.mercadopago.com/v1/payments', $payloadMp);
+
+                if ($respPay->successful()) {
+                    $dadosPay = $respPay->json();
+                    $statusMp = $dadosPay['status'] ?? '';
+
+                    if ($statusMp === 'rejected' || $statusMp === 'cancelled') {
+                        return [
+                            'aprovado' => false,
+                            'mensagem' => $this->traduzirErroMercadoPago($dadosPay['status_detail'] ?? null, $dadosPay['message'] ?? null),
+                        ];
+                    }
+
+                    $pedido->update([
+                        'pagamento_id' => (string) ($dadosPay['id'] ?? ''),
+                        'status'       => $statusMp === 'in_process' ? 'Pendente' : 'Pago',
+                    ]);
+
+                    return ['aprovado' => true];
+                }
+
+                \Illuminate\Support\Facades\Log::warning('Aviso Mercado Pago Cartão: ' . $respPay->body());
+                return [
+                    'aprovado' => false,
+                    'mensagem' => $this->traduzirErroMercadoPago(null, $respPay->json('message') ?: null),
+                ];
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('Erro ao processar cartão no Mercado Pago: ' . $e->getMessage());
+                return [
+                    'aprovado' => false,
+                    'mensagem' => 'Erro de comunicação com o Mercado Pago ao processar o cartão. Tente novamente.',
+                ];
+            }
+        }
+
+        // Modo Simulação / Sandbox (quando selecionado manualmente pelo Admin)
+        $pedido->update([
+            'pagamento_id' => 'CARD-' . strtoupper(Str::random(10)),
+            'status'       => 'Pago',
+        ]);
+
+        return ['aprovado' => true];
+    }
     /**
      * Criar um novo pedido com seus itens.
      */
@@ -170,6 +398,8 @@ class PedidoController extends Controller
             'metodo_pagamento'   => ['required', 'in:cartao,pix,cartao_credito,cartao_debito'],
             'observacoes'        => ['nullable', 'string'],
             'cupom_codigo'       => ['nullable', 'string', 'max:50'],
+            'cartao_dados'       => ['nullable', 'array'],
+            'salvar_cartao'      => ['nullable', 'boolean'],
             'itens'              => ['required', 'array', 'min:1'],
             'itens.*.variacao_id'=> ['nullable', 'integer', 'exists:variacaos,id'],
             'itens.*.produto_id' => ['required', 'integer', 'exists:produtos,id'],
@@ -202,7 +432,8 @@ class PedidoController extends Controller
                 }
             }
 
-            $statusInicial = $validated['metodo_pagamento'] === 'cartao' ? 'Pago' : 'Pendente';
+            $ehCartao = in_array($validated['metodo_pagamento'], ['cartao', 'cartao_credito', 'cartao_debito'], true);
+            $statusInicial = $ehCartao ? 'Pago' : 'Pendente';
 
             $pedido = Pedido::create([
                 'user_id'          => $userId,
@@ -257,6 +488,42 @@ class PedidoController extends Controller
         // Se o pagamento for PIX, gera cobrança via Mercado Pago (ou BRCode oficial EMVCo)
         if ($pedido->metodo_pagamento === 'pix') {
             $this->processarPagamentoPix($pedido, $request->user());
+            $pedido->refresh();
+        } elseif (in_array($pedido->metodo_pagamento, ['cartao', 'cartao_credito', 'cartao_debito'], true)) {
+            $dadosCartao = $request->input('cartao_dados', []);
+            if (is_array($dadosCartao) && ! empty($dadosCartao)) {
+                $resultadoCartao = $this->processarPagamentoCartao($pedido, $dadosCartao, $request->user());
+                if (empty($resultadoCartao['aprovado'])) {
+                    $pedido->delete();
+                    return response()->json([
+                        'message' => $resultadoCartao['mensagem'] ?? 'Pagamento recusado pela operadora do cartão.',
+                    ], 422);
+                }
+
+                // Salva novo cartão na conta do cliente se solicitado
+                if ($request->boolean('salvar_cartao') && ! empty($dadosCartao['numero'])) {
+                    $numLimpo = preg_replace('/\D/', '', $dadosCartao['numero']);
+                    if (strlen($numLimpo) >= 13 && ! str_contains($dadosCartao['numero'], '*')) {
+                        $ultimos = substr($numLimpo, -4);
+                        $tipoSalvar = 'credito';
+                        $jaExiste = $request->user()->cartoes()
+                            ->where('ultimos_digitos', $ultimos)
+                            ->where('tipo', $tipoSalvar)
+                            ->exists();
+
+                        if (! $jaExiste) {
+                            $request->user()->cartoes()->create([
+                                'tipo'            => $tipoSalvar,
+                                'titular'         => mb_strtoupper(trim($dadosCartao['titular'] ?? $request->user()->name)),
+                                'numero'          => $numLimpo,
+                                'ultimos_digitos' => $ultimos,
+                                'bandeira'        => $dadosCartao['bandeira'] ?? 'Cartão',
+                                'validade'        => $dadosCartao['validade'] ?? '12/30',
+                            ]);
+                        }
+                    }
+                }
+            }
             $pedido->refresh();
         }
 

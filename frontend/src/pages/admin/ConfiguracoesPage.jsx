@@ -55,6 +55,9 @@ export default function ConfiguracoesPage() {
 
     // PIX & Pagamentos
     mercadopago_access_token: '',
+    mercadopago_public_key: '',
+    cartao_gateway_modo: 'mercadopago',
+    cartao_parcelas_max: '6',
     pix_chave: '',
     pix_beneficiario: '',
     pix_cidade: '',
@@ -372,28 +375,104 @@ export default function ConfiguracoesPage() {
 
           {/* ════════ ABA 3: PAGAMENTOS & PIX ════════ */}
           {abaAtiva === 'pagamento' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
-                  Token de API — Mercado Pago (Access Token)
-                </label>
-                <input
-                  type="password"
-                  name="mercadopago_access_token"
-                  value={form.mercadopago_access_token || ''}
-                  onChange={handleChange}
-                  placeholder="Ex: APP_USR-123456789... ou TEST-123456789..."
-                  style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
-                />
-                <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
-                  Gera o QR Code PIX dinâmico e confirma o pagamento automaticamente via Mercado Pago. Você pode usar um token seu para testes e depois substituir pelo token da conta definitiva.
-                </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div style={{ padding: '18px 20px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: '0 0 6px', fontSize: '15px', fontWeight: 700, color: '#111' }}>
+                  Credenciais do Gateway — Mercado Pago (PIX, Cartão de Crédito e Débito)
+                </h3>
+                <p style={{ margin: '0 0 18px', fontSize: '12px', color: '#64748b' }}>
+                  Obtenha suas chaves em <strong>Mercado Pago Developers → Suas integrações → Credenciais</strong>. A mesma conta processa PIX, Crédito e Débito.
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
+                      Access Token — Mercado Pago (Chave Privada)
+                    </label>
+                    <input
+                      type="password"
+                      name="mercadopago_access_token"
+                      value={form.mercadopago_access_token || ''}
+                      onChange={handleChange}
+                      placeholder="Ex: APP_USR-123456789... ou TEST-123456789..."
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none', background: '#fff' }}
+                    />
+                    <span style={{ display: 'block', fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
+                      Usado no servidor para gerar o QR Code PIX e aprovar pagamentos por Cartão.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
+                      Public Key — Mercado Pago (Chave Pública)
+                    </label>
+                    <input
+                      type="text"
+                      name="mercadopago_public_key"
+                      value={form.mercadopago_public_key || ''}
+                      onChange={handleChange}
+                      placeholder="Ex: APP_USR-987654321... ou TEST-987654321..."
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none', background: '#fff' }}
+                    />
+                    <span style={{ display: 'block', fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
+                      Usada para criptografar e tokenizar Cartões de Crédito e Débito com segurança.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Configurações de Cartão de Crédito */}
+              <div style={{ padding: '18px 20px', background: '#fff', borderRadius: '10px', border: '1px solid #e5e7eb' }}>
+                <h3 style={{ margin: '0 0 14px', fontSize: '15px', fontWeight: 700, color: '#111' }}>
+                  Cartão de Crédito (Mercado Pago)
+                </h3>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
+                      Modo de Processamento do Cartão
+                    </label>
+                    <select
+                      name="cartao_gateway_modo"
+                      value={form.cartao_gateway_modo || 'mercadopago'}
+                      onChange={handleChange}
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none', background: '#fff' }}
+                    >
+                      <option value="mercadopago">Produção — Mercado Pago API (Cobrança real no cartão)</option>
+                      <option value="simulacao">Simulação / Sandbox (Aprovação automática para testes)</option>
+                    </select>
+                    <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
+                      No modo Produção (padrão), o cartão é validado, tokenizado e cobrado em tempo real via Mercado Pago. No modo Simulação, qualquer cartão válido é aprovado para testes.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
+                      Parcelamento Máximo sem Juros (Cartão de Crédito)
+                    </label>
+                    <select
+                      name="cartao_parcelas_max"
+                      value={form.cartao_parcelas_max || '6'}
+                      onChange={handleChange}
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none', background: '#fff' }}
+                    >
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                        <option key={n} value={String(n)}>
+                          Até {n}x sem juros
+                        </option>
+                      ))}
+                    </select>
+                    <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
+                      Aceita cartões de crédito e cartões múltiplos (à vista em 1x ou parcelado sem juros).
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
-                    Chave PIX
+                    Chave PIX (Recebimento / Fallback EMV)
                   </label>
                   <input
                     type="text"
@@ -407,7 +486,7 @@ export default function ConfiguracoesPage() {
 
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
-                    Nome do Titular / Beneficiário
+                    Nome do Titular / Beneficiário PIX
                   </label>
                   <input
                     type="text"
@@ -733,7 +812,7 @@ export default function ConfiguracoesPage() {
                   name="contato_endereco"
                   value={form.contato_endereco}
                   onChange={handleChange}
-                  placeholder="Ex: Rua Manoel Antunes Corrêa, 2171"
+                  placeholder="Ex: Rua Manoel Antunes Corrêa, 2171 - Bairro Oficinas, Tubarão - SC"
                   style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
                 />
               </div>

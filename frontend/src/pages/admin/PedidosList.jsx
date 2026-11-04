@@ -397,7 +397,11 @@ export default function PedidosList() {
                   <td>
                     <strong>{formatMoeda(p.valor_total)}</strong>
                     <div style={{ fontSize: '11px', color: '#777', textTransform: 'uppercase' }}>
-                      {p.metodo_pagamento}
+                      {p.metodo_pagamento === 'cartao_credito'
+                        ? 'Cartão de Crédito'
+                        : p.metodo_pagamento === 'cartao_debito'
+                        ? 'Cartão de Débito'
+                        : p.metodo_pagamento}
                     </div>
                   </td>
                   <td>
@@ -640,7 +644,13 @@ export default function PedidosList() {
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                     <span>Forma de Pagamento:</span>
-                    <span style={{ textTransform: 'uppercase', fontWeight: 600 }}>{pedidoSelecionado.metodo_pagamento}</span>
+                    <span style={{ textTransform: 'uppercase', fontWeight: 600 }}>
+                      {pedidoSelecionado.metodo_pagamento === 'cartao_credito'
+                        ? 'Cartão de Crédito'
+                        : pedidoSelecionado.metodo_pagamento === 'cartao_debito'
+                        ? 'Cartão de Débito'
+                        : pedidoSelecionado.metodo_pagamento}
+                    </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 700, borderTop: '1px solid #ddd', paddingTop: '8px' }}>
                     <span>Valor Total:</span>

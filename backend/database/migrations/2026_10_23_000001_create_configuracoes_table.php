@@ -41,7 +41,7 @@ return new class extends Migration
             ['chave' => 'contato_email',       'valor' => 'salvsacra2@gmail.com',          'grupo' => 'contato',   'descricao' => 'E-mail oficial de contato'],
             ['chave' => 'contato_telefone',    'valor' => '(48) 99620-5153',               'grupo' => 'contato',   'descricao' => 'Telefone fixo/celular'],
             ['chave' => 'contato_whatsapp',    'valor' => '5548996205153',                 'grupo' => 'contato',   'descricao' => 'WhatsApp com DDI/DDD'],
-            ['chave' => 'contato_endereco',    'valor' => 'Rua Manoel Antunes Corrêa, 2171', 'grupo' => 'contato', 'descricao' => 'Endereço físico'],
+            ['chave' => 'contato_endereco',    'valor' => 'Rua Manoel Antunes Corrêa, 2171 - Bairro Oficinas, Tubarão - SC', 'grupo' => 'contato', 'descricao' => 'Endereço físico'],
             ['chave' => 'instagram_url',       'valor' => 'https://instagram.com/salvsacra', 'grupo' => 'contato', 'descricao' => 'Perfil do Instagram'],
         ];
 

@@ -49,7 +49,7 @@ export default function ContatoPage() {
               <li><span>📱</span> 5548996205153</li>
               <li><span>📞</span> 48996205153</li>
               <li><span>✉️</span> salvsacra2@gmail.com</li>
-              <li><span>📍</span> Rua Manoel Antunes Corrêa, 2171</li>
+              <li><span>📍</span> Rua Manoel Antunes Corrêa, 2171 - Oficinas, Tubarão - SC</li>
             </ul>
           </div>
 

@@ -19,6 +19,19 @@ class Variacao extends Model
         'estoque' => 'integer',
     ];
 
+    // ─── Eventos ─────────────────────────────────────────────────────────
+
+    protected static function booted(): void
+    {
+        // Quando uma variação passa a ter estoque > 0 (criada ou atualizada),
+        // avisa por e-mail os clientes que solicitaram reposição desta peça.
+        static::saved(function (Variacao $variacao) {
+            if ((int) $variacao->estoque > 0) {
+                \App\Services\AvisoEstoqueService::processarReposicao($variacao);
+            }
+        });
+    }
+
     // ─── Relações ────────────────────────────────────────────────────────────
 
     public function produto(): BelongsTo

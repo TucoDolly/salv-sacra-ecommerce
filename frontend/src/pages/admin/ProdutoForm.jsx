@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   createProduto,
@@ -213,10 +213,19 @@ export default function ProdutoForm() {
     }
   };
 
-  // ── Handlers de variações ────────────────────────────────────────────────────
+  // ── Handlers e filtros de variações ──────────────────────────────────────────
+  const [abaModeloAtiva, setAbaModeloAtiva] = useState('Regular Fit'); // 'Regular Fit' | 'Oversized'
+  const [filtroTamanho, setFiltroTamanho]   = useState('');
+  const [filtroCor, setFiltroCor]           = useState('');
+  const [ordenacao, setOrdenacao]           = useState('tamanho_padrao'); // 'tamanho_padrao' | 'estoque_desc' | 'estoque_asc' | 'cor_asc'
+
   const addVariacao = () => {
-    const modeloPadrao =
-      form.modelo === 'Oversized' ? 'Oversized' : 'Regular Fit';
+    let modeloPadrao = 'Regular Fit';
+    if (form.modelo === 'Ambos') {
+      modeloPadrao = abaModeloAtiva;
+    } else if (form.modelo === 'Oversized') {
+      modeloPadrao = 'Oversized';
+    }
     setVariacoes((prev) => [...prev, { ...EMPTY_VARIACAO, modelo: modeloPadrao }]);
   };
 
@@ -229,6 +238,77 @@ export default function ProdutoForm() {
       prev.map((v, i) => (i === index ? { ...v, [name]: value } : v))
     );
   };
+
+  // Cores cadastradas nas variações atuais
+  const coresCadastradas = useMemo(() => {
+    const conjunto = new Set();
+    variacoes.forEach((v) => {
+      if (v.cor && v.cor.trim()) conjunto.add(v.cor.trim());
+    });
+    return Array.from(conjunto);
+  }, [variacoes]);
+
+  // Lista de variações filtrada e ordenada (mantendo o originalIndex de cada uma)
+  const variacoesFiltradasEOrdenadas = useMemo(() => {
+    const comIndice = variacoes.map((v, originalIndex) => ({
+      ...v,
+      originalIndex,
+      modelo: v.modelo || 'Regular Fit',
+    }));
+
+    return comIndice
+      .filter((v) => {
+        // Se o produto tiver ambos os modelos, filtra pelo modelo da aba ativa
+        if (form.modelo === 'Ambos' && v.modelo !== abaModeloAtiva) {
+          return false;
+        }
+        if (filtroTamanho && v.tamanho !== filtroTamanho) {
+          return false;
+        }
+        if (filtroCor && (v.cor || '').toLowerCase() !== filtroCor.toLowerCase()) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (ordenacao === 'tamanho_padrao') {
+          const idxA = OPCOES_TAMANHO.indexOf(a.tamanho);
+          const idxB = OPCOES_TAMANHO.indexOf(b.tamanho);
+          const posA = idxA === -1 ? 999 : idxA;
+          const posB = idxB === -1 ? 999 : idxB;
+          if (posA !== posB) return posA - posB;
+          return (a.cor || '').localeCompare(b.cor || '');
+        }
+        if (ordenacao === 'estoque_desc') {
+          const estA = Number(a.estoque) || 0;
+          const estB = Number(b.estoque) || 0;
+          if (estB !== estA) return estB - estA;
+          const idxA = OPCOES_TAMANHO.indexOf(a.tamanho);
+          const idxB = OPCOES_TAMANHO.indexOf(b.tamanho);
+          return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+        }
+        if (ordenacao === 'estoque_asc') {
+          const estA = Number(a.estoque) || 0;
+          const estB = Number(b.estoque) || 0;
+          if (estA !== estB) return estA - estB;
+          const idxA = OPCOES_TAMANHO.indexOf(a.tamanho);
+          const idxB = OPCOES_TAMANHO.indexOf(b.tamanho);
+          return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+        }
+        if (ordenacao === 'cor_asc') {
+          const comp = (a.cor || '').localeCompare(b.cor || '');
+          if (comp !== 0) return comp;
+          const idxA = OPCOES_TAMANHO.indexOf(a.tamanho);
+          const idxB = OPCOES_TAMANHO.indexOf(b.tamanho);
+          return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+        }
+        return 0;
+      });
+  }, [variacoes, form.modelo, abaModeloAtiva, filtroTamanho, filtroCor, ordenacao]);
+
+  // Contagens por modelo para as abas
+  const contagemRegular = variacoes.filter((v) => (v.modelo || 'Regular Fit') === 'Regular Fit').length;
+  const contagemOversized = variacoes.filter((v) => v.modelo === 'Oversized').length;
 
   // ── Validação client-side ────────────────────────────────────────────────────
   const validate = () => {
@@ -858,11 +938,209 @@ export default function ProdutoForm() {
             CARD 3 — Variações
             ════════════════════════════════════════════════════ */}
         <div className="admin-card">
-          <div className="admin-variacoes-header">
-            <p className="admin-card-title" style={{ margin: 0, borderBottom: 'none', padding: 0 }}>
-              Variações <span style={{ color: '#aaa', fontWeight: 400 }}>({variacoes.length})</span>
-            </p>
+          <div className="admin-variacoes-header" style={{ marginBottom: '16px' }}>
+            <div>
+              <p className="admin-card-title" style={{ margin: 0, borderBottom: 'none', padding: 0 }}>
+                Variações <span style={{ color: '#aaa', fontWeight: 400 }}>({variacoes.length})</span>
+              </p>
+              <p style={{ fontSize: '12px', color: '#666', margin: '4px 0 0' }}>
+                Gerencie tamanhos, cores e estoque por modelo de forma organizada.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="admin-btn admin-btn-secondary admin-btn-sm"
+              onClick={addVariacao}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <IconPlus /> Adicionar Variação {form.modelo === 'Ambos' ? `em ${abaModeloAtiva}` : ''}
+            </button>
           </div>
+
+          {/* Abas de Modelos (quando a opção selecionada for "Ambos") */}
+          {form.modelo === 'Ambos' && (
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              paddingBottom: '14px',
+              marginBottom: '16px',
+              borderBottom: '1px solid #e2e8f0',
+            }}>
+              <button
+                type="button"
+                onClick={() => setAbaModeloAtiva('Regular Fit')}
+                style={{
+                  padding: '8px 18px',
+                  borderRadius: '6px',
+                  border: abaModeloAtiva === 'Regular Fit' ? '1.5px solid #1e1e1e' : '1px solid #cbd5e1',
+                  background: abaModeloAtiva === 'Regular Fit' ? '#1e1e1e' : '#fff',
+                  color: abaModeloAtiva === 'Regular Fit' ? '#fff' : '#475569',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <span>Regular Fit</span>
+                <span style={{
+                  padding: '1px 7px',
+                  borderRadius: '10px',
+                  fontSize: '11px',
+                  background: abaModeloAtiva === 'Regular Fit' ? 'rgba(255,255,255,0.2)' : '#e2e8f0',
+                  color: abaModeloAtiva === 'Regular Fit' ? '#fff' : '#334155',
+                }}>
+                  {contagemRegular}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAbaModeloAtiva('Oversized')}
+                style={{
+                  padding: '8px 18px',
+                  borderRadius: '6px',
+                  border: abaModeloAtiva === 'Oversized' ? '1.5px solid #1e1e1e' : '1px solid #cbd5e1',
+                  background: abaModeloAtiva === 'Oversized' ? '#1e1e1e' : '#fff',
+                  color: abaModeloAtiva === 'Oversized' ? '#fff' : '#475569',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <span>Oversized</span>
+                <span style={{
+                  padding: '1px 7px',
+                  borderRadius: '10px',
+                  fontSize: '11px',
+                  background: abaModeloAtiva === 'Oversized' ? 'rgba(255,255,255,0.2)' : '#e2e8f0',
+                  color: abaModeloAtiva === 'Oversized' ? '#fff' : '#334155',
+                }}>
+                  {contagemOversized}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* Barra de Filtros e Ordenação das Variações */}
+          {variacoes.length > 0 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '12px',
+              padding: '12px 14px',
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              marginBottom: '16px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                {/* Filtro por Tamanho */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                    Tamanho:
+                  </span>
+                  <select
+                    value={filtroTamanho}
+                    onChange={(e) => setFiltroTamanho(e.target.value)}
+                    style={{
+                      padding: '5px 8px',
+                      borderRadius: '5px',
+                      border: '1px solid #cbd5e1',
+                      background: '#fff',
+                      fontSize: '12px',
+                      color: '#1e293b',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="">Todos</option>
+                    {OPCOES_TAMANHO.map((tam) => (
+                      <option key={tam} value={tam}>{tam}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filtro por Cor */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                    Cor:
+                  </span>
+                  <select
+                    value={filtroCor}
+                    onChange={(e) => setFiltroCor(e.target.value)}
+                    style={{
+                      padding: '5px 8px',
+                      borderRadius: '5px',
+                      border: '1px solid #cbd5e1',
+                      background: '#fff',
+                      fontSize: '12px',
+                      color: '#1e293b',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="">Todas</option>
+                    {(coresCadastradas.length > 0 ? coresCadastradas : CORES_PADRAO.map(c => c.nome)).map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {(filtroTamanho || filtroCor) && (
+                  <button
+                    type="button"
+                    onClick={() => { setFiltroTamanho(''); setFiltroCor(''); }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#dc2626',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      padding: '4px 6px',
+                    }}
+                  >
+                    ✕ Limpar filtros
+                  </button>
+                )}
+              </div>
+
+              {/* Ordenar */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                  Ordenar por:
+                </span>
+                <select
+                  value={ordenacao}
+                  onChange={(e) => setOrdenacao(e.target.value)}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '5px',
+                    border: '1px solid #cbd5e1',
+                    background: '#fff',
+                    fontSize: '12px',
+                    color: '#1e293b',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="tamanho_padrao">Tamanho (PP → G2)</option>
+                  <option value="estoque_desc">Mais estoque</option>
+                  <option value="estoque_asc">Menos estoque</option>
+                  <option value="cor_asc">Cor (A-Z)</option>
+                </select>
+              </div>
+            </div>
+          )}
 
           {variacoes.length === 0 ? (
             <div style={{ marginTop: '16px' }}>
@@ -879,35 +1157,38 @@ export default function ProdutoForm() {
                 </button>
               </div>
             </div>
+          ) : variacoesFiltradasEOrdenadas.length === 0 ? (
+            <div style={{
+              padding: '30px 16px',
+              textAlign: 'center',
+              background: '#f8fafc',
+              borderRadius: '8px',
+              border: '1px dashed #cbd5e1',
+              color: '#64748b',
+              fontSize: '13px',
+              marginBottom: '16px',
+            }}>
+              <p style={{ margin: '0 0 10px' }}>
+                Nenhuma variação encontrada para os filtros selecionados{form.modelo === 'Ambos' ? ` na aba ${abaModeloAtiva}` : ''}.
+              </p>
+              <button
+                type="button"
+                className="admin-btn admin-btn-secondary admin-btn-sm"
+                onClick={addVariacao}
+              >
+                <IconPlus /> Adicionar Variação {form.modelo === 'Ambos' ? `em ${abaModeloAtiva}` : ''}
+              </button>
+            </div>
           ) : (
             <>
-              {variacoes.map((variacao, index) => {
-                const mostrarModelo = form.modelo === 'Ambos';
+              {variacoesFiltradasEOrdenadas.map((variacao) => {
+                const index = variacao.originalIndex;
 
                 return (
                   <div
                     key={index}
-                    className={`admin-variacao-row ${mostrarModelo ? 'com-modelo' : 'sem-modelo'}`}
+                    className="admin-variacao-row sem-modelo"
                   >
-                    {/* Modelo: exibido apenas quando a opção na aba Classificação for "Ambos" */}
-                    {mostrarModelo && (
-                      <div className="admin-field" style={{ margin: 0 }}>
-                        <label>Modelo</label>
-                        <select
-                          name="modelo"
-                          value={variacao.modelo || 'Regular Fit'}
-                          onChange={(e) => handleVariacaoChange(index, e)}
-                        >
-                          {OPCOES_MODELO_VARIACAO.map((mod) => (
-                            <option key={mod} value={mod}>{mod}</option>
-                          ))}
-                        </select>
-                        {errors[`variacao_${index}_modelo`] && (
-                          <span className="admin-field-error">{errors[`variacao_${index}_modelo`]}</span>
-                        )}
-                      </div>
-                    )}
-
                     {/* Tamanho: Escolher entre PP, P, M, G, GG, G1, G2 */}
                     <div className="admin-field" style={{ margin: 0 }}>
                       <label>Tamanho</label>
@@ -1008,14 +1289,14 @@ export default function ProdutoForm() {
                 );
               })}
 
-              {/* Botão de + no final da última variação cadastrada */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
+              {/* Botão de + no final */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
                 <button
                   type="button"
                   className="admin-btn admin-btn-secondary admin-btn-sm"
                   onClick={addVariacao}
                 >
-                  <IconPlus /> Adicionar Variação
+                  <IconPlus /> Adicionar Variação {form.modelo === 'Ambos' ? `em ${abaModeloAtiva}` : ''}
                 </button>
               </div>
             </>

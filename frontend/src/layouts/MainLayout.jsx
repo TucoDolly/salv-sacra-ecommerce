@@ -188,8 +188,8 @@ function SiteHeader({ configs }) {
             Camisetas
           </Link>
 
-          <Link to="/contato" className={`nav-link ${location.pathname === '/contato' ? 'active' : ''}`}>Contato</Link>
           <Link to="/guia-de-medidas" className={`nav-link ${location.pathname === '/guia-de-medidas' ? 'active' : ''}`}>Guia de medidas</Link>
+          <Link to="/contato" className={`nav-link ${location.pathname === '/contato' ? 'active' : ''}`}>Contato</Link>
         </div>
       </nav>
 
@@ -341,25 +341,36 @@ function SiteFooter({ configs }) {
             <IconMail />
             <a href={`mailto:${configs.contato_email || 'salvsacra2@gmail.com'}`}>{configs.contato_email || 'salvsacra2@gmail.com'}</a>
           </div>
-          <div className="contact-item">
-            <IconMapPin />
-            <span>{configs.contato_endereco || 'Rua Manoel Antunes Corrêa, 2171'}</span>
-          </div>
         </div>
 
-        {/* Siga-nos */}
-        <div className="footer-col footer-col--social">
-          <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center' }}>
-            <h4>Siga-nos!</h4>
-            <a
-              href={configs.instagram_url || "https://instagram.com/salv.sacra"}
-              target="_blank"
-              rel="noreferrer"
-              className="social-btn"
-              aria-label="Instagram"
-            >
-              <IconInstagram />
-            </a>
+        {/* Nossa Localização */}
+        <div className="footer-col">
+          <h4>Nossa Localização</h4>
+          <div className="contact-item" style={{ marginLeft: '-14px' }}>
+            <IconMapPin />
+            <div>
+              {configs.contato_endereco && configs.contato_endereco.includes(' - ') ? (
+                <>
+                  <span style={{ display: 'block', color: '#333', fontSize: '13px', lineHeight: 1.4 }}>
+                    {configs.contato_endereco.split(' - ')[0]}
+                  </span>
+                  <span style={{ display: 'block', color: '#333', fontSize: '13px', lineHeight: 1.4, marginTop: '3px' }}>
+                    {configs.contato_endereco.split(' - ').slice(1).join(' - ')}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span style={{ display: 'block', color: '#333', fontSize: '13px', lineHeight: 1.4 }}>
+                    {configs.contato_endereco || 'Rua Manoel Antunes Corrêa, 2171'}
+                  </span>
+                  {!configs.contato_endereco?.toLowerCase().includes('tubarão') && (
+                    <span style={{ display: 'block', color: '#333', fontSize: '13px', lineHeight: 1.4, marginTop: '3px' }}>
+                      Bairro Oficinas · Tubarão - SC
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

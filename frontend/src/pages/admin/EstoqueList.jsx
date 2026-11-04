@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getEstoqueAdmin, updateEstoqueVariacao } from '../../services/adminEstoqueService';
+import { getHexCor } from '../../constants/cores';
 import '../../styles/admin.css';
+
+const OPCOES_TAMANHO = ['PP', 'P', 'M', 'G', 'GG', 'G1', 'G2'];
 
 export default function EstoqueList() {
   const [produtos, setProdutos] = useState([]);
@@ -16,6 +19,12 @@ export default function EstoqueList() {
   const [filtro, setFiltro] = useState(''); // '' | 'critico' | 'esgotado' | 'normal'
   const [salvandoId, setSalvandoId] = useState(null);
   const [feedback, setFeedback] = useState({ tipo: '', texto: '' });
+
+  // ── Filtros adicionais de organização e modelos ──────────────────────────────
+  const [modeloFiltro, setModeloFiltro]         = useState('todos'); // 'todos' | 'Regular Fit' | 'Oversized'
+  const [tamanhoFiltro, setTamanhoFiltro]       = useState('');
+  const [corFiltro, setCorFiltro]               = useState('');
+  const [ordenacaoEstoque, setOrdenacaoEstoque] = useState('tamanho_padrao'); // 'tamanho_padrao' | 'estoque_desc' | 'estoque_asc' | 'cor_asc'
 
   // Valores em edição local por variação id: { [varId]: number }
   const [edicoes, setEdicoes] = useState({});
@@ -95,6 +104,90 @@ export default function EstoqueList() {
     } finally {
       setSalvandoId(null);
     }
+  };
+
+  // Cores cadastradas nos produtos retornados
+  const coresDisponiveis = useMemo(() => {
+    const conjunto = new Set();
+    produtos.forEach((prod) => {
+      (prod.variacoes || []).forEach((v) => {
+        if (v.cor && v.cor.trim()) conjunto.add(v.cor.trim());
+      });
+    });
+    return Array.from(conjunto);
+  }, [produtos]);
+
+  // Processa e filtra produtos e suas variações
+  const produtosProcessados = useMemo(() => {
+    return produtos
+      .map((produto) => {
+        const vars = (produto.variacoes || []).filter((v) => {
+          if (modeloFiltro !== 'todos' && (v.modelo || 'Regular Fit') !== modeloFiltro) {
+            return false;
+          }
+          if (tamanhoFiltro && v.tamanho !== tamanhoFiltro) {
+            return false;
+          }
+          if (corFiltro && (v.cor || '').toLowerCase() !== corFiltro.toLowerCase()) {
+            return false;
+          }
+          return true;
+        });
+
+        const ordenadas = [...vars].sort((a, b) => {
+          if (ordenacaoEstoque === 'tamanho_padrao') {
+            const idxA = OPCOES_TAMANHO.indexOf(a.tamanho);
+            const idxB = OPCOES_TAMANHO.indexOf(b.tamanho);
+            const posA = idxA === -1 ? 999 : idxA;
+            const posB = idxB === -1 ? 999 : idxB;
+            if (posA !== posB) return posA - posB;
+            return (a.cor || '').localeCompare(b.cor || '');
+          }
+          if (ordenacaoEstoque === 'estoque_desc') {
+            const valA = edicoes[a.id] !== undefined ? edicoes[a.id] : a.estoque;
+            const valB = edicoes[b.id] !== undefined ? edicoes[b.id] : b.estoque;
+            if (valB !== valA) return valB - valA;
+            const idxA = OPCOES_TAMANHO.indexOf(a.tamanho);
+            const idxB = OPCOES_TAMANHO.indexOf(b.tamanho);
+            return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+          }
+          if (ordenacaoEstoque === 'estoque_asc') {
+            const valA = edicoes[a.id] !== undefined ? edicoes[a.id] : a.estoque;
+            const valB = edicoes[b.id] !== undefined ? edicoes[b.id] : b.estoque;
+            if (valA !== valB) return valA - valB;
+            const idxA = OPCOES_TAMANHO.indexOf(a.tamanho);
+            const idxB = OPCOES_TAMANHO.indexOf(b.tamanho);
+            return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+          }
+          if (ordenacaoEstoque === 'cor_asc') {
+            const comp = (a.cor || '').localeCompare(b.cor || '');
+            if (comp !== 0) return comp;
+            const idxA = OPCOES_TAMANHO.indexOf(a.tamanho);
+            const idxB = OPCOES_TAMANHO.indexOf(b.tamanho);
+            return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+          }
+          return 0;
+        });
+
+        return {
+          ...produto,
+          variacoesExibidas: ordenadas,
+        };
+      })
+      .filter((prod) => {
+        const temFiltroAtivo = modeloFiltro !== 'todos' || tamanhoFiltro !== '' || corFiltro !== '';
+        return temFiltroAtivo ? prod.variacoesExibidas.length > 0 : true;
+      });
+  }, [produtos, modeloFiltro, tamanhoFiltro, corFiltro, ordenacaoEstoque, edicoes]);
+
+  const temFiltroVariacaoAtivo =
+    modeloFiltro !== 'todos' || tamanhoFiltro !== '' || corFiltro !== '' || ordenacaoEstoque !== 'tamanho_padrao';
+
+  const limparFiltrosVariacao = () => {
+    setModeloFiltro('todos');
+    setTamanhoFiltro('');
+    setCorFiltro('');
+    setOrdenacaoEstoque('tamanho_padrao');
   };
 
   return (
@@ -180,101 +273,273 @@ export default function EstoqueList() {
         </div>
       )}
 
-      {/* ── Barra de Filtros ── */}
+      {/* ── Barra de Filtros Principais ── */}
       <div style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '14px',
         background: '#fff',
         padding: '16px 20px',
         borderRadius: '10px',
         border: '1px solid #eaeaea',
-        marginBottom: '20px'
+        marginBottom: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '14px',
       }}>
-        <div style={{ flex: '1', minWidth: '240px', position: 'relative' }}>
-          <input
-            type="search"
-            placeholder="Buscar por produto ou categoria..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '10px 14px',
-              borderRadius: '6px',
-              border: '1px solid #ddd',
-              fontSize: '14px',
-              outline: 'none',
-            }}
-          />
+        {/* Linha 1: Busca e Status */}
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '14px',
+        }}>
+          <div style={{ flex: '1', minWidth: '240px', position: 'relative' }}>
+            <input
+              type="search"
+              placeholder="Buscar por produto ou categoria..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: '6px',
+                border: '1px solid #ddd',
+                fontSize: '14px',
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => setFiltro('')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '6px',
+                border: filtro === '' ? '1.5px solid #111' : '1px solid #ddd',
+                background: filtro === '' ? '#111' : '#fff',
+                color: filtro === '' ? '#fff' : '#444',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Todos
+            </button>
+            <button
+              type="button"
+              onClick={() => setFiltro('critico')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '6px',
+                border: filtro === 'critico' ? '1.5px solid #e11d48' : '1px solid #ddd',
+                background: filtro === 'critico' ? '#ffe4e6' : '#fff',
+                color: filtro === 'critico' ? '#be123c' : '#444',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Estoque Crítico (≤ 5)
+            </button>
+            <button
+              type="button"
+              onClick={() => setFiltro('esgotado')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '6px',
+                border: filtro === 'esgotado' ? '1.5px solid #64748b' : '1px solid #ddd',
+                background: filtro === 'esgotado' ? '#f1f5f9' : '#fff',
+                color: filtro === 'esgotado' ? '#334155' : '#444',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Esgotados
+            </button>
+            <button
+              type="button"
+              onClick={() => setFiltro('normal')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '6px',
+                border: filtro === 'normal' ? '1.5px solid #16a34a' : '1px solid #ddd',
+                background: filtro === 'normal' ? '#dcfce7' : '#fff',
+                color: filtro === 'normal' ? '#15803d' : '#444',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Estoque Normal
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={() => setFiltro('')}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '6px',
-              border: filtro === '' ? '1.5px solid #111' : '1px solid #ddd',
-              background: filtro === '' ? '#111' : '#fff',
-              color: filtro === '' ? '#fff' : '#444',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Todos
-          </button>
-          <button
-            type="button"
-            onClick={() => setFiltro('critico')}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '6px',
-              border: filtro === 'critico' ? '1.5px solid #e11d48' : '1px solid #ddd',
-              background: filtro === 'critico' ? '#ffe4e6' : '#fff',
-              color: filtro === 'critico' ? '#be123c' : '#444',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Estoque Crítico (≤ 5)
-          </button>
-          <button
-            type="button"
-            onClick={() => setFiltro('esgotado')}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '6px',
-              border: filtro === 'esgotado' ? '1.5px solid #64748b' : '1px solid #ddd',
-              background: filtro === 'esgotado' ? '#f1f5f9' : '#fff',
-              color: filtro === 'esgotado' ? '#334155' : '#444',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Esgotados
-          </button>
-          <button
-            type="button"
-            onClick={() => setFiltro('normal')}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '6px',
-              border: filtro === 'normal' ? '1.5px solid #16a34a' : '1px solid #ddd',
-              background: filtro === 'normal' ? '#dcfce7' : '#fff',
-              color: filtro === 'normal' ? '#15803d' : '#444',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Estoque Normal
-          </button>
+        {/* Linha 2: Separação de Modelos e Filtros de Variação (Tamanho, Cor, Ordenação) */}
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          paddingTop: '12px',
+          borderTop: '1px solid #f1f5f9',
+        }}>
+          {/* Abas de Modelos */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginRight: '4px' }}>
+              Modelo:
+            </span>
+            <button
+              type="button"
+              onClick={() => setModeloFiltro('todos')}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: modeloFiltro === 'todos' ? '1.5px solid #1e1e1e' : '1px solid #cbd5e1',
+                background: modeloFiltro === 'todos' ? '#1e1e1e' : '#fff',
+                color: modeloFiltro === 'todos' ? '#fff' : '#475569',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Todos os Modelos
+            </button>
+            <button
+              type="button"
+              onClick={() => setModeloFiltro('Regular Fit')}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: modeloFiltro === 'Regular Fit' ? '1.5px solid #1e1e1e' : '1px solid #cbd5e1',
+                background: modeloFiltro === 'Regular Fit' ? '#1e1e1e' : '#fff',
+                color: modeloFiltro === 'Regular Fit' ? '#fff' : '#475569',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Regular Fit
+            </button>
+            <button
+              type="button"
+              onClick={() => setModeloFiltro('Oversized')}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: modeloFiltro === 'Oversized' ? '1.5px solid #1e1e1e' : '1px solid #cbd5e1',
+                background: modeloFiltro === 'Oversized' ? '#1e1e1e' : '#fff',
+                color: modeloFiltro === 'Oversized' ? '#fff' : '#475569',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Oversized
+            </button>
+          </div>
+
+          {/* Filtros de Variação (Tamanho, Cor, Ordenar) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            {/* Tamanho */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                Tamanho:
+              </span>
+              <select
+                value={tamanhoFiltro}
+                onChange={(e) => setTamanhoFiltro(e.target.value)}
+                style={{
+                  padding: '5px 8px',
+                  borderRadius: '5px',
+                  border: '1px solid #cbd5e1',
+                  background: '#fff',
+                  fontSize: '12px',
+                  color: '#1e293b',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="">Todos</option>
+                {OPCOES_TAMANHO.map((tam) => (
+                  <option key={tam} value={tam}>{tam}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Cor */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                Cor:
+              </span>
+              <select
+                value={corFiltro}
+                onChange={(e) => setCorFiltro(e.target.value)}
+                style={{
+                  padding: '5px 8px',
+                  borderRadius: '5px',
+                  border: '1px solid #cbd5e1',
+                  background: '#fff',
+                  fontSize: '12px',
+                  color: '#1e293b',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="">Todas</option>
+                {coresDisponiveis.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Ordenar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                Ordenar:
+              </span>
+              <select
+                value={ordenacaoEstoque}
+                onChange={(e) => setOrdenacaoEstoque(e.target.value)}
+                style={{
+                  padding: '5px 8px',
+                  borderRadius: '5px',
+                  border: '1px solid #cbd5e1',
+                  background: '#fff',
+                  fontSize: '12px',
+                  color: '#1e293b',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="tamanho_padrao">Tamanho (PP → G2)</option>
+                <option value="estoque_desc">Mais estoque</option>
+                <option value="estoque_asc">Menos estoque</option>
+                <option value="cor_asc">Cor (A-Z)</option>
+              </select>
+            </div>
+
+            {temFiltroVariacaoAtivo && (
+              <button
+                type="button"
+                onClick={limparFiltrosVariacao}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#dc2626',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  padding: '4px 6px',
+                }}
+              >
+                ✕ Limpar filtros
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -283,15 +548,23 @@ export default function EstoqueList() {
         <div style={{ textAlign: 'center', padding: '60px 20px', color: '#888' }}>
           <p>Carregando itens de estoque...</p>
         </div>
-      ) : produtos.length === 0 ? (
+      ) : produtosProcessados.length === 0 ? (
         <div style={{ background: '#fff', padding: '50px 20px', textAlign: 'center', borderRadius: '12px', border: '1px solid #eee' }}>
           <p style={{ color: '#666', fontSize: '15px' }}>Nenhum produto encontrado com os filtros selecionados.</p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {produtos.map((produto) => {
-            const totalEstoqueProd = (produto.variacoes || []).reduce((acc, v) => acc + (v.estoque || 0), 0);
+          {produtosProcessados.map((produto) => {
+            const totalEstoqueProd = (produto.variacoesExibidas || []).reduce((acc, v) => {
+              const val = edicoes[v.id] !== undefined ? edicoes[v.id] : v.estoque;
+              return acc + (val || 0);
+            }, 0);
+            const totalEstoqueGeral = (produto.variacoes || []).reduce((acc, v) => {
+              const val = edicoes[v.id] !== undefined ? edicoes[v.id] : v.estoque;
+              return acc + (val || 0);
+            }, 0);
             const temCritico = (produto.variacoes || []).some((v) => v.estoque <= 5);
+            const temModelosMultiplos = (produto.variacoes || []).some((v) => v.modelo === 'Oversized') && (produto.variacoes || []).some((v) => (v.modelo || 'Regular Fit') === 'Regular Fit');
 
             return (
               <div
@@ -326,9 +599,23 @@ export default function EstoqueList() {
                       <div style={{ width: '48px', height: '48px', background: '#e2e8f0', borderRadius: '6px' }} />
                     )}
                     <div>
-                      <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#111', margin: 0 }}>
-                        {produto.nome}
-                      </h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#111', margin: 0 }}>
+                          {produto.nome}
+                        </h3>
+                        {temModelosMultiplos && (
+                          <span style={{
+                            background: '#e2e8f0',
+                            color: '#334155',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                          }}>
+                            Regular & Oversized
+                          </span>
+                        )}
+                      </div>
                       <span style={{ fontSize: '12px', color: '#666' }}>
                         {produto.categoria?.nome || 'Sem categoria'} · {produto.devocao?.nome || 'Devoção'}
                       </span>
@@ -338,10 +625,19 @@ export default function EstoqueList() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <div style={{ textAlign: 'right' }}>
                       <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#888', fontWeight: 600 }}>
-                        {filtro ? 'Total no Filtro' : 'Total do Produto'}
+                        {temFiltroVariacaoAtivo || filtro ? 'Total no Filtro' : 'Total do Produto'}
                       </span>
                       <p style={{ fontSize: '15px', fontWeight: 700, color: '#111', margin: 0 }}>
-                        {totalEstoqueProd} un
+                        {temFiltroVariacaoAtivo || filtro ? (
+                          <>
+                            {totalEstoqueProd} un{' '}
+                            <span style={{ fontSize: '11px', color: '#777', fontWeight: 400 }}>
+                              ({(produto.variacoesExibidas || []).length} de {(produto.variacoes || []).length} var.)
+                            </span>
+                          </>
+                        ) : (
+                          `${totalEstoqueGeral} un`
+                        )}
                       </p>
                     </div>
 
@@ -374,7 +670,7 @@ export default function EstoqueList() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(produto.variacoes || []).map((variacao) => {
+                      {(produto.variacoesExibidas || []).map((variacao) => {
                         const valorAtual = edicoes[variacao.id] !== undefined ? edicoes[variacao.id] : variacao.estoque;
                         const modificado = valorAtual !== variacao.estoque;
                         const salvando = salvandoId === variacao.id;
@@ -400,8 +696,18 @@ export default function EstoqueList() {
 
                         return (
                           <tr key={variacao.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '14px 16px', fontWeight: 600, color: '#334155', textAlign: 'center', fontSize: '12px' }}>
-                              {variacao.modelo || 'Regular Fit'}
+                            <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                background: variacao.modelo === 'Oversized' ? '#1e1e1e' : '#f1f5f9',
+                                color: variacao.modelo === 'Oversized' ? '#fff' : '#334155',
+                              }}>
+                                {variacao.modelo || 'Regular Fit'}
+                              </span>
                             </td>
                             <td style={{ padding: '14px 16px', fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>
                               {variacao.tamanho || 'Único'}
@@ -412,8 +718,9 @@ export default function EstoqueList() {
                                   width: '12px',
                                   height: '12px',
                                   borderRadius: '50%',
-                                  background: variacao.cor?.toLowerCase() === 'branca' ? '#fff' : variacao.cor?.toLowerCase() === 'preta' ? '#000' : '#888',
-                                  border: '1px solid #ccc',
+                                  background: getHexCor(variacao.cor),
+                                  border: '1px solid rgba(0,0,0,0.15)',
+                                  flexShrink: 0,
                                 }} />
                                 {variacao.cor || 'Padrão'}
                               </span>

@@ -42,7 +42,7 @@ const IconChevronRight = () => (
   <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
 );
 const IconInstagram = () => (
-  <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+  <svg width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
     <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
     <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
     <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
@@ -386,28 +386,32 @@ export default function Home() {
         />
       </section>
 
-      {/* ── 4. Vem por aí ───────────────────────────────────────────── */}
-      <section className="home-section" aria-labelledby="vem-title">
-        <h2 id="vem-title" className="home-section-title">Vem por aí!</h2>
-        <CardCarousel
-          items={vemPorAi}
-          loading={loadingVem}
-          emptyMsg="Novidades chegando em breve."
-        />
-      </section>
+      {/* ── 4. Vem por aí (somente renderizado quando houver produtos) ── */}
+      {vemPorAi.length > 0 && (
+        <section className="home-section" aria-labelledby="vem-title">
+          <h2 id="vem-title" className="home-section-title">Vem por aí!</h2>
+          <CardCarousel
+            items={vemPorAi}
+            loading={loadingVem}
+            emptyMsg="Novidades chegando em breve."
+          />
+        </section>
+      )}
 
-      {/* ── 5. CTA Instagram ────────────────────────────────────────── */}
+      {/* ── 5. CTA Instagram (Fiel à Imagem 3) ───────────────────────── */}
       <section className="instagram-cta" aria-label="Siga no Instagram">
-        <IconInstagram />
-        <strong>salv.sacra</strong>
-        <span>Follow us no Instagram</span>
+        <div className="instagram-header-row">
+          <IconInstagram />
+          <span className="instagram-username">salv.sacra</span>
+        </div>
+        <p className="instagram-subtitle">Estamos no instagram</p>
         <a
           href="https://instagram.com/salv.sacra"
           target="_blank"
           rel="noreferrer"
           className="instagram-btn"
         >
-          Siga-nos
+          SIGA-NOS
         </a>
       </section>
     </>

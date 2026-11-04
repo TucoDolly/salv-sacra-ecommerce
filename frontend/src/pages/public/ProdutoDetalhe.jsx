@@ -122,6 +122,20 @@ export default function ProdutoDetalhe() {
   const [avaliacaoParaExcluir, setAvaliacaoParaExcluir] = useState(null);
   const [excluindoAvaliacao, setExcluindoAvaliacao] = useState(false);
 
+  // Avisos de reposição de estoque
+  const [avisosAtivos, setAvisosAtivos] = useState([]);
+  const [enviandoAviso, setEnviandoAviso] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setAvisosAtivos([]);
+      return;
+    }
+    api.get('/avisos-estoque', { params: { produto_id: id } })
+      .then((res) => setAvisosAtivos(res.data?.avisos || []))
+      .catch(() => {});
+  }, [isAuthenticated, id]);
+
   // Ref do carrossel similar
   const similarTrackRef = useRef(null);
 
@@ -293,6 +307,58 @@ export default function ProdutoDetalhe() {
   };
 
   const { addItem, setCep: setGlobalCep } = useCart();
+
+  // ── Aviso de reposição de estoque ──
+  const tamanhoEsgotado = variacoes.length > 0 && getEstoqueTamanho(tamanhoSelecionado) <= 0;
+  const avisoAtivo = isAuthenticated && avisosAtivos.some((av) => {
+    const matchProd = Number(av.produto_id) === Number(id);
+    const matchTam = (av.tamanho || '').toUpperCase() === (tamanhoSelecionado || '').toUpperCase();
+    const matchCor = !av.cor || !corSelecionada || av.cor.toLowerCase() === corSelecionada.toLowerCase();
+    const matchMod = !av.modelo || !modeloSelecionado || av.modelo.toLowerCase() === modeloSelecionado.toLowerCase();
+    return matchProd && matchTam && matchCor && matchMod;
+  });
+
+  const handleAvisarReposicao = async () => {
+    if (!isAuthenticated) {
+      sessionStorage.setItem('salv_redirect_after_auth', `/produto/${id}`);
+      setModalLoginNecessario(true);
+      return;
+    }
+
+    setEnviandoAviso(true);
+    try {
+      const payload = {
+        produto_id: Number(id),
+        tamanho: tamanhoSelecionado,
+        cor: corSelecionada || null,
+        modelo: modeloSelecionado || null,
+      };
+
+      const { data } = await api.post('/avisos-estoque', payload);
+
+      if (data.ativo) {
+        setAvisosAtivos((prev) => [...prev, payload]);
+      } else {
+        setAvisosAtivos((prev) =>
+          prev.filter((av) => {
+            const matchProd = Number(av.produto_id) === Number(id);
+            const matchTam = (av.tamanho || '').toUpperCase() === (tamanhoSelecionado || '').toUpperCase();
+            const matchCor = !av.cor || !corSelecionada || av.cor.toLowerCase() === corSelecionada.toLowerCase();
+            const matchMod = !av.modelo || !modeloSelecionado || av.modelo.toLowerCase() === modeloSelecionado.toLowerCase();
+            return !(matchProd && matchTam && matchCor && matchMod);
+          })
+        );
+      }
+
+      setToastMessage(data.message);
+      setTimeout(() => setToastMessage(null), 5000);
+    } catch (err) {
+      setToastMessage(err.response?.data?.message || 'Não foi possível registrar o aviso.');
+      setTimeout(() => setToastMessage(null), 4000);
+    } finally {
+      setEnviandoAviso(false);
+    }
+  };
 
   const handleComprar = () => {
     if (!isAuthenticated) {
@@ -600,13 +666,9 @@ export default function ProdutoDetalhe() {
                       key={tam}
                       type="button"
                       className={`pdp-size-chip ${tamanhoSelecionado === tam ? 'active' : ''} ${semEstoque ? 'sem-estoque' : ''}`}
-                      disabled={semEstoque}
-                      onClick={() => {
-                        if (!semEstoque) {
-                          setTamanhoSelecionado(tam);
-                        }
-                      }}
-                      title={semEstoque ? `Tamanho ${tam} sem estoque` : `Tamanho ${tam} (${estoqueTam} un)`}
+                      style={semEstoque ? { cursor: 'pointer' } : undefined}
+                      onClick={() => setTamanhoSelecionado(tam)}
+                      title={semEstoque ? `Tamanho ${tam} esgotado — clique para ser avisado quando voltar` : `Tamanho ${tam} (${estoqueTam} un)`}
                     >
                       {tam}
                     </button>
@@ -645,13 +707,25 @@ export default function ProdutoDetalhe() {
                 </button>
               </div>
 
-              <button
-                type="button"
-                className="pdp-cta-buy"
-                onClick={handleComprar}
-              >
-                ADICIONAR AO CARRINHO
-              </button>
+              {tamanhoEsgotado ? (
+                <button
+                  type="button"
+                  className="pdp-cta-buy"
+                  onClick={handleAvisarReposicao}
+                  disabled={enviandoAviso}
+                  style={avisoAtivo ? { background: '#fff', color: '#1e1e1e', border: '1.5px solid #1e1e1e' } : undefined}
+                >
+                  {enviandoAviso ? 'Aguarde...' : (avisoAtivo ? '🔔 AVISO ATIVADO (CANCELAR)' : '🔔 AVISE-ME QUANDO CHEGAR')}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="pdp-cta-buy"
+                  onClick={handleComprar}
+                >
+                  ADICIONAR AO CARRINHO
+                </button>
+              )}
 
               {isAuthenticated && (
                 <button
@@ -1003,8 +1077,6 @@ export default function ProdutoDetalhe() {
         )}
 
       </div>
-
-      {/* Toast Feedback */}
       {toastMessage && (
         <div className="pdp-toast">
           <IconCheck />

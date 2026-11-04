@@ -181,7 +181,7 @@
 .home-section {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 48px 24px;
+  padding: 40px 24px 20px;
 }
 
 .home-section-title {
@@ -371,47 +371,60 @@
   width: 100%;
 }
 
-/* ── 7. CTA INSTAGRAM ────────────────────────────────────────── */
+/* ── 7. CTA INSTAGRAM (Fiel à Imagem 3) ────────────────────────── */
 .instagram-cta {
-  background: #fff;
-  border-top: 1px solid #e0e0e0;
-  border-bottom: 1px solid #e0e0e0;
+  background: transparent;
+  border-top: none;
+  border-bottom: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 40px 24px;
+  justify-content: center;
+  padding: 48px 24px 64px;
   text-align: center;
 }
 
-.instagram-cta svg {
-  color: #555;
+.instagram-header-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 
-.instagram-cta strong {
-  font-size: 18px;
-  font-weight: 800;
+.instagram-header-row svg {
+  width: 26px;
+  height: 26px;
   color: #1e1e1e;
 }
 
-.instagram-cta span {
-  font-size: 13px;
-  color: #888;
+.instagram-username {
+  font-size: 26px;
+  font-weight: 800;
+  color: #1e1e1e;
+  letter-spacing: -0.3px;
+  line-height: 1;
+}
+
+.instagram-subtitle {
+  margin: 8px 0 16px;
+  font-size: 14px;
+  color: #666;
+  font-weight: 400;
 }
 
 .instagram-btn {
   display: inline-block;
-  margin-top: 6px;
-  padding: 10px 28px;
+  padding: 8px 32px;
   border: 1.5px solid #1e1e1e;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: #1e1e1e;
+  background: transparent;
   text-decoration: none;
-  transition: background 0.2s, color 0.2s;
+  transition: all 0.2s ease;
 }
 
 .instagram-btn:hover {

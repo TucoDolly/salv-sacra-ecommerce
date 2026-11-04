@@ -268,7 +268,14 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial }) {
                   </tbody>
                 </table>
                 <div className="conta-pedido-info">
-                  <p><strong>Pagamento:</strong> {p.metodo_pagamento?.toUpperCase()}</p>
+                  <p>
+                    <strong>Pagamento:</strong>{' '}
+                    {p.metodo_pagamento === 'cartao_credito'
+                      ? 'CARTÃO DE CRÉDITO'
+                      : p.metodo_pagamento === 'cartao_debito'
+                      ? 'CARTÃO DE DÉBITO'
+                      : p.metodo_pagamento?.toUpperCase()}
+                  </p>
                   <p><strong>Frete ({p.tipo_frete}):</strong> {moeda(p.valor_frete)}</p>
                   <p>
                     <strong>Entrega:</strong> {p.logradouro}, {p.numero}
@@ -605,22 +612,8 @@ function FormasPagamento({ cartoes, recarregar }) {
 
       {form && (
         <form className="auth-form conta-box conta-form" onSubmit={submit}>
-          <h3>Novo Cartão</h3>
+          <h3>Novo Cartão de Crédito</h3>
           {erro && <p className="auth-error">{erro}</p>}
-
-          <div className="auth-field">
-            <label htmlFor="card-tipo">Tipo de Cartão</label>
-            <select
-              id="card-tipo"
-              name="tipo"
-              value={form.tipo}
-              onChange={change}
-              style={{ padding: '10px 12px', borderRadius: '6px', border: '1px solid #ccc', background: '#fff' }}
-            >
-              <option value="credito">Cartão de Crédito</option>
-              <option value="debito">Cartão de Débito</option>
-            </select>
-          </div>
 
           <div className="auth-field">
             <label htmlFor="card-titular">Nome impresso no Cartão</label>
@@ -695,7 +688,7 @@ function FormasPagamento({ cartoes, recarregar }) {
               <div className="conta-cartao-detalhes">
                 <strong>
                   •••• •••• •••• {card.ultimos_digitos}
-                  <span className="conta-cartao-tag">{card.tipo === 'credito' ? 'Crédito' : 'Débito'}</span>
+                  <span className="conta-cartao-tag">Crédito</span>
                 </strong>
                 <p className="conta-muted" style={{ margin: '2px 0 0' }}>
                   {card.titular} · Validade: {card.validade}

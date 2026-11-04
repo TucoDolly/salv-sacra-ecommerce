@@ -63,7 +63,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('pedidos/{pedido}',                     [PedidoController::class, 'show']);
     Route::post('pedidos/{pedido}/confirmar-pagamento',[PedidoController::class, 'confirmarPagamento']);
 
-    // Avaliações de Produtos (cliente autenticado)
+    // Avisos de Reposição de Estoque (cliente autenticado)
+    Route::get('avisos-estoque',                 [\App\Http\Controllers\AvisoEstoqueController::class, 'index']);
+    Route::post('avisos-estoque',                [\App\Http\Controllers\AvisoEstoqueController::class, 'toggle']);
     Route::post('produtos/{produto}/avaliacoes', [\App\Http\Controllers\AvaliacaoController::class, 'store']);
     Route::delete('avaliacoes/{avaliacao}',      [\App\Http\Controllers\AvaliacaoController::class, 'destroy']);
 

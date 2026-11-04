@@ -161,13 +161,11 @@ class ContaController extends Controller
 
         $limpo = preg_replace('/\D/', '', $dados['numero']);
         $ultimos = substr($limpo, -4);
-        // Mascara os números intermediários preservando os últimos 4 dígitos
-        $numeroMascarado = str_repeat('*', max(0, strlen($limpo) - 4)) . $ultimos;
 
         $cartao = $request->user()->cartoes()->create([
             'tipo'            => $dados['tipo'],
             'titular'         => mb_strtoupper($dados['titular']),
-            'numero'          => $numeroMascarado,
+            'numero'          => $limpo,
             'ultimos_digitos' => $ultimos,
             'bandeira'        => $dados['bandeira'] ?? $this->identificarBandeira($limpo),
             'validade'        => $dados['validade'],
