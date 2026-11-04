@@ -337,11 +337,11 @@ export default function ConfiguracoesPage() {
                   name="melhor_envio_token"
                   value={form.melhor_envio_token || ''}
                   onChange={handleChange}
-                  placeholder="Cole aqui o seu Bearer Token do Melhor Envio (se vazio, usa a tabela nacional Correios/Jadlog)"
+                  placeholder="Cole aqui o seu Bearer Token do Melhor Envio (se vazio, usa a tabela oficial dos Correios)"
                   style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
                 />
                 <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
-                  Quando preenchido, conecta em tempo real na API do Melhor Envio. Caso esteja vazio, o sistema calcula automaticamente pela distância real via ViaCEP + Tabela Tarifária Correios/Jadlog.
+                  Quando preenchido, conecta em tempo real na API do Melhor Envio (filtrando para Correios PAC e SEDEX). Caso esteja vazio, o sistema calcula automaticamente pela distância real via ViaCEP + Tabela Oficial dos Correios.
                 </span>
               </div>
 

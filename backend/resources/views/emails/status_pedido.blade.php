@@ -33,7 +33,10 @@
                                 <p style="margin: 4px 0 0; font-size: 20px; font-weight: 700; color: #111111;">{{ $pedido->status }}</p>
                                 @if(!empty($pedido->codigo_rastreio))
                                     <p style="margin: 10px 0 0; font-size: 13px; color: #333333; padding-top: 10px; border-top: 1px solid #e9ecef;">
-                                        📦 <strong>Código de Rastreio:</strong> <span style="font-family: monospace; background: #eeeeee; padding: 2px 6px; border-radius: 3px;">{{ $pedido->codigo_rastreio }}</span>
+                                        📦 <strong>Código de Rastreio:</strong>
+                                        <a href="https://rastreamento.correios.com.br/app/index.php?codigo={{ urlencode(trim($pedido->codigo_rastreio)) }}" target="_blank" style="font-family: monospace; font-weight: bold; background: #eeeeee; padding: 3px 8px; border-radius: 4px; color: #0044cc; text-decoration: underline; margin-left: 4px;">
+                                            {{ $pedido->codigo_rastreio }} ↗
+                                        </a>
                                     </p>
                                 @endif
                                 @if(!empty($pedido->tipo_frete))

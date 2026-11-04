@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { getPedidosAdmin, updateStatusPedidoAdmin } from '../../services/adminPedidoService';
+import {
+  getPedidosAdmin,
+  updateStatusPedidoAdmin,
+  enviarMelhorEnvioAdmin,
+  consultarRastreioAdmin,
+  sincronizarTodosRastreiosAdmin,
+} from '../../services/adminPedidoService';
 import '../../styles/admin.css';
 import '../../styles/minha-conta.css';
 
@@ -75,6 +81,10 @@ export default function PedidosList() {
   const [rastreioInput, setRastreioInput] = useState('');
   const [salvandoRastreio, setSalvandoRastreio] = useState(false);
   const [atualizandoStatusId, setAtualizandoStatusId] = useState(null);
+  const [consultandoRastreio, setConsultandoRastreio] = useState(false);
+  const [sincronizandoTodos, setSincronizandoTodos] = useState(false);
+  const [enviandoMelhorEnvio, setEnviandoMelhorEnvio] = useState(false);
+  const [rastreioFeedback, setRastreioFeedback] = useState(null);
 
   const carregarPedidos = async () => {
     setLoading(true);
@@ -100,6 +110,7 @@ export default function PedidosList() {
   const handleAbrirDetalhe = (pedido) => {
     setPedidoSelecionado(pedido);
     setRastreioInput(pedido.codigo_rastreio || '');
+    setRastreioFeedback(null);
   };
 
   const handleBuscar = (e) => {
@@ -155,6 +166,98 @@ export default function PedidosList() {
       setError('Erro ao salvar o código de rastreio.');
     } finally {
       setSalvandoRastreio(false);
+    }
+  };
+
+  const handleConsultarRastreio = async () => {
+    if (!pedidoSelecionado) return;
+    setConsultandoRastreio(true);
+    setRastreioFeedback(null);
+    try {
+      const { data } = await consultarRastreioAdmin(pedidoSelecionado.id);
+      if (data.pedido) {
+        setPedidos((prev) =>
+          prev.map((p) => (p.id === pedidoSelecionado.id ? { ...p, ...data.pedido } : p))
+        );
+        setPedidoSelecionado((prev) => ({ ...prev, ...data.pedido }));
+      }
+      setRastreioFeedback({
+        tipo: data.info?.atualizado ? 'sucesso' : 'info',
+        msg: data.mensagem || 'Consulta realizada com sucesso.',
+      });
+    } catch {
+      setRastreioFeedback({
+        tipo: 'erro',
+        msg: 'Não foi possível consultar o rastreio no momento.',
+      });
+    } finally {
+      setConsultandoRastreio(false);
+    }
+  };
+
+  const handleSincronizarTodos = async () => {
+    setSincronizandoTodos(true);
+    setError('');
+    try {
+      const { data } = await sincronizarTodosRastreiosAdmin();
+      setSuccess(data.mensagem || 'Sincronização concluída com sucesso!');
+      carregarPedidos();
+      setTimeout(() => setSuccess(''), 5000);
+    } catch {
+      setError('Erro ao sincronizar os rastreios com a transportadora.');
+    } finally {
+      setSincronizandoTodos(false);
+    }
+  };
+
+  const handleCopiarDadosEnvio = (pedido) => {
+    if (!pedido) return;
+    const cInfo = formatarCliente(pedido.user, pedido.email_contato);
+    const qtdTotal = (pedido.itens || []).reduce((acc, it) => acc + (it.quantidade || 1), 0) || 1;
+    const pesoKg = Math.max(0.3, qtdTotal * 0.25).toFixed(2);
+    const alturaCm = Math.min(30, Math.max(4, qtdTotal * 3));
+
+    const texto = `DESTINATÁRIO:
+Nome: ${cInfo.nome}
+CPF: ${pedido.user?.cpf || 'Não informado'}
+Telefone: ${pedido.telefone || pedido.user?.telefone || 'Não informado'}
+E-mail: ${cInfo.email}
+
+ENDEREÇO DE ENTREGA:
+Rua/Av: ${pedido.logradouro}, ${pedido.numero}${pedido.complemento ? ' - ' + pedido.complemento : ''}
+Bairro: ${pedido.bairro}
+Cidade/UF: ${pedido.cidade}/${pedido.estado}
+CEP: ${pedido.cep}
+
+PACOTE:
+Modalidade: ${pedido.tipo_frete || 'Correios PAC'}
+Dimensões: ${alturaCm}cm (Altura) x 22cm (Largura) x 28cm (Comprimento)
+Peso estimado: ${pesoKg} kg (${qtdTotal} item(ns))
+Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
+
+    navigator.clipboard?.writeText(texto);
+    setSuccess(`Dados do Pedido #${pedido.id} copiados para o Melhor Envio!`);
+    setTimeout(() => setSuccess(''), 4000);
+  };
+
+  const handleEnviarMelhorEnvio = async () => {
+    if (!pedidoSelecionado) return;
+    setEnviandoMelhorEnvio(true);
+    setError('');
+    try {
+      const { data } = await enviarMelhorEnvioAdmin(pedidoSelecionado.id);
+      const pedidoAtualizado = data.pedido;
+      setPedidos((prev) =>
+        prev.map((p) => (p.id === pedidoSelecionado.id ? { ...p, ...pedidoAtualizado } : p))
+      );
+      setPedidoSelecionado((prev) => ({ ...prev, ...pedidoAtualizado }));
+      setSuccess(data.mensagem || 'Pedido enviado para o Carrinho do Melhor Envio com sucesso!');
+      setTimeout(() => setSuccess(''), 6000);
+    } catch (err) {
+      const msg = err.response?.data?.mensagem || 'Erro ao enviar pedido para o Melhor Envio.';
+      setError(msg);
+    } finally {
+      setEnviandoMelhorEnvio(false);
     }
   };
 
@@ -260,13 +363,23 @@ export default function PedidosList() {
   return (
     <div className="admin-page">
       {/* ── Cabeçalho ── */}
-      <div className="admin-header">
+      <div className="admin-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
         <div>
           <h1 className="admin-title">Pedidos, Pagamentos e Entregas</h1>
           <p style={{ fontSize: '13px', color: '#666', marginTop: '4px' }}>
-            Gerencie pedidos realizados, informe o código de rastreio, imprima etiquetas de envio e acompanhe o status de entrega.
+            Gerencie pedidos realizados, informe o código de rastreio dos Correios, imprima etiquetas e acompanhe entregas.
           </p>
         </div>
+        <button
+          type="button"
+          className="admin-btn admin-btn-secondary"
+          onClick={handleSincronizarTodos}
+          disabled={sincronizandoTodos}
+          title="Verifica se os pacotes em transporte foram entregues"
+          style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}
+        >
+          {sincronizandoTodos ? '🔄 Verificando...' : '🔄 Sincronizar Rastreios'}
+        </button>
       </div>
 
       {/* ── Feedback ── */}
@@ -510,26 +623,120 @@ export default function PedidosList() {
                     </select>
                   </div>
 
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {pedidoSelecionado.status === 'Pago' && (
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn-secondary"
+                        style={{ fontSize: '12px', padding: '6px 12px' }}
+                        onClick={() => handleAlterarStatus(pedidoSelecionado.id, 'Em separação')}
+                      >
+                        📦 Iniciar Separação
+                      </button>
+                    )}
+                    {pedidoSelecionado.status === 'Em separação' && (
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn-secondary"
+                        style={{ fontSize: '12px', padding: '6px 12px' }}
+                        onClick={() => handleAlterarStatus(pedidoSelecionado.id, 'Enviado')}
+                      >
+                        🚚 Marcar como Enviado
+                      </button>
+                    )}
+                    {(pedidoSelecionado.status === 'Enviado' || pedidoSelecionado.status === 'Em transporte') && (
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn-secondary"
+                        style={{ fontSize: '12px', padding: '6px 12px', background: '#dcfce7', color: '#166534', borderColor: '#bbf7d0' }}
+                        onClick={() => handleAlterarStatus(pedidoSelecionado.id, 'Entregue')}
+                      >
+                        ✅ Confirmar Entrega
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      className="admin-btn"
+                      style={{ background: '#111', color: '#fff', padding: '8px 14px', fontSize: '12px', borderRadius: '6px' }}
+                      onClick={() => handleImprimirEtiqueta(pedidoSelecionado)}
+                    >
+                      🖨️ Imprimir Etiqueta / Romaneio
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Integração Direta com Melhor Envio */}
+              <div className="admin-drawer-section" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                  <h4 style={{ margin: 0, fontSize: '14px' }}>📦 Integração Automática (Melhor Envio)</h4>
+                  {pedidoSelecionado.melhor_envio_id ? (
+                    <span style={{ fontSize: '11px', background: '#dcfce7', color: '#166534', fontWeight: 700, padding: '3px 8px', borderRadius: '4px' }}>
+                      ✓ No Carrinho do Melhor Envio
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '11px', background: '#fef3c7', color: '#92400e', fontWeight: 600, padding: '3px 8px', borderRadius: '4px' }}>
+                      Aguardando envio ao carrinho
+                    </span>
+                  )}
+                </div>
+
+                <p style={{ fontSize: '12px', color: '#555', margin: '0 0 10px 0', lineHeight: 1.5 }}>
+                  Envie os dados do pedido (destinatário, endereço, CPF e medidas) direto para o seu carrinho do Melhor Envio com 1 clique. Depois é só abrir o painel para pagar e imprimir a etiqueta.
+                </p>
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                   <button
                     type="button"
+                    disabled={enviandoMelhorEnvio}
+                    onClick={handleEnviarMelhorEnvio}
                     className="admin-btn"
-                    style={{ background: '#111', color: '#fff', padding: '8px 14px', fontSize: '12px', borderRadius: '6px' }}
-                    onClick={() => handleImprimirEtiqueta(pedidoSelecionado)}
+                    style={{
+                      background: '#1d4ed8',
+                      color: '#fff',
+                      fontSize: '12px',
+                      padding: '8px 14px',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                    }}
                   >
-                    🖨️ Imprimir Etiqueta / Separação
+                    {enviandoMelhorEnvio ? '⚡ Enviando Dados...' : pedidoSelecionado.melhor_envio_id ? '⚡ Reenviar ao Carrinho' : '⚡ Enviar para o Carrinho do Melhor Envio'}
+                  </button>
+
+                  <a
+                    href="https://www.melhorenvio.com.br/painel/carrinho"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="admin-btn admin-btn-secondary"
+                    style={{ fontSize: '12px', padding: '8px 14px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    🛒 Abrir Carrinho do Melhor Envio ↗
+                  </a>
+
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn-secondary"
+                    style={{ fontSize: '11px', padding: '6px 10px', background: '#fff' }}
+                    title="Copia os dados formatados caso prefira preencher avulso"
+                    onClick={() => handleCopiarDadosEnvio(pedidoSelecionado)}
+                  >
+                    📋 Copiar Dados
                   </button>
                 </div>
               </div>
 
               {/* Controle de Código de Rastreio */}
               <div className="admin-drawer-section">
-                <h4>Código de Rastreio (Correios / Jadlog)</h4>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                  <h4 style={{ margin: 0 }}>Código de Rastreio (Correios PAC / SEDEX)</h4>
+                </div>
                 <form onSubmit={handleSalvarRastreio} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <input
                     type="text"
                     value={rastreioInput}
                     onChange={(e) => setRastreioInput(e.target.value.toUpperCase())}
-                    placeholder="Ex: AA123456789BR ou 1008991234"
+                    placeholder="Ex: NL123456789BR"
                     className="admin-search-input"
                     style={{ flex: 1, fontFamily: 'monospace', fontWeight: 600 }}
                   />
@@ -542,8 +749,70 @@ export default function PedidosList() {
                     {salvandoRastreio ? 'Salvando...' : 'Salvar Rastreio'}
                   </button>
                 </form>
+
+                {pedidoSelecionado.codigo_rastreio && (
+                  <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      disabled={consultandoRastreio}
+                      onClick={handleConsultarRastreio}
+                      className="admin-btn admin-btn-secondary"
+                      style={{ fontSize: '12px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      {consultandoRastreio ? '🔍 Consultando...' : '🔍 Consultar Rastreio Agora'}
+                    </button>
+
+                    <a
+                      href={`https://rastreamento.correios.com.br/app/index.php?codigo=${encodeURIComponent(pedidoSelecionado.codigo_rastreio)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="admin-btn"
+                      style={{
+                        background: '#fef08a',
+                        color: '#854d0e',
+                        border: '1px solid #fde047',
+                        fontSize: '12px',
+                        padding: '6px 12px',
+                        textDecoration: 'none',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        borderRadius: '4px',
+                      }}
+                    >
+                      📦 Rastrear nos Correios ↗
+                    </a>
+                  </div>
+                )}
+
+                {rastreioFeedback && (
+                  <div
+                    style={{
+                      marginTop: '10px',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      background:
+                        rastreioFeedback.tipo === 'sucesso'
+                          ? '#dcfce7'
+                          : rastreioFeedback.tipo === 'erro'
+                          ? '#fee2e2'
+                          : '#eff6ff',
+                      color:
+                        rastreioFeedback.tipo === 'sucesso'
+                          ? '#166534'
+                          : rastreioFeedback.tipo === 'erro'
+                          ? '#991b1b'
+                          : '#1e40af',
+                    }}
+                  >
+                    {rastreioFeedback.msg}
+                  </div>
+                )}
+
                 <small style={{ display: 'block', marginTop: '6px', color: '#777', fontSize: '11px' }}>
-                  Este código aparece na conta do cliente e é enviado por e-mail quando o pedido é marcado como "Enviado".
+                  Este código aparece na conta do cliente e é enviado por e-mail automaticamente quando o pedido é despachado na agência.
                 </small>
               </div>
 

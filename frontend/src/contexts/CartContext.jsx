@@ -16,12 +16,6 @@ const OPCOES_PADRAO = [
     prazo: 'Chega em 1 dia útil',
     preco: 12.47,
   },
-  {
-    id: 'jadlog',
-    nome: 'Transportadora Jadlog Rápido',
-    prazo: 'Chega em 2 dias úteis',
-    preco: 14.90,
-  },
 ];
 
 export function CartProvider({ children }) {

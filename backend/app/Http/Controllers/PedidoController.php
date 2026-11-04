@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use App\Services\RastreioService;
 
 class PedidoController extends Controller
 {
@@ -712,6 +713,98 @@ class PedidoController extends Controller
         return response()->json([
             'mensagem' => 'Dados de envio/status do pedido atualizados com sucesso.',
             'pedido'   => $pedido->load(['itens.variacao.produto', 'user']),
+        ]);
+    }
+
+    /**
+     * Consulta o status do rastreio de um pedido e atualiza automaticamente se entregue (Admin).
+     */
+    public function consultarRastreio(Pedido $pedido, RastreioService $rastreioService): JsonResponse
+    {
+        $info = $rastreioService->consultar($pedido);
+
+        return response()->json([
+            'sucesso'  => $info['sucesso'],
+            'mensagem' => $info['mensagem'],
+            'info'     => $info,
+            'pedido'   => $pedido->fresh()->load(['itens.variacao.produto', 'user']),
+        ]);
+    }
+
+    /**
+     * Sincroniza em lote o rastreio de todos os pedidos em transporte (Admin).
+     */
+    public function sincronizarTodosRastreios(RastreioService $rastreioService): JsonResponse
+    {
+        $resumo = $rastreioService->sincronizarTodos();
+
+        return response()->json([
+            'mensagem' => "Sincronização concluída: {$resumo['total_atualizados']} de {$resumo['total_verificados']} pedidos atualizados.",
+            'resumo'   => $resumo,
+        ]);
+    }
+
+    /**
+     * Webhook público para notificações automáticas do Melhor Envio (mudança de status de envio).
+     */
+    public function webhookMelhorEnvio(Request $request, RastreioService $rastreioService): JsonResponse
+    {
+        Log::info('Webhook Melhor Envio recebido: ', $request->all());
+
+        $payload = $request->all();
+        $orderId = $payload['id'] ?? $payload['order_id'] ?? $payload['shipment_id'] ?? null;
+        $tracking = $payload['tracking'] ?? $payload['shipment']['tracking'] ?? null;
+        $status  = strtolower($payload['status'] ?? $payload['event'] ?? '');
+        $customId = $payload['custom_id'] ?? $payload['tag'] ?? null;
+
+        $pedido = null;
+        if ($orderId) {
+            $pedido = Pedido::where('melhor_envio_id', (string) $orderId)
+                ->orWhere('codigo_rastreio', (string) $orderId)
+                ->first();
+        }
+        if (! $pedido && $tracking) {
+            $pedido = Pedido::where('codigo_rastreio', (string) $tracking)->first();
+        }
+        if (! $pedido && $customId) {
+            $pedido = Pedido::find($customId);
+        }
+
+        if ($pedido) {
+            // Se veio o código de rastreio oficial dos Correios (ex: NL...BR), atualiza no pedido
+            if (! empty($tracking) && $pedido->codigo_rastreio !== $tracking) {
+                $pedido->update(['codigo_rastreio' => $tracking]);
+            }
+
+            if (in_array($status, ['delivered', 'entregue', 'shipment.delivered'], true) && $pedido->status !== 'Entregue') {
+                $rastreioService->atualizarParaEntregue($pedido);
+            } elseif (in_array($status, ['posted', 'postado', 'shipment.posted'], true) && in_array($pedido->status, ['Pago', 'Em separação'], true)) {
+                $rastreioService->atualizarParaEnviado($pedido);
+            } elseif (in_array($status, ['in_transit', 'shipment.in_transit'], true) && $pedido->status !== 'Entregue') {
+                $pedido->update(['status' => 'Em transporte']);
+            }
+        }
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * Envia o pedido diretamente para o Carrinho do Melhor Envio (Admin).
+     */
+    public function enviarMelhorEnvio(Pedido $pedido, \App\Services\MelhorEnvioService $melhorEnvioService): JsonResponse
+    {
+        $res = $melhorEnvioService->inserirNoCarrinho($pedido);
+
+        if (! $res['sucesso']) {
+            return response()->json([
+                'mensagem' => $res['mensagem'],
+            ], 422);
+        }
+
+        return response()->json([
+            'mensagem' => $res['mensagem'],
+            'pedido'   => $pedido->fresh()->load(['itens.variacao.produto', 'user']),
+            'info'     => $res,
         ]);
     }
 }

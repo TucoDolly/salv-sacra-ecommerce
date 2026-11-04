@@ -43,8 +43,9 @@ Route::post('frete/calcular', [\App\Http\Controllers\FreteController::class, 'ca
 // Formulário de contato (com reCAPTCHA)
 Route::post('contato', [\App\Http\Controllers\ContatoController::class, 'enviar']);
 
-// Webhook de pagamento do Mercado Pago
-Route::post('webhooks/mercadopago', [PedidoController::class, 'webhookMercadoPago']);
+// Webhooks de notificação
+Route::post('webhooks/mercadopago',  [PedidoController::class, 'webhookMercadoPago']);
+Route::post('webhooks/melhor-envio', [PedidoController::class, 'webhookMelhorEnvio']);
 
 // Cupons ativos disponíveis para o cliente
 Route::get('cupons/disponiveis', [\App\Http\Controllers\CupomController::class, 'disponiveis']);
@@ -111,8 +112,11 @@ Route::middleware('auth:sanctum')->group(function () {
             ->except(['index']);
 
         // ── Gestão de Pedidos (Administração) ─────────────────────────────
-        Route::get('admin/pedidos',                 [PedidoController::class, 'indexAdmin']);
-        Route::patch('admin/pedidos/{pedido}/status', [PedidoController::class, 'updateStatus']);
+        Route::get('admin/pedidos',                               [PedidoController::class, 'indexAdmin']);
+        Route::patch('admin/pedidos/{pedido}/status',             [PedidoController::class, 'updateStatus']);
+        Route::post('admin/pedidos/{pedido}/melhor-envio/enviar', [PedidoController::class, 'enviarMelhorEnvio']);
+        Route::post('admin/pedidos/{pedido}/rastreio/consultar',  [PedidoController::class, 'consultarRastreio']);
+        Route::post('admin/pedidos/rastreio/sincronizar-todos',   [PedidoController::class, 'sincronizarTodosRastreios']);
 
         // ── Cupons de desconto (Administração) ────────────────────────────
         Route::get('admin/cupons',            [\App\Http\Controllers\CupomController::class, 'index']);

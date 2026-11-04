@@ -20,6 +20,7 @@ class Pedido extends Model
         'pix_qr_code_base64',
         'tipo_frete',
         'codigo_rastreio',
+        'melhor_envio_id',
         'observacoes',
         'cep',
         'logradouro',

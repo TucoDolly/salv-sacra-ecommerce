@@ -203,11 +203,28 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial }) {
                       </div>
                     </div>
                     <div>
-                      <span className="conta-codigo-rastreio" title="Código de rastreamento">
-                        {p.codigo_rastreio
-                          ? `Rastreio: ${p.codigo_rastreio}`
-                          : 'Rastreio: Aguardando postagem'}
-                      </span>
+                      {p.codigo_rastreio ? (
+                        <a
+                          href={`https://rastreamento.correios.com.br/app/index.php?codigo=${encodeURIComponent(p.codigo_rastreio)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="conta-codigo-rastreio"
+                          style={{
+                            textDecoration: 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            cursor: 'pointer',
+                          }}
+                          title="Clique para rastrear a encomenda nos Correios"
+                        >
+                          📦 Rastreio: {p.codigo_rastreio} ↗
+                        </a>
+                      ) : (
+                        <span className="conta-codigo-rastreio" title="Código de rastreamento">
+                          Rastreio: Aguardando postagem
+                        </span>
+                      )}
                     </div>
                   </div>
 

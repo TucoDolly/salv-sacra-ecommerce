@@ -14,7 +14,7 @@ class FreteController extends Controller
     /**
      * Calcula opções de frete reais baseadas no CEP de destino, peso/quantidade de itens e subtotal.
      * Suporta integração direta com API Melhor Envio (quando MELHOR_ENVIO_TOKEN está configurado)
-     * e possui motor de cálculo nacional inteligente via ViaCEP + Tabela Tarifária dos Correios/Jadlog (origem: Tubarão/SC).
+     * e possui motor de cálculo nacional inteligente via ViaCEP + Tabela Tarifária dos Correios (PAC e SEDEX) partindo de Tubarão/SC.
      */
     public function calcular(Request $request): JsonResponse
     {
@@ -85,7 +85,6 @@ class FreteController extends Controller
 
         $precoPac    = round($tabela['pac_base'] + ($adicionalPeso * 0.8), 2);
         $precoSedex  = round($tabela['sedex_base'] + ($adicionalPeso * 1.2), 2);
-        $precoJadlog = round($tabela['jadlog_base'] + $adicionalPeso, 2);
 
         $opcoes = [
             [
@@ -105,15 +104,6 @@ class FreteController extends Controller
                 'prazo'         => $this->formatarPrevisaoEntrega($tabela['sedex_dias']),
                 'prazo_curto'   => "{$tabela['sedex_dias']} dias úteis",
                 'preco'         => $precoSedex,
-            ],
-            [
-                'id'            => 'jadlog',
-                'nome'          => 'Transportadora Jadlog Rápido',
-                'transportadora'=> 'Jadlog',
-                'dias_uteis'    => $tabela['jadlog_dias'],
-                'prazo'         => $this->formatarPrevisaoEntrega($tabela['jadlog_dias']),
-                'prazo_curto'   => "{$tabela['jadlog_dias']} dias úteis",
-                'preco'         => $precoJadlog,
             ],
         ];
 
@@ -161,7 +151,7 @@ class FreteController extends Controller
                         'receipt'         => false,
                         'own_hand'        => false,
                     ],
-                    'services' => '1,2,3,4,17', // Correios PAC, SEDEX, Mini Envios e Jadlog (.Package e .Com)
+                    'services' => '1,2', // Apenas Correios PAC (1) e SEDEX (2)
                 ]);
 
             if (! $response->successful()) {
@@ -178,8 +168,12 @@ class FreteController extends Controller
                 if (! empty($item['error']) || empty($item['price'])) {
                     continue;
                 }
-                $dias = (int) ($item['custom_delivery_time'] ?? $item['delivery_time'] ?? 5);
                 $empresa = $item['company']['name'] ?? 'Transportadora';
+                // Garante que apenas modalidades oficiais dos Correios sejam retornadas
+                if (! str_contains(strtolower($empresa), 'correios')) {
+                    continue;
+                }
+                $dias = (int) ($item['custom_delivery_time'] ?? $item['delivery_time'] ?? 5);
                 $servico = $item['name'] ?? 'Envio';
 
                 $opcoes[] = [
@@ -194,7 +188,7 @@ class FreteController extends Controller
             }
 
             usort($opcoes, fn($a, $b) => $a['preco'] <=> $b['preco']);
-            return array_slice($opcoes, 0, 4);
+            return array_slice($opcoes, 0, 2);
         } catch (\Throwable $e) {
             Log::warning('Fallback Melhor Envio: ' . $e->getMessage());
             return [];
