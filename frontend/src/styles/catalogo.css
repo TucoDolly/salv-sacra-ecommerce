@@ -241,7 +241,7 @@
   border-color: #1e1e1e;
 }
 
-/* ── 4. Grid de Produtos (Figma com 4 colunas) ── */
+/* ── 4. Grid de Produtos (Padronizado com a vitrine Home) ── */
 .catalogo-products-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -249,28 +249,28 @@
 }
 
 .catalogo-product-card {
-  background: #fff;
-  border-radius: 6px;
-  border: 1px solid #e0e0e0;
+  background: #ececec;
+  border-radius: 20px;
+  border: 1px solid #d4d4d4;
   overflow: hidden;
   text-decoration: none;
   color: inherit;
   display: flex;
   flex-direction: column;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  box-sizing: border-box;
 }
 
 .catalogo-product-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.10);
+  transform: translateY(-4px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.09);
 }
 
 .catalogo-product-img-wrap {
   width: 100%;
-  aspect-ratio: 3 / 4;
-  height: auto;
-  background-color: #f0f0f0;
+  aspect-ratio: 3.9 / 5;
+  background-color: #f7f7f7;
   overflow: hidden;
   position: relative;
   display: flex;
@@ -281,56 +281,90 @@
 .catalogo-product-img-wrap img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  transition: transform 0.3s ease;
+  object-fit: cover;
+  object-position: top center;
+  transition: transform 0.35s ease;
 }
 
 .catalogo-product-card:hover .catalogo-product-img-wrap img {
-  transform: scale(1.04);
+  transform: scale(1.03);
 }
 
-/* Dots de cores idênticos ao padrão da vitrine Home */
-.catalogo-card-dots {
+.catalogo-card-fav-btn {
   position: absolute;
-  bottom: 8px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   display: flex;
-  gap: 5px;
-  background: rgba(255, 255, 255, 0.7);
-  padding: 3px 6px;
-  border-radius: 12px;
-  backdrop-filter: blur(2px);
-  z-index: 2;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.catalogo-card-fav-btn:hover {
+  transform: scale(1.1);
+  background: #ffffff;
+}
+
+.catalogo-card-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  background: linear-gradient(135deg, #ececec 0%, #e0e0e0 100%);
+}
+
+/* Faixa de variação de cores idêntica à Home */
+.catalogo-card-dots {
+  width: 100%;
+  background: #dedede;
+  padding: 7px 0;
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-bottom: 2px solid #222222;
+  box-sizing: border-box;
 }
 
 .catalogo-dot {
-  width: 9px;
-  height: 9px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.25);
   display: inline-block;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .catalogo-product-info {
-  padding: 12px 12px 14px;
+  background: #ececec;
+  padding: 10px 10px 14px;
   text-align: center;
-  background: #fff;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 3px;
+  box-sizing: border-box;
 }
 
 .catalogo-product-name {
-  font-size: 11px;
-  font-weight: 700;
-  color: #1e1e1e;
-  letter-spacing: 0.08em;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  margin: 0 0 4px;
+  color: #2b2b2b;
+  margin: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -338,9 +372,28 @@
   width: 100%;
 }
 
+.catalogo-product-rating {
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #c4953a;
+}
+
+.catalogo-product-stars {
+  letter-spacing: 1px;
+}
+
+.catalogo-product-rating-count {
+  color: #777;
+  font-size: 11px;
+}
+
 .catalogo-product-preco {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 700;
   color: #c4953a;
   margin: 0;
   text-align: center;

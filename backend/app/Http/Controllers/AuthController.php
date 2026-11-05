@@ -29,6 +29,15 @@ class AuthController extends Controller
             'email'                 => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password'              => ['required', 'string', 'min:8', 'confirmed'],
             'recaptcha'             => ['required', 'string'],
+        ], [
+            'name.required'         => 'Informe o seu nome completo.',
+            'email.required'        => 'Informe o seu endereço de e-mail.',
+            'email.email'           => 'Informe um endereço de e-mail válido.',
+            'email.unique'          => 'Este e-mail já está cadastrado no sistema.',
+            'password.required'     => 'Informe uma senha.',
+            'password.min'          => 'A senha deve ter pelo menos 8 caracteres.',
+            'password.confirmed'    => 'A confirmação de senha não confere.',
+            'recaptcha.required'    => 'Por favor, confirme a verificação de segurança.',
         ]);
 
         $resposta = Http::withoutVerifying()
@@ -174,6 +183,10 @@ class AuthController extends Controller
         $request->validate([
             'email'    => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
+        ], [
+            'email.required'    => 'Informe o seu endereço de e-mail.',
+            'email.email'       => 'Informe um endereço de e-mail válido.',
+            'password.required' => 'Informe a sua senha.',
         ]);
 
         if (! Auth::attempt($request->only('email', 'password'))) {

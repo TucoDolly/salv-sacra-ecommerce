@@ -84,6 +84,7 @@ export default function PedidosList() {
   const [consultandoRastreio, setConsultandoRastreio] = useState(false);
   const [sincronizandoTodos, setSincronizandoTodos] = useState(false);
   const [enviandoMelhorEnvio, setEnviandoMelhorEnvio] = useState(false);
+  const [cpfManual, setCpfManual] = useState('');
   const [rastreioFeedback, setRastreioFeedback] = useState(null);
 
   const carregarPedidos = async () => {
@@ -110,6 +111,7 @@ export default function PedidosList() {
   const handleAbrirDetalhe = (pedido) => {
     setPedidoSelecionado(pedido);
     setRastreioInput(pedido.codigo_rastreio || '');
+    setCpfManual(pedido.user?.cpf || '');
     setRastreioFeedback(null);
   };
 
@@ -245,7 +247,11 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
     setEnviandoMelhorEnvio(true);
     setError('');
     try {
-      const { data } = await enviarMelhorEnvioAdmin(pedidoSelecionado.id);
+      const payload = {};
+      if (cpfManual.trim()) {
+        payload.cpf = cpfManual.replace(/\D/g, '');
+      }
+      const { data } = await enviarMelhorEnvioAdmin(pedidoSelecionado.id, payload);
       const pedidoAtualizado = data.pedido;
       setPedidos((prev) =>
         prev.map((p) => (p.id === pedidoSelecionado.id ? { ...p, ...pedidoAtualizado } : p))
@@ -686,6 +692,30 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                   Envie os dados do pedido (destinatário, endereço, CPF e medidas) direto para o seu carrinho do Melhor Envio com 1 clique. Depois é só abrir o painel para pagar e imprimir a etiqueta.
                 </p>
 
+                {/* Campo de CPF manual caso o cliente não tenha no cadastro */}
+                {(!pedidoSelecionado.user?.cpf || pedidoSelecionado.user.cpf.length < 11) && (
+                  <div style={{ marginBottom: '12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '10px 12px' }}>
+                    <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#92400e', marginBottom: '4px' }}>
+                      ⚠️ CPF do destinatário (obrigatório para etiqueta dos Correios):
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="000.000.000-00"
+                      maxLength="14"
+                      value={cpfManual}
+                      onChange={(e) => {
+                        let v = e.target.value.replace(/\D/g, '').slice(0, 11);
+                        if (v.length > 9) v = `${v.slice(0, 3)}.${v.slice(3, 6)}.${v.slice(6, 9)}-${v.slice(9)}`;
+                        else if (v.length > 6) v = `${v.slice(0, 3)}.${v.slice(3, 6)}.${v.slice(6)}`;
+                        else if (v.length > 3) v = `${v.slice(0, 3)}.${v.slice(3)}`;
+                        setCpfManual(v);
+                      }}
+                      className="admin-search-input"
+                      style={{ width: '100%', maxWidth: '240px', height: '32px', fontSize: '12px', background: '#fff' }}
+                    />
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                   <button
                     type="button"
@@ -705,7 +735,7 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                   </button>
 
                   <a
-                    href="https://www.melhorenvio.com.br/painel/carrinho"
+                    href="https://app.melhorenvio.com.br/carrinho"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="admin-btn admin-btn-secondary"

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { getHexCor } from '../../constants/cores';
-import { useWishlist } from '../../contexts/WishlistContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useWishlist } from '../../contexts/WishlistContext';
 import '../../styles/home.css';
 import bannerSaoJose from '../../assets/banner-sao-jose.jpg';
 import bannerDesatadora from '../../assets/banner-desatadora.jpg';
@@ -93,6 +93,7 @@ function ProdutoCard({ produto }) {
   const [hovered, setHovered] = useState(false);
   const { isAuthenticated } = useAuth();
   const { isFavorite, toggleFavorite } = useWishlist();
+  const navigate = useNavigate();
   const favoritado = isFavorite(produto.id);
 
   const preco = produto.preco_base
@@ -112,6 +113,18 @@ function ProdutoCard({ produto }) {
 
   // Cores dinâmicas cadastradas nas variações do produto
   const coresVariacoes = Array.from(new Set((produto.variacoes || []).map((v) => v.cor))).filter(Boolean);
+  const temAvaliacao = Number(produto.avaliacoes_count) > 0;
+  const qtdEstrelas = Math.max(1, Math.min(5, Math.round(Number(produto.avaliacoes_avg_nota || 0))));
+
+  const handleToggleFavorite = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: window.location.pathname } });
+      return;
+    }
+    toggleFavorite(produto);
+  };
 
   return (
     <Link
@@ -121,41 +134,18 @@ function ProdutoCard({ produto }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="produto-card-img" style={{ position: 'relative' }}>
-        {isAuthenticated && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              toggleFavorite(produto);
-            }}
-            title={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
-            aria-label={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
-            style={{
-              position: 'absolute',
-              top: '10px',
-              right: '10px',
-              zIndex: 5,
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              background: 'rgba(255, 255, 255, 0.92)',
-              border: '1px solid rgba(0, 0, 0, 0.08)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)',
-              color: favoritado ? '#dc2626' : '#555',
-              transition: 'transform 0.15s ease, color 0.15s ease',
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill={favoritado ? '#dc2626' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-            </svg>
-          </button>
-        )}
+      <div className="produto-card-img">
+        <button
+          type="button"
+          onClick={handleToggleFavorite}
+          className="produto-card-fav-btn"
+          title={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+          aria-label={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill={favoritado ? '#dc2626' : 'none'} stroke={favoritado ? '#dc2626' : '#444'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+        </button>
 
         {fotoExibida ? (
           <img
@@ -168,33 +158,43 @@ function ProdutoCard({ produto }) {
             <span>🕊️</span>
           </div>
         )}
+      </div>
 
-        {/* Bolinhas coloridas das variações do produto na vitrine */}
-        {coresVariacoes.length > 0 && (
-          <div className="produto-card-dots">
-            {coresVariacoes.slice(0, 4).map((c) => (
-              <span
-                key={c}
-                className="produto-card-dot"
-                style={{ backgroundColor: getHexCor(c) }}
-                title={c}
-              />
-            ))}
-          </div>
+      {/* Faixa horizontal de cores com a linha divisória escura */}
+      <div className="produto-card-dots">
+        {coresVariacoes.length > 0 ? (
+          coresVariacoes.slice(0, 4).map((c) => (
+            <span
+              key={c}
+              className="produto-card-dot"
+              style={{ backgroundColor: getHexCor(c) }}
+              title={c}
+            />
+          ))
+        ) : (
+          <span
+            className="produto-card-dot"
+            style={{ backgroundColor: '#1e1e1e' }}
+            title="Cor única"
+          />
         )}
       </div>
+
       <div className="produto-card-info">
         <p className="produto-card-nome">{produto.nome}</p>
-        {Number(produto.avaliacoes_count) > 0 && (() => {
-          const qtdEstrelas = Math.max(1, Math.min(5, Math.round(Number(produto.avaliacoes_avg_nota || 0))));
-          return (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '13px', color: '#c4953a', margin: '2px 0' }}>
-              <span style={{ letterSpacing: '1px' }}>{'★'.repeat(qtdEstrelas)}</span>
-              <span style={{ color: '#888', fontSize: '11px' }}>({produto.avaliacoes_count})</span>
-            </div>
-          );
-        })()}
-        {preco && <p className="produto-card-preco">{preco}</p>}
+
+        <div className="produto-card-rating">
+          {temAvaliacao ? (
+            <>
+              <span className="produto-card-stars">{'★'.repeat(qtdEstrelas)}</span>
+              <span className="produto-card-rating-count">({produto.avaliacoes_count})</span>
+            </>
+          ) : null}
+        </div>
+
+        {preco && (
+          <p className="produto-card-preco">{preco}</p>
+        )}
       </div>
     </Link>
   );
@@ -203,11 +203,12 @@ function ProdutoCard({ produto }) {
 // ── Carrossel de cards com setas ───────────────────────────────────────────────
 function CardCarousel({ items, loading, emptyMsg }) {
   const trackRef  = useRef(null);
-  const CARD_W    = 228; // largura + gap
 
   const scroll = (dir) => {
     if (trackRef.current) {
-      trackRef.current.scrollBy({ left: dir * CARD_W * 2, behavior: 'smooth' });
+      const cardEl = trackRef.current.querySelector('.produto-card');
+      const step = cardEl ? (cardEl.offsetWidth + 20) * 4 : trackRef.current.clientWidth;
+      trackRef.current.scrollBy({ left: dir * step, behavior: 'smooth' });
     }
   };
 

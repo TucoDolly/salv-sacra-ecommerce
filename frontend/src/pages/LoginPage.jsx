@@ -57,10 +57,13 @@ export default function LoginPage() {
         navigate(destinoCliente);
       }
     } catch (err) {
-      const msg =
+      let msg =
         err.response?.data?.errors?.email?.[0] ||
         err.response?.data?.message ||
         'Erro ao realizar login. Tente novamente.';
+      if (typeof msg === 'string' && (msg.toLowerCase().includes('valid email') || msg.toLowerCase().includes('must be a valid'))) {
+        msg = 'Informe um endereço de e-mail válido.';
+      }
       setError(msg);
     } finally {
       setLoading(false);

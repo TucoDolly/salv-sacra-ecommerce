@@ -32,7 +32,7 @@ class MelhorEnvioService
      * Assim, o administrador só precisa entrar no site do Melhor Envio para pagar e imprimir,
      * sem precisar digitar dados de destinatário, endereço ou medidas manualmente.
      */
-    public function inserirNoCarrinho(Pedido $pedido): array
+    public function inserirNoCarrinho(Pedido $pedido, ?string $cpfSobrescrito = null): array
     {
         $token = $this->getToken();
         if (empty($token)) {
@@ -42,12 +42,21 @@ class MelhorEnvioService
             ];
         }
 
-        $cpfDestinatario = preg_replace('/\D/', '', $pedido->user?->cpf ?? '');
+        $cpfDestinatario = preg_replace('/\D/', '', $cpfSobrescrito ?: ($pedido->user?->cpf ?? ''));
         if (strlen($cpfDestinatario) !== 11) {
             return [
                 'sucesso'  => false,
-                'mensagem' => 'O cliente não possui um CPF válido de 11 dígitos cadastrado. Verifique o cadastro do cliente.',
+                'mensagem' => 'O cliente não possui um CPF válido de 11 dígitos cadastrado. Verifique ou informe o CPF do cliente.',
             ];
+        }
+
+        // Se veio CPF informado e o cliente ainda não possuía no banco, salva no perfil dele
+        if ($pedido->user && (empty($pedido->user->cpf) || $pedido->user->cpf !== $cpfDestinatario)) {
+            try {
+                $pedido->user->update(['cpf' => $cpfDestinatario]);
+            } catch (\Throwable $e) {
+                Log::warning('Não foi possível salvar CPF no usuário: ' . $e->getMessage());
+            }
         }
 
         $qtdTotal = $pedido->itens->sum('quantidade') ?: 1;
@@ -147,7 +156,7 @@ class MelhorEnvioService
                     'mensagem'        => 'Pedido inserido no carrinho do Melhor Envio com sucesso! O pacote já está pronto para pagamento e impressão.',
                     'melhor_envio_id' => $shipmentId,
                     'protocol'        => $protocol,
-                    'link_carrinho'   => 'https://www.melhorenvio.com.br/painel/carrinho',
+                    'link_carrinho'   => 'https://app.melhorenvio.com.br/carrinho',
                 ];
             }
 

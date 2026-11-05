@@ -104,6 +104,7 @@ export default function CheckoutPage() {
   const [email, setEmail] = useState('');
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
+  const [cpf, setCpf] = useState('');
   const [endereco, setEndereco] = useState({
     cep: '',
     logradouro: '',
@@ -264,7 +265,11 @@ export default function CheckoutPage() {
       if (user.email) setEmail(user.email);
       if (user.name) setNome(user.name);
       if (user.telefone) setTelefone(user.telefone);
-      if (user.cpf) setCpfTitular(formatarCpfInput(user.cpf));
+      if (user.cpf) {
+        const cpfFmt = formatarCpfInput(user.cpf);
+        setCpf(cpfFmt);
+        setCpfTitular(cpfFmt);
+      }
     }
   }, [user]);
 
@@ -388,6 +393,15 @@ export default function CheckoutPage() {
       });
       return;
     }
+    const cpfLimpo = (cpf || '').replace(/\D/g, '');
+    if (cpfLimpo.length !== 11) {
+      abrirModalAviso({
+        titulo: 'CPF Obrigatório',
+        mensagem: 'Por favor, informe um CPF válido com 11 dígitos. O CPF é uma exigência dos Correios para a emissão da etiqueta de envio.',
+        tipo: 'alerta',
+      });
+      return;
+    }
     if (!freteAtual) {
       abrirModalAviso({
         titulo: 'Selecione a Opção de Frete',
@@ -447,6 +461,7 @@ export default function CheckoutPage() {
     const payload = {
       email_contato: email,
       telefone: telefone,
+      cpf: (cpf || '').replace(/\D/g, ''),
       cep: endereco.cep,
       logradouro: endereco.logradouro,
       numero: endereco.numero,
@@ -897,6 +912,27 @@ export default function CheckoutPage() {
                         placeholder="Ex: (11) 98765-4321"
                       />
                     </div>
+                    <div className="checkout-input-group">
+                      <label>CPF do Destinatário (Exigido pelos Correios) *</label>
+                      <input
+                        type="text"
+                        required
+                        maxLength="14"
+                        value={cpf}
+                        onChange={(e) => {
+                          const valFmt = formatarCpfInput(e.target.value);
+                          setCpf(valFmt);
+                          if (!cpfTitular || cpfTitular === cpf) {
+                            setCpfTitular(valFmt);
+                          }
+                        }}
+                        className="checkout-input"
+                        placeholder="000.000.000-00"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="checkout-input-row">
                     <div className="checkout-input-group">
                       <label>CEP * {buscandoCep && <small>(Buscando...)</small>}</label>
                       <input

@@ -387,6 +387,7 @@ class PedidoController extends Controller
         $validated = $request->validate([
             'email_contato'      => ['required', 'email'],
             'telefone'           => ['nullable', 'string', 'max:30'],
+            'cpf'                => ['nullable', 'string', 'max:20'],
             'cep'                => ['required', 'string', 'max:20'],
             'logradouro'         => ['required', 'string', 'max:255'],
             'numero'             => ['required', 'string', 'max:50'],
@@ -409,7 +410,20 @@ class PedidoController extends Controller
         ]);
 
         // A rota exige auth:sanctum, então sempre há um usuário logado
-        $userId = $request->user()->id;
+        $user = $request->user();
+        $userId = $user->id;
+
+        // Salva/atualiza o CPF no cadastro do cliente para futuras compras e envios
+        if (! empty($validated['cpf'])) {
+            $cpfLimpo = preg_replace('/\D/', '', $validated['cpf']);
+            if (strlen($cpfLimpo) === 11) {
+                try {
+                    $user->update(['cpf' => $cpfLimpo]);
+                } catch (\Throwable $e) {
+                    \Log::warning('Erro ao salvar CPF do usuário no pedido: ' . $e->getMessage());
+                }
+            }
+        }
 
         $pedido = DB::transaction(function () use ($validated, $userId) {
             $subtotal = collect($validated['itens'])->sum(function ($item) {
@@ -791,9 +805,10 @@ class PedidoController extends Controller
     /**
      * Envia o pedido diretamente para o Carrinho do Melhor Envio (Admin).
      */
-    public function enviarMelhorEnvio(Pedido $pedido, \App\Services\MelhorEnvioService $melhorEnvioService): JsonResponse
+    public function enviarMelhorEnvio(Request $request, Pedido $pedido, \App\Services\MelhorEnvioService $melhorEnvioService): JsonResponse
     {
-        $res = $melhorEnvioService->inserirNoCarrinho($pedido);
+        $cpfInformado = $request->input('cpf');
+        $res = $melhorEnvioService->inserirNoCarrinho($pedido, $cpfInformado);
 
         if (! $res['sucesso']) {
             return response()->json([

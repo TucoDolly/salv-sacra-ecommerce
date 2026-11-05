@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { getHexCor } from '../../constants/cores';
 import { useAuth } from '../../contexts/AuthContext';
@@ -15,11 +15,12 @@ const IconSort = () => (
   </svg>
 );
 
-// Subcomponente de Card do Produto com suporte a foto 2 no hover e bolinhas de variações reais
+// Subcomponente de Card do Produto padronizado com a vitrine Home
 function CatalogoItemCard({ prod }) {
   const [hovered, setHovered] = useState(false);
   const { isAuthenticated } = useAuth();
   const { isFavorite, toggleFavorite } = useWishlist();
+  const navigate = useNavigate();
   const favoritado = isFavorite(prod.id);
 
   const preco = prod.preco_base
@@ -37,82 +38,83 @@ function CatalogoItemCard({ prod }) {
   const fotoExibida = hovered && foto2 ? foto2 : foto1;
 
   const coresVariacoes = Array.from(new Set((prod.variacoes || []).map((v) => v.cor))).filter(Boolean);
+  const temAvaliacao = Number(prod.avaliacoes_count) > 0;
   const qtdEstrelas = Math.max(1, Math.min(5, Math.round(Number(prod.avaliacoes_avg_nota || 0))));
+
+  const handleToggleFavorite = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: window.location.pathname } });
+      return;
+    }
+    toggleFavorite(prod);
+  };
 
   return (
     <Link
       to={`/produto/${prod.id}`}
       className="catalogo-product-card"
+      aria-label={prod.nome}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="catalogo-product-img-wrap" style={{ position: 'relative' }}>
-        {isAuthenticated && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              toggleFavorite(prod);
-            }}
-            title={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
-            aria-label={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
-            style={{
-              position: 'absolute',
-              top: '10px',
-              right: '10px',
-              zIndex: 5,
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              background: 'rgba(255, 255, 255, 0.92)',
-              border: '1px solid rgba(0, 0, 0, 0.08)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)',
-              color: favoritado ? '#dc2626' : '#555',
-              transition: 'transform 0.15s ease, color 0.15s ease',
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill={favoritado ? '#dc2626' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-            </svg>
-          </button>
-        )}
+      <div className="catalogo-product-img-wrap">
+        <button
+          type="button"
+          onClick={handleToggleFavorite}
+          className="catalogo-card-fav-btn"
+          title={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+          aria-label={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill={favoritado ? '#dc2626' : 'none'} stroke={favoritado ? '#dc2626' : '#444'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+        </button>
 
         {fotoExibida ? (
           <img src={fotoExibida} alt={prod.nome} loading="lazy" />
         ) : (
-          <span style={{ fontSize: '32px' }}>🕊️</span>
-        )}
-        {coresVariacoes.length > 0 && (
-          <div className="catalogo-card-dots">
-            {coresVariacoes.slice(0, 4).map((c) => (
-              <span
-                key={c}
-                className="catalogo-dot"
-                style={{ backgroundColor: getHexCor(c) }}
-                title={c}
-              />
-            ))}
+          <div className="catalogo-card-placeholder" aria-hidden="true">
+            <span>🕊️</span>
           </div>
+        )}
+      </div>
+
+      {/* Faixa horizontal de cores com a linha divisória escura */}
+      <div className="catalogo-card-dots">
+        {coresVariacoes.length > 0 ? (
+          coresVariacoes.slice(0, 4).map((c) => (
+            <span
+              key={c}
+              className="catalogo-dot"
+              style={{ backgroundColor: getHexCor(c) }}
+              title={c}
+            />
+          ))
+        ) : (
+          <span
+            className="catalogo-dot"
+            style={{ backgroundColor: '#1e1e1e' }}
+            title="Cor única"
+          />
         )}
       </div>
 
       <div className="catalogo-product-info">
         <p className="catalogo-product-name">{prod.nome}</p>
-        {Number(prod.avaliacoes_count) > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '13px', color: '#c4953a', margin: '2px 0' }}>
-            <span style={{ letterSpacing: '1px' }}>{'★'.repeat(qtdEstrelas)}</span>
-            <span style={{ color: '#888', fontSize: '11px' }}>({prod.avaliacoes_count})</span>
-          </div>
-        )}
+
+        <div className="catalogo-product-rating">
+          {temAvaliacao ? (
+            <>
+              <span className="catalogo-product-stars">{'★'.repeat(qtdEstrelas)}</span>
+              <span className="catalogo-product-rating-count">({prod.avaliacoes_count})</span>
+            </>
+          ) : null}
+        </div>
+
         {preco && (
-          <p className="catalogo-product-preco">
-            {preco}
-          </p>
+          <p className="catalogo-product-preco">{preco}</p>
         )}
       </div>
     </Link>
