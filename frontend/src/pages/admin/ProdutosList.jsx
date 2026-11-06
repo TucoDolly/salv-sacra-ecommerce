@@ -17,6 +17,11 @@ export default function ProdutosList() {
   const [error, setError]         = useState('');
   const [success, setSuccess]     = useState('');
 
+  // ── Filtros e Ordenação ───────────────────────────────────────────────────
+  const [ordenacao, setOrdenacao]       = useState('recentes'); // recentes | nome_asc | nome_desc | preco_asc | preco_desc | colecao_asc
+  const [filtroColecao, setFiltroColecao] = useState('');
+  const [busca, setBusca]               = useState('');
+
   // ── Modal de confirmação ───────────────────────────────────────────────────
   const [modalTarget, setModalTarget] = useState(null); // { id, nome }
   const [deleting, setDeleting]       = useState(false);
@@ -58,6 +63,40 @@ export default function ProdutosList() {
   const formatBRL = (value) =>
     Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+  // ── Coleções únicas para o filtro ──────────────────────────────────────────
+  const colecoes = Array.from(new Set(produtos.map((p) => p.colecao).filter(Boolean)));
+
+  // ── Filtragem e Ordenação ──────────────────────────────────────────────────
+  const produtosExibidos = produtos
+    .filter((p) => {
+      if (filtroColecao && p.colecao !== filtroColecao) return false;
+      if (busca.trim()) {
+        const termo = busca.toLowerCase();
+        const nomeOk = (p.nome || '').toLowerCase().includes(termo);
+        const colOk = (p.colecao || '').toLowerCase().includes(termo);
+        const catOk = (p.categoria?.nome || '').toLowerCase().includes(termo);
+        return nomeOk || colOk || catOk;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      switch (ordenacao) {
+        case 'nome_asc':
+          return (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
+        case 'nome_desc':
+          return (b.nome || '').localeCompare(a.nome || '', 'pt-BR');
+        case 'preco_asc':
+          return Number(a.preco_base || 0) - Number(b.preco_base || 0);
+        case 'preco_desc':
+          return Number(b.preco_base || 0) - Number(a.preco_base || 0);
+        case 'colecao_asc':
+          return (a.colecao || '').localeCompare(b.colecao || '', 'pt-BR');
+        case 'recentes':
+        default:
+          return Number(b.id) - Number(a.id);
+      }
+    });
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="admin-page">
@@ -73,6 +112,62 @@ export default function ProdutosList() {
       {error   && <p className="admin-error">{error}</p>}
       {success && <p className="admin-success">{success}</p>}
 
+      {/* ── Barra de Filtros e Ordenação ── */}
+      {!loading && produtos.length > 0 && (
+        <div className="admin-filters-bar">
+          <div className="admin-filters-left">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: '#555' }}>
+                Ordenar por:
+              </label>
+              <select
+                className="admin-filter-select"
+                value={ordenacao}
+                onChange={(e) => setOrdenacao(e.target.value)}
+              >
+                <option value="recentes">Mais recentes</option>
+                <option value="nome_asc">Nome (A - Z)</option>
+                <option value="nome_desc">Nome (Z - A)</option>
+                <option value="preco_asc">Menor Preço</option>
+                <option value="preco_desc">Maior Preço</option>
+                <option value="colecao_asc">Coleção (A - Z)</option>
+              </select>
+            </div>
+
+            {colecoes.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: '#555' }}>
+                  Coleção:
+                </label>
+                <select
+                  className="admin-filter-select"
+                  value={filtroColecao}
+                  onChange={(e) => setFiltroColecao(e.target.value)}
+                >
+                  <option value="">Todas as coleções</option>
+                  {colecoes.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <input
+              type="search"
+              placeholder="Buscar por nome, coleção ou categoria..."
+              className="admin-search-input"
+              style={{ minWidth: '320px' }}
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
       {/* ── Loading ── */}
       {loading ? (
         <p className="admin-loading">Carregando produtos…</p>
@@ -84,6 +179,10 @@ export default function ProdutosList() {
           <Link to="/admin/produtos/novo" className="admin-btn admin-btn-primary">
             Cadastrar primeiro produto
           </Link>
+        </div>
+      ) : produtosExibidos.length === 0 ? (
+        <div className="admin-empty" style={{ padding: '36px 20px' }}>
+          <p>Nenhum produto encontrado para os filtros selecionados.</p>
         </div>
       ) : (
         /* ── Tabela ── */
@@ -102,7 +201,7 @@ export default function ProdutosList() {
               </tr>
             </thead>
             <tbody>
-              {produtos.map((produto) => (
+              {produtosExibidos.map((produto) => (
                 <tr key={produto.id}>
                   {/* Thumbnail */}
                   <td style={{ textAlign: 'center' }}>

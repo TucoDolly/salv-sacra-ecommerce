@@ -5,12 +5,12 @@ import {
   enviarMelhorEnvioAdmin,
   consultarRastreioAdmin,
   sincronizarTodosRastreiosAdmin,
+  excluirPedidoAdmin,
 } from '../../services/adminPedidoService';
 import '../../styles/admin.css';
 import '../../styles/minha-conta.css';
 
 const STATUS_OPCOES = [
-  'Pendente',
   'Pago',
   'Em separação',
   'Enviado',
@@ -38,15 +38,14 @@ const formatData = (val) =>
 
 function obterEtapaRastreio(status) {
   switch (status) {
-    case 'Pendente': return 1;
-    case 'Pago': return 2;
+    case 'Pago': return 1;
     case 'Em separação':
-    case 'Em montagem': return 3;
-    case 'Enviado': return 4;
-    case 'Em transporte': return 5;
-    case 'Entregue': return 6;
+    case 'Em montagem': return 2;
+    case 'Enviado': return 3;
+    case 'Em transporte': return 4;
+    case 'Entregue': return 5;
     case 'Cancelado': return 0;
-    default: return 1;
+    default: return 0;
   }
 }
 
@@ -86,6 +85,10 @@ export default function PedidosList() {
   const [enviandoMelhorEnvio, setEnviandoMelhorEnvio] = useState(false);
   const [cpfManual, setCpfManual] = useState('');
   const [rastreioFeedback, setRastreioFeedback] = useState(null);
+
+  // Exclusão de pedidos finalizados / cancelados
+  const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
+  const [excluindoPedido, setExcluindoPedido] = useState(false);
 
   const carregarPedidos = async () => {
     setLoading(true);
@@ -143,6 +146,27 @@ export default function PedidosList() {
       setError('Erro ao atualizar o status do pedido.');
     } finally {
       setAtualizandoStatusId(null);
+    }
+  };
+
+  const handleConfirmarExclusao = async () => {
+    if (!pedidoParaExcluir) return;
+    setExcluindoPedido(true);
+    setError('');
+    try {
+      await excluirPedidoAdmin(pedidoParaExcluir.id);
+      setSuccess(`Pedido #${pedidoParaExcluir.id} excluído com sucesso do histórico.`);
+      setPedidos((prev) => prev.filter((p) => p.id !== pedidoParaExcluir.id));
+      if (pedidoSelecionado && pedidoSelecionado.id === pedidoParaExcluir.id) {
+        setPedidoSelecionado(null);
+      }
+      setPedidoParaExcluir(null);
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+      setTimeout(() => setSuccess(''), 4000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Erro ao excluir o pedido.');
+    } finally {
+      setExcluindoPedido(false);
     }
   };
 
@@ -449,10 +473,16 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
             </thead>
             <tbody>
               {pedidos.map((p) => {
-                // Notificação de novo pedido só sai quando for alterado para 'Em separação' (ou posteriores)
-                const isNovo = p.status === 'Pendente' || p.status === 'Pago';
+                // Notificação de novo pedido só para pedidos com pagamento confirmado (Pago)
+                const isNovo = p.status === 'Pago';
+                const isCancelado = p.status === 'Cancelado';
                 return (
-                  <tr key={p.id} style={{ background: isNovo ? '#f0fdf4' : 'transparent' }}>
+                  <tr
+                    key={p.id}
+                    style={{
+                      background: isCancelado ? '#fef2f2' : (isNovo ? '#f0fdf4' : 'transparent'),
+                    }}
+                  >
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <strong>#{p.id}</strong>
@@ -469,9 +499,27 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                               textTransform: 'uppercase',
                               lineHeight: 1,
                             }}
-                            title="Pedido novo aguardando processamento"
+                            title="Pedido novo pago aguardando processamento"
                           >
                             NOVO
+                          </span>
+                        )}
+                        {isCancelado && (
+                          <span
+                            style={{
+                              background: '#dc2626',
+                              color: '#fff',
+                              fontSize: '10px',
+                              fontWeight: 800,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              letterSpacing: '0.5px',
+                              textTransform: 'uppercase',
+                              lineHeight: 1,
+                            }}
+                            title="Pedido cancelado"
+                          >
+                            CANCELADO
                           </span>
                         )}
                       </div>
@@ -538,13 +586,26 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                     </select>
                   </td>
                   <td>
-                    <button
-                      type="button"
-                      className="admin-btn admin-btn-secondary admin-btn-sm"
-                      onClick={() => handleAbrirDetalhe(p)}
-                    >
-                      Gerenciar Entrega
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn-secondary admin-btn-sm"
+                        onClick={() => handleAbrirDetalhe(p)}
+                      >
+                        Gerenciar Entrega
+                      </button>
+                      {['Entregue', 'Cancelado'].includes(p.status) && (
+                        <button
+                          type="button"
+                          className="admin-btn admin-btn-danger admin-btn-sm"
+                          onClick={() => setPedidoParaExcluir(p)}
+                          title="Excluir pedido do histórico"
+                          style={{ padding: '6px 10px', fontSize: '11px', whiteSpace: 'nowrap' }}
+                        >
+                          Excluir
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -583,18 +644,17 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                 {(() => {
                   const etapaAtual = obterEtapaRastreio(pedidoSelecionado.status);
                   const steps = [
-                    { num: 1, label: 'Pendente' },
-                    { num: 2, label: 'Pago' },
-                    { num: 3, label: 'Em separação' },
-                    { num: 4, label: 'Enviado' },
-                    { num: 5, label: 'Em transporte' },
-                    { num: 6, label: 'Entregue' },
+                    { num: 1, label: 'Pago' },
+                    { num: 2, label: 'Em separação' },
+                    { num: 3, label: 'Enviado' },
+                    { num: 4, label: 'Em transporte' },
+                    { num: 5, label: 'Entregue' },
                   ];
                   return (
                     <div className="conta-timeline" style={{ margin: '12px 0 18px', padding: '12px', background: '#f8f9fa', borderRadius: '8px' }}>
                       {steps.map((st) => {
-                        const isCompleted = etapaAtual > st.num || (etapaAtual === 6 && st.num === 6);
-                        const isActive = etapaAtual === st.num && etapaAtual !== 6;
+                        const isCompleted = etapaAtual > st.num || (etapaAtual === 5 && st.num === 5);
+                        const isActive = etapaAtual === st.num && etapaAtual !== 5;
                         return (
                           <div
                             key={st.num}
@@ -957,6 +1017,53 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                   </div>
                 </div>
               </div>
+
+              {/* Botão de Excluir dentro do Drawer (se entregue ou cancelado) */}
+              {['Entregue', 'Cancelado'].includes(pedidoSelecionado.status) && (
+                <div className="admin-drawer-section" style={{ borderTop: '1px solid #eee', paddingTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn-danger"
+                    onClick={() => setPedidoParaExcluir(pedidoSelecionado)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}
+                  >
+                    🗑 Excluir Pedido Permanentemente
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de confirmação de exclusão de pedido (Admin) ── */}
+      {pedidoParaExcluir && (
+        <div className="admin-modal-overlay" role="dialog" aria-modal="true">
+          <div className="admin-modal" style={{ maxWidth: '440px' }}>
+            <h3 id="modal-title" style={{ color: '#b91c1c' }}>Confirmar exclusão de pedido</h3>
+            <p style={{ fontSize: '14px', lineHeight: 1.6, color: '#444' }}>
+              Tem certeza que deseja excluir o <strong>Pedido #{pedidoParaExcluir.id}</strong> (Status: <strong>{pedidoParaExcluir.status}</strong>)?
+              <br />
+              Esta ação <strong>não pode ser desfeita</strong> e apagará todos os dados vinculados a este pedido no sistema.
+            </p>
+            <div className="admin-modal-actions">
+              <button
+                type="button"
+                className="admin-btn admin-btn-secondary"
+                onClick={() => setPedidoParaExcluir(null)}
+                disabled={excluindoPedido}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="admin-btn admin-btn-primary"
+                style={{ background: '#c0392b' }}
+                onClick={handleConfirmarExclusao}
+                disabled={excluindoPedido}
+              >
+                {excluindoPedido ? 'Excluindo…' : 'Sim, excluir pedido'}
+              </button>
             </div>
           </div>
         </div>

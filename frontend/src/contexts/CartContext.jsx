@@ -19,7 +19,13 @@ const OPCOES_PADRAO = [
 ];
 
 export function CartProvider({ children }) {
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('@SalvSacra:carrinho') || '[]');
+    } catch {
+      return [];
+    }
+  });
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [shippingOptions, setShippingOptions] = useState([]);
   const [selectedShipping, setSelectedShipping] = useState(null);
@@ -39,16 +45,6 @@ export function CartProvider({ children }) {
   const [cidadeDestino, setCidadeDestino] = useState('');
   const [ufDestino, setUfDestino] = useState('');
   const [loadingFrete, setLoadingFrete] = useState(false);
-
-  // Carregar do localStorage ao iniciar
-  useEffect(() => {
-    try {
-      const salvo = JSON.parse(localStorage.getItem('@SalvSacra:carrinho') || '[]');
-      setItems(salvo);
-    } catch {
-      setItems([]);
-    }
-  }, []);
 
   // Salvar no localStorage sempre que items mudar
   const salvarCarrinho = (novosItens) => {

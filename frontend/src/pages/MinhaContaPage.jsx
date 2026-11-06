@@ -11,6 +11,7 @@ import {
   criarCartao,
   criarEndereco,
   excluirConta,
+  excluirPedido,
   listarCartoes,
   listarEnderecos,
   listarPedidos,
@@ -67,15 +68,15 @@ const calcularPrevisaoEntrega = (dataPedido, tipoFrete) => {
 };
 
 // Determina em qual etapa da linha do tempo o pedido se encontra
-// 1: Pendente (Pedido Realizado), 2: Pago, 3: Em separação, 4: Enviado, 5: Em transporte, 6: Entregue
+// 1: Pago, 2: Em separação, 3: Enviado, 4: Em transporte, 5: Entregue
 const obterEtapaRastreio = (status) => {
   const s = (status || '').toLowerCase();
-  if (s === 'entregue') return 6;
-  if (s === 'em transporte') return 5;
-  if (s === 'enviado') return 4;
-  if (s === 'em separação' || s === 'em separacao' || s === 'em montagem') return 3;
-  if (s === 'pago') return 2;
-  return 1; // Pendente ou Criado
+  if (s === 'entregue') return 5;
+  if (s === 'em transporte') return 4;
+  if (s === 'enviado') return 3;
+  if (s === 'em separação' || s === 'em separacao' || s === 'em montagem') return 2;
+  if (s === 'pago') return 1;
+  return 0; // Pendente ou Cancelado
 };
 
 const primeiroErro = (err) => {
@@ -150,6 +151,8 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
   const [aberto, setAberto] = useState(pedidoSelecionadoInicial ? Number(pedidoSelecionadoInicial) : null);
   const [pedidoParaCancelar, setPedidoParaCancelar] = useState(null);
   const [cancelando, setCancelando] = useState(false);
+  const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
+  const [excluindoPedido, setExcluindoPedido] = useState(false);
   const [msgCancelamento, setMsgCancelamento] = useState({ tipo: '', texto: '', pedidoId: null });
 
   useEffect(() => {
@@ -180,6 +183,31 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
       setPedidoParaCancelar(null);
     } finally {
       setCancelando(false);
+    }
+  };
+
+  const confirmarExclusaoPedido = async () => {
+    if (!pedidoParaExcluir) return;
+    setExcluindoPedido(true);
+    setMsgCancelamento({ tipo: '', texto: '', pedidoId: null });
+    try {
+      const { data } = await excluirPedido(pedidoParaExcluir.id);
+      setMsgCancelamento({
+        tipo: 'ok',
+        texto: data.mensagem || `Pedido #${pedidoParaExcluir.id} excluído com sucesso.`,
+        pedidoId: pedidoParaExcluir.id,
+      });
+      setPedidoParaExcluir(null);
+      if (recarregar) recarregar();
+    } catch (err) {
+      setMsgCancelamento({
+        tipo: 'erro',
+        texto: err.response?.data?.message || primeiroErro(err),
+        pedidoId: pedidoParaExcluir.id,
+      });
+      setPedidoParaExcluir(null);
+    } finally {
+      setExcluindoPedido(false);
     }
   };
 
@@ -219,6 +247,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
         {pedidos.map((p) => {
           const podeCancelar = ['Pendente', 'Pago', 'Em separação', 'Em montagem'].includes(p.status);
           const jaEnviadoOuEntregue = ['Enviado', 'Em transporte', 'Entregue'].includes(p.status);
+          const podeExcluir = ['Entregue', 'Cancelado'].includes(p.status);
           const itensResumo = (p.itens || [])
             .map((i) => `${i.quantidade}x ${i.variacao?.produto?.nome ?? 'Produto'} (${i.variacao?.tamanho || ''}/${i.variacao?.cor || ''})`)
             .join(', ');
@@ -289,23 +318,22 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
                     </div>
                   </div>
 
-                  {/* Stepper / Linha do Tempo */}
+                  {/* Stepper / Linha do Tempo (inicia em Pago) */}
                   {p.status !== 'Cancelado' && (() => {
                     const etapaAtual = obterEtapaRastreio(p.status);
                     const steps = [
-                      { num: 1, label: 'Pendente', sub: dataBR(p.data_pedido) },
-                      { num: 2, label: 'Pago', sub: etapaAtual >= 2 ? 'Confirmado' : 'Aguardando' },
-                      { num: 3, label: 'Em separação', sub: etapaAtual > 3 ? 'Concluído' : (etapaAtual === 3 ? 'Separando peças' : 'Pendente') },
-                      { num: 4, label: 'Enviado', sub: etapaAtual >= 4 ? 'Postado na agência' : 'Pendente' },
-                      { num: 5, label: 'Em transporte', sub: etapaAtual >= 5 ? 'A caminho' : 'Pendente' },
-                      { num: 6, label: 'Entregue', sub: etapaAtual >= 6 ? 'Pacote recebido' : 'Pendente' },
+                      { num: 1, label: 'Pago', sub: etapaAtual >= 1 ? (p.status === 'Pendente' ? 'Aguardando' : 'Confirmado') : 'Aguardando' },
+                      { num: 2, label: 'Em separação', sub: etapaAtual > 2 ? 'Concluído' : (etapaAtual === 2 ? 'Separando peças' : 'Pendente') },
+                      { num: 3, label: 'Enviado', sub: etapaAtual >= 3 ? 'Postado na agência' : 'Pendente' },
+                      { num: 4, label: 'Em transporte', sub: etapaAtual >= 4 ? 'A caminho' : 'Pendente' },
+                      { num: 5, label: 'Entregue', sub: etapaAtual >= 5 ? 'Pacote recebido' : 'Pendente' },
                     ];
 
                     return (
                       <div className="conta-timeline">
                         {steps.map((st) => {
-                          const isCompleted = etapaAtual > st.num || (etapaAtual === 6 && st.num === 6);
-                          const isActive = etapaAtual === st.num && etapaAtual !== 6;
+                          const isCompleted = etapaAtual > st.num || (etapaAtual === 5 && st.num === 5);
+                          const isActive = etapaAtual === st.num && etapaAtual !== 5;
                           return (
                             <div
                               key={st.num}
@@ -447,12 +475,118 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
                     </a>
                   </div>
                 )}
+
+                {/* Exclusão do Histórico (somente se Entregue ou Cancelado) */}
+                {podeExcluir && (
+                  <div
+                    style={{
+                      marginTop: '14px',
+                      paddingTop: '12px',
+                      borderTop: '1px dashed #eee',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '10px',
+                    }}
+                  >
+                    <span style={{ fontSize: '12px', color: '#888' }}>
+                      Este pedido já foi {p.status === 'Cancelado' ? 'cancelado' : 'entregue'}. Deseja removê-lo do histórico?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPedidoParaExcluir(p)}
+                      style={{
+                        background: 'transparent',
+                        color: '#b91c1c',
+                        border: '1px solid #fecaca',
+                        borderRadius: '6px',
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseOver={(e) => { e.currentTarget.style.background = '#fef2f2'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      🗑 Excluir do Histórico
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
           );
         })}
       </div>
+
+      {/* Modal de Confirmação de Exclusão de Pedido */}
+      {pedidoParaExcluir && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1200,
+            padding: '20px',
+          }}
+          onClick={() => !excluindoPedido && setPedidoParaExcluir(null)}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '12px',
+              padding: '28px',
+              maxWidth: '460px',
+              width: '100%',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.25)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#b91c1c', margin: '0 0 12px 0' }}>
+              Excluir Pedido #{pedidoParaExcluir.id}?
+            </h3>
+            <p style={{ fontSize: '14px', color: '#444', lineHeight: 1.6, margin: '0 0 16px 0' }}>
+              Tem certeza de que deseja remover o <strong>Pedido #{pedidoParaExcluir.id}</strong> do seu histórico?
+              <br />
+              <span style={{ fontSize: '12px', color: '#777' }}>
+                O pedido não será mais exibido na sua lista de compras. Esta ação não pode ser desfeita.
+              </span>
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                className="conta-btn-sec"
+                onClick={() => setPedidoParaExcluir(null)}
+                disabled={excluindoPedido}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarExclusaoPedido}
+                disabled={excluindoPedido}
+                style={{
+                  background: '#dc2626',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '10px 18px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: excluindoPedido ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {excluindoPedido ? 'Excluindo...' : 'Sim, excluir pedido'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Confirmação de Cancelamento de Pedido */}
       {pedidoParaCancelar && (

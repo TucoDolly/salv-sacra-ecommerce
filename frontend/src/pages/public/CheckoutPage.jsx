@@ -79,9 +79,18 @@ const IconBarcode = () => (
   </svg>
 );
 
+const getDadosCheckoutSalvos = () => {
+  try {
+    const salvo = localStorage.getItem('@SalvSacra:checkout_dados');
+    return salvo ? JSON.parse(salvo) : null;
+  } catch {
+    return null;
+  }
+};
+
 export default function CheckoutPage() {
   const navigate = useNavigate();
-  const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const { user, isAuthenticated, loading: authLoading, updateUser } = useAuth();
   const {
     items,
     subtotal,
@@ -100,12 +109,14 @@ export default function CheckoutPage() {
   // Etapa atual do checkout: 'entrega' | 'pagamento'
   const [etapa, setEtapa] = useState('entrega');
 
-  // Dados de contato e endereço (começam em branco para novos cadastros preencherem)
-  const [email, setEmail] = useState('');
-  const [nome, setNome] = useState('');
-  const [telefone, setTelefone] = useState('');
-  const [cpf, setCpf] = useState('');
-  const [endereco, setEndereco] = useState({
+  const dadosSalvos = getDadosCheckoutSalvos();
+
+  // Dados de contato e endereço (carregam instantaneamente da memória do navegador ou usuário para eliminar qualquer delay)
+  const [email, setEmail] = useState(() => dadosSalvos?.email || user?.email || '');
+  const [nome, setNome] = useState(() => dadosSalvos?.nome || user?.name || '');
+  const [telefone, setTelefone] = useState(() => dadosSalvos?.telefone || (user?.telefone ? formatarTelefoneInput(user.telefone) : ''));
+  const [cpf, setCpf] = useState(() => dadosSalvos?.cpf || (user?.cpf ? formatarCpfInput(user.cpf) : ''));
+  const [endereco, setEndereco] = useState(() => dadosSalvos?.endereco || {
     cep: '',
     logradouro: '',
     numero: '',
@@ -132,7 +143,7 @@ export default function CheckoutPage() {
   const [parcelasCartao, setParcelasCartao] = useState(1);
   const [maxParcelas, setMaxParcelas] = useState(6);
   const [cpfTitular, setCpfTitular] = useState('');
-  const [salvarDadosCompra, setSalvarDadosCompra] = useState(true);
+  const [salvarDadosCompra, setSalvarDadosCompra] = useState(false);
   const [cartao, setCartao] = useState({
     numero: '',
     titular: '',
@@ -202,6 +213,7 @@ export default function CheckoutPage() {
   const [copiadoPix, setCopiadoPix] = useState(false);
   const [tempoRestantePix, setTempoRestantePix] = useState(1800); // 30 minutos em segundos
   const [confirmandoPagamento, setConfirmandoPagamento] = useState(false);
+  const [cancelandoPix, setCancelandoPix] = useState(false);
 
   // Modal para avisos e recusas de pagamento (sem usar o alert nativo do navegador)
   const [modalAviso, setModalAviso] = useState({
@@ -246,6 +258,8 @@ export default function CheckoutPage() {
         const { data } = await api.get(`/pedidos/${pedidoConcluido.id}`);
         if (data && data.status && data.status !== 'Pendente') {
           setPedidoConcluido(data);
+          clearCart();
+          removerCupom();
         }
       } catch {
         // Silencioso durante o polling
@@ -285,6 +299,8 @@ export default function CheckoutPage() {
       const { data } = await api.post(`/pedidos/${pedidoConcluido.id}/confirmar-pagamento`);
       if (data?.pedido) {
         setPedidoConcluido(data.pedido);
+        clearCart();
+        removerCupom();
       }
     } catch {
       abrirModalAviso({
@@ -297,16 +313,32 @@ export default function CheckoutPage() {
     }
   };
 
-  // Carregar dados de perfil, endereços e cartões salvos do usuário autenticado
+  const handleCancelarPix = async () => {
+    if (!pedidoConcluido) return;
+    setCancelandoPix(true);
+    try {
+      await api.post(`/pedidos/${pedidoConcluido.id}/cancelar`);
+      setPedidoConcluido(null);
+      setEtapa('pagamento');
+    } catch {
+      // Se der erro, apenas limpa o estado concluído para voltar ao checkout
+      setPedidoConcluido(null);
+      setEtapa('pagamento');
+    } finally {
+      setCancelandoPix(false);
+    }
+  };
+
+  // Sincroniza dados com o usuário autenticado caso ainda não preenchidos
   useEffect(() => {
     if (user) {
-      if (user.email) setEmail(user.email);
-      if (user.name) setNome(user.name);
-      if (user.telefone) setTelefone(formatarTelefoneInput(user.telefone));
+      if (user.email) setEmail((prev) => prev || user.email);
+      if (user.name) setNome((prev) => prev || user.name);
+      if (user.telefone) setTelefone((prev) => prev || formatarTelefoneInput(user.telefone));
       if (user.cpf) {
         const cpfFmt = formatarCpfInput(user.cpf);
-        setCpf(cpfFmt);
-        setCpfTitular(cpfFmt);
+        setCpf((prev) => prev || cpfFmt);
+        setCpfTitular((prev) => prev || cpfFmt);
       }
     }
   }, [user]);
@@ -330,7 +362,7 @@ export default function CheckoutPage() {
           setEnderecosSalvos(lista);
           if (lista.length > 0) {
             const end = lista[0]; // Seleciona automaticamente o endereço cadastrado pelo próprio cliente
-            setEndereco({
+            setEndereco((prev) => (prev.cep ? prev : {
               cep: end.cep || '',
               logradouro: end.logradouro || '',
               numero: end.numero || '',
@@ -338,9 +370,33 @@ export default function CheckoutPage() {
               bairro: end.bairro || '',
               cidade: end.cidade || '',
               estado: end.estado || '',
-            });
+            }));
+          } else {
+            // Se o usuário ainda não cadastrou no perfil mas já fez compras anteriores, preenche com o último usado
+            obterUltimoEndereco()
+              .then((resUltimo) => {
+                if (resUltimo?.data) {
+                  const endU = resUltimo.data;
+                  setEndereco((prev) => (prev.cep ? prev : {
+                    cep: endU.cep || '',
+                    logradouro: endU.logradouro || '',
+                    numero: endU.numero || '',
+                    complemento: endU.complemento || '',
+                    bairro: endU.bairro || '',
+                    cidade: endU.cidade || '',
+                    estado: endU.estado || '',
+                  }));
+                  if (endU.telefone) {
+                    setTelefone((prev) => prev || formatarTelefoneInput(endU.telefone));
+                  }
+                  if (endU.cpf) {
+                    setCpf((prev) => prev || formatarCpfInput(endU.cpf));
+                    setCpfTitular((prev) => prev || formatarCpfInput(endU.cpf));
+                  }
+                }
+              })
+              .catch(() => {});
           }
-          // Caso o usuário não tenha cadastrado endereços no perfil, os campos ficam limpos para ele preencher
         })
         .catch(() => {});
 
@@ -521,6 +577,7 @@ export default function CheckoutPage() {
       metodo_pagamento: metodoEnvio,
       observacoes: observacoes,
       cupom_codigo: descontoCupom > 0 ? cupom?.codigo : null,
+      salvar_dados: salvarDadosCompra,
       salvar_cartao: salvarDadosCompra,
       cartao_dados:
         metodoPagamento === 'cartao'
@@ -546,8 +603,31 @@ export default function CheckoutPage() {
     try {
       const res = await api.post('/pedidos', payload);
       setPedidoConcluido(res.data.pedido);
-      clearCart();
-      removerCupom();
+
+      // Salva os dados de entrega localmente para próximas compras
+      if (salvarDadosCompra) {
+        try {
+          localStorage.setItem('@SalvSacra:checkout_dados', JSON.stringify({
+            email,
+            nome,
+            telefone,
+            cpf,
+            endereco,
+          }));
+        } catch {}
+      }
+
+      if (res.data?.user && updateUser) {
+        updateUser(res.data.user);
+      }
+
+      // Se o pedido já foi pago e aprovado (Cartão), limpa o carrinho
+      if (res.data.pedido?.status === 'Pago') {
+        clearCart();
+        removerCupom();
+      }
+      // Se for PIX (status Pendente com QR Code na tela), NÃO limpa o carrinho agora!
+      // Assim, se o cliente desistir ou fechar, o carrinho dele continua intacto.
     } catch (err) {
       console.error('Erro ao finalizar pedido:', err);
       if (err.response?.status === 401) {
@@ -590,7 +670,15 @@ export default function CheckoutPage() {
       <div className="checkout-page">
         <header className="checkout-header">
           <div className="checkout-header-inner">
-            <Link to={logoDestino} className="checkout-logo-link">
+            <Link
+              to={logoDestino}
+              className="checkout-logo-link"
+              onClick={() => {
+                if (aguardandoPix && pedidoConcluido?.id) {
+                  api.post(`/pedidos/${pedidoConcluido.id}/cancelar`).catch(() => {});
+                }
+              }}
+            >
               <img src={logoImg} alt="Salv Sacra" className="checkout-logo-img" />
             </Link>
             <div className="checkout-safe-badge">
@@ -735,6 +823,51 @@ export default function CheckoutPage() {
                   ? 'Verificando pagamento...'
                   : '✓ Já realizei o pagamento / Confirmar PIX agora'}
               </button>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                <button
+                  type="button"
+                  onClick={handleCancelarPix}
+                  disabled={cancelandoPix}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    background: '#fff',
+                    color: '#dc2626',
+                    border: '1px solid #fca5a5',
+                    borderRadius: '8px',
+                    fontWeight: 600,
+                    fontSize: '12px',
+                    cursor: cancelandoPix ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.background = '#fef2f2'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = '#fff'; }}
+                >
+                  {cancelandoPix ? 'Cancelando...' : '✕ Cancelar Pedido'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelarPix}
+                  disabled={cancelandoPix}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    background: '#fff',
+                    color: '#475569',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    fontWeight: 600,
+                    fontSize: '12px',
+                    cursor: cancelandoPix ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.background = '#f1f5f9'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = '#fff'; }}
+                >
+                  ← Alterar forma de pagamento
+                </button>
+              </div>
             </div>
           </div>
         ) : (
@@ -1509,7 +1642,13 @@ export default function CheckoutPage() {
               </div>
               <div className="checkout-total-line">
                 <span>Custo de frete</span>
-                <span>R${freteValor.toFixed(2).replace('.', ',')}</span>
+                <span>
+                  {loadingFrete
+                    ? 'Calculando...'
+                    : freteValor > 0
+                    ? `R$${freteValor.toFixed(2).replace('.', ',')}`
+                    : 'R$0,00'}
+                </span>
               </div>
               {descontoCupom > 0 && (
                 <div className="checkout-total-line" style={{ color: '#1e8449', fontWeight: 'bold' }}>

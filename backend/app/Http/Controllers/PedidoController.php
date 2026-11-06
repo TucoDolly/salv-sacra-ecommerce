@@ -563,6 +563,41 @@ class PedidoController extends Controller
             $pedido->refresh();
         }
 
+        // Salva dados de contato (telefone, CPF) e endereço na conta do cliente se autorizado
+        if ($request->boolean('salvar_dados') || $request->boolean('salvar_cartao')) {
+            $user = $request->user();
+            $dadosAtualizar = [];
+            if (! empty($pedido->telefone) && (empty($user->telefone) || $user->telefone !== $pedido->telefone)) {
+                $dadosAtualizar['telefone'] = $pedido->telefone;
+            }
+            if (! empty($pedido->cpf) && (empty($user->cpf) || $user->cpf !== $pedido->cpf)) {
+                $dadosAtualizar['cpf'] = $pedido->cpf;
+            }
+            if (! empty($dadosAtualizar)) {
+                $user->update($dadosAtualizar);
+            }
+
+            // Salva endereço se informado e ainda não existente
+            if (! empty($pedido->cep) && ! empty($pedido->logradouro) && ! empty($pedido->numero)) {
+                $jaExisteEndereco = $user->enderecos()
+                    ->where('cep', $pedido->cep)
+                    ->where('numero', $pedido->numero)
+                    ->exists();
+
+                if (! $jaExisteEndereco) {
+                    $user->enderecos()->create([
+                        'cep'         => $pedido->cep,
+                        'logradouro'  => $pedido->logradouro,
+                        'numero'      => $pedido->numero,
+                        'complemento' => $pedido->complemento,
+                        'bairro'      => $pedido->bairro,
+                        'cidade'      => $pedido->cidade,
+                        'estado'      => $pedido->estado,
+                    ]);
+                }
+            }
+        }
+
         // Dispara e-mail de confirmação de pedido para o cliente
         try {
             $destinatario = $pedido->email_contato ?: $request->user()->email;
@@ -573,16 +608,20 @@ class PedidoController extends Controller
             \Log::error('Erro ao enviar e-mail de pedido criado: ' . $e->getMessage());
         }
 
-        // Dispara e-mail de notificação de novo pedido para o administrador
-        try {
-            \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovoPedidoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
-        } catch (\Throwable $e) {
-            \Log::error('Erro ao enviar e-mail de novo pedido para o admin: ' . $e->getMessage());
+        // Dispara e-mail de notificação de novo pedido para o administrador APENAS se já estiver Pago
+        // (Se for PIX Pendente, o e-mail só será enviado após a confirmação do pagamento)
+        if ($pedido->status === 'Pago') {
+            try {
+                \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovoPedidoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
+            } catch (\Throwable $e) {
+                \Log::error('Erro ao enviar e-mail de novo pedido para o admin: ' . $e->getMessage());
+            }
         }
 
         return response()->json([
             'mensagem' => 'Pedido criado com sucesso!',
             'pedido'   => $pedido->load(['itens.variacao.produto']),
+            'user'     => $request->user()->fresh(),
         ], 201);
     }
 
@@ -612,6 +651,7 @@ class PedidoController extends Controller
                             if ($destinatario) {
                                 \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\StatusPedidoMail($pedido->load('user')));
                             }
+                            \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovoPedidoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
                         } catch (\Throwable $e) {
                             \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de aprovação MP: ' . $e->getMessage());
                         }
@@ -641,6 +681,7 @@ class PedidoController extends Controller
                 if ($destinatario) {
                     \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\StatusPedidoMail($pedido->load('user')));
                 }
+                \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovoPedidoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de pagamento confirmado: ' . $e->getMessage());
             }
@@ -776,6 +817,13 @@ class PedidoController extends Controller
             \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de cancelamento do pedido: ' . $e->getMessage());
         }
 
+        // 5. Envia e-mail de alerta de cancelamento para o administrador
+        try {
+            \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\PedidoCanceladoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de cancelamento para o admin: ' . $e->getMessage());
+        }
+
         $msgRetorno = "Pedido #{$pedido->id} cancelado com sucesso.";
         if ($estavaPago && ! empty($infoEstorno['mensagem'])) {
             $msgRetorno .= ' ' . $infoEstorno['mensagem'];
@@ -812,6 +860,11 @@ class PedidoController extends Controller
                         if ($destinatario) {
                             \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\StatusPedidoMail($pedido->load('user')));
                         }
+                        try {
+                            \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovoPedidoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
+                        } catch (\Throwable $e) {
+                            \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de novo pedido pago para o admin via webhook: ' . $e->getMessage());
+                        }
                     }
                 } catch (\Throwable $e) {
                     \Illuminate\Support\Facades\Log::error('Erro no webhook Mercado Pago: ' . $e->getMessage());
@@ -831,6 +884,9 @@ class PedidoController extends Controller
 
         if ($request->filled('status')) {
             $query->where('status', $request->query('status'));
+        } else {
+            // Por padrão, não exibe pedidos que estão em geração de PIX pendente não pago
+            $query->where('status', '!=', 'Pendente');
         }
 
         if ($request->filled('busca')) {
@@ -854,7 +910,7 @@ class PedidoController extends Controller
     public function updateStatus(Request $request, Pedido $pedido): JsonResponse
     {
         $validated = $request->validate([
-            'status'          => ['nullable', 'string', 'in:Pendente,Pago,Em separação,Em montagem,Enviado,Em transporte,Entregue,Cancelado'],
+            'status'          => ['nullable', 'string', 'in:Pago,Em separação,Em montagem,Enviado,Em transporte,Entregue,Cancelado'],
             'codigo_rastreio' => ['nullable', 'string', 'max:100'],
         ]);
 
@@ -869,6 +925,11 @@ class PedidoController extends Controller
             $this->restaurarEstoquePedido($pedido);
             if (in_array($statusAnterior, ['Pago', 'Em separação', 'Em montagem', 'Enviado', 'Em transporte', 'Entregue'], true) || ! empty($pedido->pagamento_id)) {
                 $this->estornarPagamentoMercadoPago($pedido);
+            }
+            try {
+                \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\PedidoCanceladoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de cancelamento para o admin: ' . $e->getMessage());
             }
         }
 
@@ -892,6 +953,29 @@ class PedidoController extends Controller
         return response()->json([
             'mensagem' => 'Dados de envio/status do pedido atualizados com sucesso.',
             'pedido'   => $pedido->load(['itens.variacao.produto', 'user']),
+        ]);
+    }
+
+    /**
+     * Excluir pedido do histórico (apenas se Entregue ou Cancelado).
+     */
+    public function destroy(Request $request, Pedido $pedido): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user->papel === 'admin' || $pedido->user_id === $user->id, 403, 'Acesso negado.');
+
+        if (! in_array($pedido->status, ['Entregue', 'Cancelado'], true)) {
+            return response()->json([
+                'message' => "Apenas pedidos finalizados ('Entregue' ou 'Cancelado') podem ser excluídos.",
+            ], 422);
+        }
+
+        $id = $pedido->id;
+        $pedido->itens()->delete();
+        $pedido->delete();
+
+        return response()->json([
+            'mensagem' => "Pedido #{$id} excluído com sucesso.",
         ]);
     }
 

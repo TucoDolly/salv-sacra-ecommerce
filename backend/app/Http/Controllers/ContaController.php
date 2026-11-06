@@ -22,11 +22,12 @@ class ContaController extends Controller
         $user = $request->user();
 
         $ultimoPedido = Pedido::where('user_id', $user->id)
+            ->where('status', '!=', 'Pendente')
             ->orderByDesc('data_pedido')
             ->first();
 
         return response()->json([
-            'total_pedidos'   => $user->pedidos()->count(),
+            'total_pedidos'   => $user->pedidos()->where('status', '!=', 'Pendente')->count(),
             'total_enderecos' => $user->enderecos()->count(),
             'total_cartoes'   => $user->cartoes()->count(),
             'total_favoritos' => $user->favoritos()->count(),
@@ -104,6 +105,7 @@ class ContaController extends Controller
             'cidade'      => $ultimoPedido->cidade,
             'estado'      => $ultimoPedido->estado,
             'telefone'    => $ultimoPedido->telefone,
+            'cpf'         => $ultimoPedido->cpf,
         ]);
     }
 
@@ -135,6 +137,7 @@ class ContaController extends Controller
     public function pedidos(Request $request): JsonResponse
     {
         $pedidos = Pedido::where('user_id', $request->user()->id)
+            ->where('status', '!=', 'Pendente')
             ->with(['itens.variacao.produto'])
             ->orderByDesc('data_pedido')
             ->get();

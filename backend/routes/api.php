@@ -64,6 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('pedidos/{pedido}',                     [PedidoController::class, 'show']);
     Route::post('pedidos/{pedido}/confirmar-pagamento',[PedidoController::class, 'confirmarPagamento']);
     Route::post('pedidos/{pedido}/cancelar',           [PedidoController::class, 'cancelarPeloCliente']);
+    Route::delete('pedidos/{pedido}',                  [PedidoController::class, 'destroy']);
 
     // Avisos de Reposição de Estoque (cliente autenticado)
     Route::get('avisos-estoque',                 [\App\Http\Controllers\AvisoEstoqueController::class, 'index']);
