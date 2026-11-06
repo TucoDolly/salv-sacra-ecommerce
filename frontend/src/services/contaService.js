@@ -16,3 +16,4 @@ export const listarFavoritos = () => api.get('/conta/favoritos');
 export const toggleFavoritoApi = (produtoId) => api.post(`/conta/favoritos/${produtoId}`);
 export const sincronizarFavoritosApi = (produtoIds) => api.post('/conta/favoritos/sincronizar', { produto_ids: produtoIds });
 export const excluirConta = () => api.delete('/conta/excluir');
+export const cancelarPedido = (pedidoId) => api.post(`/pedidos/${pedidoId}/cancelar`);

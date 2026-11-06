@@ -36,6 +36,27 @@ class PedidoController extends Controller
     }
 
     /**
+     * Validação matemática do CPF pelo algoritmo dos dígitos verificadores (Módulo 11).
+     */
+    private function validarCpf(string $cpf): bool
+    {
+        $d = preg_replace('/\D/', '', $cpf);
+        if (strlen($d) !== 11 || preg_match('/^(\d)\1{10}$/', $d)) {
+            return false;
+        }
+        for ($t = 9; $t < 11; $t++) {
+            for ($dSum = 0, $c = 0; $c < $t; $c++) {
+                $dSum += (int) $d[$c] * (($t + 1) - $c);
+            }
+            $dSum = ((10 * $dSum) % 11) % 10;
+            if ((int) $d[$c] !== $dSum) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Formata um campo TLV (Tag-Length-Value) do padrão BRCode EMVCo.
      */
     private function emvField(string $id, string $valor): string
@@ -416,7 +437,7 @@ class PedidoController extends Controller
         // Salva/atualiza o CPF no cadastro do cliente para futuras compras e envios
         if (! empty($validated['cpf'])) {
             $cpfLimpo = preg_replace('/\D/', '', $validated['cpf']);
-            if (strlen($cpfLimpo) === 11) {
+            if ($this->validarCpf($cpfLimpo)) {
                 try {
                     $user->update(['cpf' => $cpfLimpo]);
                 } catch (\Throwable $e) {
@@ -632,6 +653,142 @@ class PedidoController extends Controller
     }
 
     /**
+     * Restaura a quantidade dos itens de um pedido de volta ao estoque de cada variação.
+     */
+    private function restaurarEstoquePedido(Pedido $pedido): void
+    {
+        $pedido->loadMissing('itens.variacao');
+        foreach ($pedido->itens as $item) {
+            if ($item->variacao) {
+                $item->variacao->increment('estoque', (int) $item->quantidade);
+            }
+        }
+    }
+
+    /**
+     * Solicita o estorno integral (refund) do pagamento no Mercado Pago quando o pedido já estava Pago.
+     */
+    private function estornarPagamentoMercadoPago(Pedido $pedido): array
+    {
+        if (empty($pedido->pagamento_id)) {
+            return ['sucesso' => false, 'mensagem' => 'Pedido sem ID de pagamento externo.'];
+        }
+
+        // Em modo simulado (prefixo SIM-), confirma estorno simulado
+        if (str_starts_with((string) $pedido->pagamento_id, 'SIM-')) {
+            return [
+                'sucesso'  => true,
+                'mensagem' => 'Estorno processado automaticamente (modo simulação).',
+            ];
+        }
+
+        $mpToken = Configuracao::where('chave', 'mercadopago_access_token')->value('valor')
+            ?: env('MERCADOPAGO_ACCESS_TOKEN');
+
+        if (empty($mpToken)) {
+            return ['sucesso' => false, 'mensagem' => 'Token do Mercado Pago não configurado para estorno automático.'];
+        }
+
+        try {
+            $resp = Http::withoutVerifying()
+                ->withHeaders([
+                    'Authorization'     => 'Bearer ' . trim($mpToken),
+                    'Content-Type'      => 'application/json',
+                    'X-Idempotency-Key' => 'refund-pedido-' . $pedido->id . '-' . uniqid(),
+                ])
+                ->timeout(15)
+                ->post("https://api.mercadopago.com/v1/payments/{$pedido->pagamento_id}/refunds");
+
+            if ($resp->successful()) {
+                return [
+                    'sucesso'  => true,
+                    'mensagem' => $pedido->metodo_pagamento === 'pix'
+                        ? 'O estorno via PIX foi realizado automaticamente e o valor já foi devolvido para a sua conta bancária.'
+                        : 'O estorno no cartão foi processado automaticamente junto à operadora.',
+                ];
+            }
+
+            // Se o pagamento no Mercado Pago ainda estava pending (ex: PIX não pago), cancela a cobrança
+            if ($pedido->status === 'Pendente') {
+                Http::withoutVerifying()
+                    ->withHeaders([
+                        'Authorization' => 'Bearer ' . trim($mpToken),
+                        'Content-Type'  => 'application/json',
+                    ])
+                    ->timeout(10)
+                    ->put("https://api.mercadopago.com/v1/payments/{$pedido->pagamento_id}", [
+                        'status' => 'cancelled',
+                    ]);
+            }
+
+            Log::warning("Aviso ao estornar pagamento MP #{$pedido->pagamento_id}: " . $resp->body());
+            return [
+                'sucesso'  => false,
+                'mensagem' => 'O pedido foi cancelado e o reembolso foi encaminhado para processamento financeiro.',
+            ];
+        } catch (\Throwable $e) {
+            Log::error("Erro ao estornar pagamento MP #{$pedido->pagamento_id}: " . $e->getMessage());
+            return [
+                'sucesso'  => false,
+                'mensagem' => 'O pedido foi cancelado e o reembolso será processado pela equipe financeira.',
+            ];
+        }
+    }
+
+    /**
+     * Permite ao próprio cliente cancelar um pedido enquanto estiver Pendente, Pago ou Em separação.
+     */
+    public function cancelarPeloCliente(Request $request, Pedido $pedido): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($pedido->user_id === $user->id, 403, 'Você não tem permissão para cancelar este pedido.');
+
+        $statusPermitidos = ['Pendente', 'Pago', 'Em separação', 'Em montagem'];
+        if (! in_array($pedido->status, $statusPermitidos, true)) {
+            return response()->json([
+                'message' => "Não é possível cancelar diretamente um pedido com status '{$pedido->status}'. Caso o pacote já tenha sido enviado, utilize a opção de Solicitar Devolução.",
+            ], 422);
+        }
+
+        $estavaPago = in_array($pedido->status, ['Pago', 'Em separação', 'Em montagem'], true);
+        $infoEstorno = null;
+
+        DB::transaction(function () use ($pedido, $estavaPago, &$infoEstorno) {
+            // 1. Devolve as unidades ao estoque das variações
+            $this->restaurarEstoquePedido($pedido);
+
+            // 2. Se já estava pago (ou tinha cobrança gerada), aciona o estorno/cancelamento no Mercado Pago
+            if ($estavaPago || ! empty($pedido->pagamento_id)) {
+                $infoEstorno = $this->estornarPagamentoMercadoPago($pedido);
+            }
+
+            // 3. Atualiza status para Cancelado
+            $pedido->update(['status' => 'Cancelado']);
+        });
+
+        // 4. Envia e-mail de confirmação de cancelamento para o cliente
+        try {
+            $destinatario = $pedido->email_contato ?: $pedido->user?->email;
+            if ($destinatario) {
+                \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\StatusPedidoMail($pedido->load('user')));
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de cancelamento do pedido: ' . $e->getMessage());
+        }
+
+        $msgRetorno = "Pedido #{$pedido->id} cancelado com sucesso.";
+        if ($estavaPago && ! empty($infoEstorno['mensagem'])) {
+            $msgRetorno .= ' ' . $infoEstorno['mensagem'];
+        }
+
+        return response()->json([
+            'mensagem' => $msgRetorno,
+            'estorno'  => $infoEstorno,
+            'pedido'   => $pedido->fresh()->load(['itens.variacao.produto', 'user']),
+        ]);
+    }
+
+    /**
      * Webhook público para notificações automáticas do Mercado Pago.
      */
     public function webhookMercadoPago(Request $request): JsonResponse
@@ -706,6 +863,14 @@ class PedidoController extends Controller
         $codigoRastreio = array_key_exists('codigo_rastreio', $validated)
             ? trim((string) $validated['codigo_rastreio'])
             : $pedido->codigo_rastreio;
+
+        // Se o Admin alterar o status para Cancelado (e antes não estava Cancelado), devolve o estoque e estorna se já estava pago
+        if ($novoStatus === 'Cancelado' && $statusAnterior !== 'Cancelado') {
+            $this->restaurarEstoquePedido($pedido);
+            if (in_array($statusAnterior, ['Pago', 'Em separação', 'Em montagem', 'Enviado', 'Em transporte', 'Entregue'], true) || ! empty($pedido->pagamento_id)) {
+                $this->estornarPagamentoMercadoPago($pedido);
+            }
+        }
 
         $pedido->update([
             'status'          => $novoStatus,

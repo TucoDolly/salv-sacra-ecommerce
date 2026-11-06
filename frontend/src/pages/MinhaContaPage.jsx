@@ -7,6 +7,7 @@ import {
   alterarSenha,
   atualizarEndereco,
   atualizarPerfil,
+  cancelarPedido,
   criarCartao,
   criarEndereco,
   excluirConta,
@@ -145,14 +146,42 @@ function Resumo({ user, pedidos, enderecos, cartoes, totalFavoritos, resumo, irP
 }
 
 /* ───────────────────────── Pedidos ───────────────────────── */
-function Pedidos({ pedidos, pedidoSelecionadoInicial }) {
+function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
   const [aberto, setAberto] = useState(pedidoSelecionadoInicial ? Number(pedidoSelecionadoInicial) : null);
+  const [pedidoParaCancelar, setPedidoParaCancelar] = useState(null);
+  const [cancelando, setCancelando] = useState(false);
+  const [msgCancelamento, setMsgCancelamento] = useState({ tipo: '', texto: '', pedidoId: null });
 
   useEffect(() => {
     if (pedidoSelecionadoInicial) {
       setAberto(Number(pedidoSelecionadoInicial));
     }
   }, [pedidoSelecionadoInicial]);
+
+  const confirmarCancelamento = async () => {
+    if (!pedidoParaCancelar) return;
+    setCancelando(true);
+    setMsgCancelamento({ tipo: '', texto: '', pedidoId: null });
+    try {
+      const { data } = await cancelarPedido(pedidoParaCancelar.id);
+      setMsgCancelamento({
+        tipo: 'ok',
+        texto: data.mensagem || `Pedido #${pedidoParaCancelar.id} cancelado com sucesso!`,
+        pedidoId: pedidoParaCancelar.id,
+      });
+      setPedidoParaCancelar(null);
+      if (recarregar) recarregar();
+    } catch (err) {
+      setMsgCancelamento({
+        tipo: 'erro',
+        texto: err.response?.data?.message || primeiroErro(err),
+        pedidoId: pedidoParaCancelar.id,
+      });
+      setPedidoParaCancelar(null);
+    } finally {
+      setCancelando(false);
+    }
+  };
 
   if (!pedidos.length) {
     return (
@@ -168,8 +197,36 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial }) {
   return (
     <>
       <h2 className="conta-section-title">Meus pedidos</h2>
+
+      {msgCancelamento.texto && (
+        <div
+          style={{
+            marginBottom: '16px',
+            padding: '12px 16px',
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: 500,
+            background: msgCancelamento.tipo === 'ok' ? '#f0fdf4' : '#fef2f2',
+            border: `1px solid ${msgCancelamento.tipo === 'ok' ? '#bbf7d0' : '#fecaca'}`,
+            color: msgCancelamento.tipo === 'ok' ? '#166534' : '#991b1b',
+          }}
+        >
+          {msgCancelamento.texto}
+        </div>
+      )}
+
       <div className="conta-lista">
-        {pedidos.map((p) => (
+        {pedidos.map((p) => {
+          const podeCancelar = ['Pendente', 'Pago', 'Em separação', 'Em montagem'].includes(p.status);
+          const jaEnviadoOuEntregue = ['Enviado', 'Em transporte', 'Entregue'].includes(p.status);
+          const itensResumo = (p.itens || [])
+            .map((i) => `${i.quantidade}x ${i.variacao?.produto?.nome ?? 'Produto'} (${i.variacao?.tamanho || ''}/${i.variacao?.cor || ''})`)
+            .join(', ');
+          const linkWhatsappSuporte = `https://wa.me/5548996205153?text=${encodeURIComponent(
+            `Olá! Gostaria de solicitar a devolução referente ao meu Pedido #${p.id} (${itensResumo}).`
+          )}`;
+
+          return (
           <div key={p.id} className="conta-box">
             <button
               type="button"
@@ -198,7 +255,11 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial }) {
                     <div className="conta-previsao-left">
                       <span className="conta-previsao-icon">📦</span>
                       <div className="conta-previsao-text">
-                        <strong>Previsão de entrega: {calcularPrevisaoEntrega(p.data_pedido, p.tipo_frete)}</strong>
+                        <strong>
+                          {p.status === 'Cancelado'
+                            ? 'Pedido Cancelado'
+                            : `Previsão de entrega: ${calcularPrevisaoEntrega(p.data_pedido, p.tipo_frete)}`}
+                        </strong>
                         <span>Modalidade de envio: {p.tipo_frete || 'Transportadora Padrão'}</span>
                       </div>
                     </div>
@@ -222,14 +283,14 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial }) {
                         </a>
                       ) : (
                         <span className="conta-codigo-rastreio" title="Código de rastreamento">
-                          Rastreio: Aguardando postagem
+                          {p.status === 'Cancelado' ? 'Envio cancelado' : 'Rastreio: Aguardando postagem'}
                         </span>
                       )}
                     </div>
                   </div>
 
                   {/* Stepper / Linha do Tempo */}
-                  {(() => {
+                  {p.status !== 'Cancelado' && (() => {
                     const etapaAtual = obterEtapaRastreio(p.status);
                     const steps = [
                       { num: 1, label: 'Pendente', sub: dataBR(p.data_pedido) },
@@ -299,11 +360,183 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial }) {
                     {p.complemento ? ` - ${p.complemento}` : ''} — {p.bairro}, {p.cidade}/{p.estado} · CEP {p.cep}
                   </p>
                 </div>
+
+                {/* ── Ações do Pedido: Cancelamento ou Troca/Devolução ── */}
+                {podeCancelar && (
+                  <div
+                    style={{
+                      marginTop: '18px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid #eee',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                    }}
+                  >
+                    <span style={{ fontSize: '13px', color: '#666' }}>
+                      {p.status === 'Pendente'
+                        ? 'Deseja desistir desta compra antes de efetuar o pagamento?'
+                        : 'Seu pedido ainda não foi despachado. Caso deseje cancelar, o estorno é feito automaticamente.'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPedidoParaCancelar(p)}
+                      style={{
+                        background: '#fff',
+                        color: '#dc2626',
+                        border: '1px solid #fca5a5',
+                        borderRadius: '6px',
+                        padding: '8px 16px',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.background = '#fef2f2';
+                        e.currentTarget.style.borderColor = '#dc2626';
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.background = '#fff';
+                        e.currentTarget.style.borderColor = '#fca5a5';
+                      }}
+                    >
+                      ✕ Cancelar Pedido
+                    </button>
+                  </div>
+                )}
+
+                {jaEnviadoOuEntregue && (
+                  <div
+                    style={{
+                      marginTop: '18px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid #eee',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                    }}
+                  >
+                    <span style={{ fontSize: '13px', color: '#666', maxWidth: '540px', lineHeight: 1.45 }}>
+                      {p.status === 'Entregue'
+                        ? 'Precisa devolver o produto ou comprar outro tamanho? Solicite a devolução (em até 7 dias corridos após o recebimento) para receber o reembolso integral e realizar uma nova compra.'
+                        : 'Como o pacote já foi despachado aos Correios, para cancelar você pode recusar o recebimento na entrega ou solicitar a devolução assim que receber.'}
+                    </span>
+                    <a
+                      href={linkWhatsappSuporte}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        background: '#111',
+                        color: '#fff',
+                        textDecoration: 'none',
+                        borderRadius: '6px',
+                        padding: '8px 16px',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      ↩ Solicitar Devolução
+                    </a>
+                  </div>
+                )}
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
+
+      {/* Modal de Confirmação de Cancelamento de Pedido */}
+      {pedidoParaCancelar && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1200,
+            padding: '20px',
+          }}
+          onClick={() => !cancelando && setPedidoParaCancelar(null)}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '12px',
+              padding: '28px',
+              maxWidth: '460px',
+              width: '100%',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.25)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#b91c1c', margin: '0 0 12px 0' }}>
+              Cancelar Pedido #{pedidoParaCancelar.id}?
+            </h3>
+            <p style={{ fontSize: '14px', color: '#444', lineHeight: 1.6, margin: '0 0 16px 0' }}>
+              Tem certeza de que deseja cancelar o <strong>Pedido #{pedidoParaCancelar.id}</strong> no valor de{' '}
+              <strong>{moeda(pedidoParaCancelar.valor_total)}</strong>?
+            </p>
+            {['Pago', 'Em separação', 'Em montagem'].includes(pedidoParaCancelar.status) && (
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  padding: '12px 14px',
+                  fontSize: '13px',
+                  color: '#334155',
+                  lineHeight: 1.5,
+                  marginBottom: '20px',
+                }}
+              >
+                💳 <strong>Estorno Automático:</strong> Como o pagamento já foi aprovado via{' '}
+                <strong>
+                  {pedidoParaCancelar.metodo_pagamento === 'pix' ? 'PIX' : 'Cartão'}
+                </strong>
+                , o reembolso integral será processado automaticamente pelo Mercado Pago assim que você confirmar.
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                className="conta-btn-sec"
+                onClick={() => setPedidoParaCancelar(null)}
+                disabled={cancelando}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarCancelamento}
+                disabled={cancelando}
+                style={{
+                  background: '#dc2626',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '10px 18px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: cancelando ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {cancelando ? 'Cancelando e estornando...' : 'Sim, cancelar pedido'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -1131,7 +1364,16 @@ export default function MinhaContaPage() {
                 carregando={carregandoDados}
               />
             )}
-            {aba === 'pedidos' && <Pedidos pedidos={pedidos} pedidoSelecionadoInicial={urlPedido} />}
+            {aba === 'pedidos' && (
+              <Pedidos
+                pedidos={pedidos}
+                pedidoSelecionadoInicial={urlPedido}
+                recarregar={() => {
+                  carregarPedidos();
+                  carregarResumo();
+                }}
+              />
+            )}
             {aba === 'favoritos' && (
               <Favoritos
                 favoritos={favoritosProdutos}

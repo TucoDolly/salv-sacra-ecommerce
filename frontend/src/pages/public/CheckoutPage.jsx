@@ -159,6 +159,44 @@ export default function CheckoutPage() {
     return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9, 11)}`;
   };
 
+  const formatarTelefoneInput = (val) => {
+    const d = (val || '').replace(/\D/g, '').slice(0, 11);
+    if (!d) return '';
+    if (d.length <= 2) return `(${d}`;
+    if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+    if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+    return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7, 11)}`;
+  };
+
+  // Validação matemática do CPF (Dígitos verificadores - Módulo 11 oficial da Receita Federal)
+  const validarCpfAlgoritmo = (cpfStr) => {
+    const d = (cpfStr || '').replace(/\D/g, '');
+    if (d.length !== 11) return false;
+    if (/^(\d)\1{10}$/.test(d)) return false; // Bloqueia 000.000.000-00, 111.111.111-11, etc.
+
+    let soma = 0;
+    for (let i = 0; i < 9; i++) soma += parseInt(d.charAt(i), 10) * (10 - i);
+    let resto = 11 - (soma % 11);
+    let dig1 = resto === 10 || resto === 11 ? 0 : resto;
+    if (dig1 !== parseInt(d.charAt(9), 10)) return false;
+
+    soma = 0;
+    for (let i = 0; i < 10; i++) soma += parseInt(d.charAt(i), 10) * (11 - i);
+    resto = 11 - (soma % 11);
+    let dig2 = resto === 10 || resto === 11 ? 0 : resto;
+    return dig2 === parseInt(d.charAt(10), 10);
+  };
+
+  // Validação de formato e DDD de telefone nacional (11 a 99)
+  const validarTelefoneFormato = (telStr) => {
+    const d = (telStr || '').replace(/\D/g, '');
+    if (d.length < 10 || d.length > 11) return false;
+    const ddd = parseInt(d.slice(0, 2), 10);
+    if (ddd < 11 || ddd > 99) return false;
+    if (d.length === 11 && d.charAt(2) !== '9') return false; // Celular de 11 dígitos começa com 9
+    return true;
+  };
+
   const [loading, setLoading] = useState(false);
   const [pedidoConcluido, setPedidoConcluido] = useState(null);
   const [copiadoPix, setCopiadoPix] = useState(false);
@@ -264,7 +302,7 @@ export default function CheckoutPage() {
     if (user) {
       if (user.email) setEmail(user.email);
       if (user.name) setNome(user.name);
-      if (user.telefone) setTelefone(user.telefone);
+      if (user.telefone) setTelefone(formatarTelefoneInput(user.telefone));
       if (user.cpf) {
         const cpfFmt = formatarCpfInput(user.cpf);
         setCpf(cpfFmt);
@@ -393,11 +431,20 @@ export default function CheckoutPage() {
       });
       return;
     }
-    const cpfLimpo = (cpf || '').replace(/\D/g, '');
-    if (cpfLimpo.length !== 11) {
+    const telLimpo = (telefone || '').replace(/\D/g, '');
+    if (!validarTelefoneFormato(telLimpo)) {
       abrirModalAviso({
-        titulo: 'CPF Obrigatório',
-        mensagem: 'Por favor, informe um CPF válido com 11 dígitos. O CPF é uma exigência dos Correios para a emissão da etiqueta de envio.',
+        titulo: 'Telefone Inválido',
+        mensagem: 'Por favor, informe um telefone ou WhatsApp válido com DDD (ex: (48) 99123-4567).',
+        tipo: 'alerta',
+      });
+      return;
+    }
+    const cpfLimpo = (cpf || '').replace(/\D/g, '');
+    if (!validarCpfAlgoritmo(cpfLimpo)) {
+      abrirModalAviso({
+        titulo: 'CPF Inválido',
+        mensagem: 'O CPF informado é inválido. Por favor, confira os números digitados para prosseguir com o pedido.',
         tipo: 'alerta',
       });
       return;
@@ -906,14 +953,15 @@ export default function CheckoutPage() {
                       <input
                         type="text"
                         required
+                        maxLength="15"
                         value={telefone}
-                        onChange={(e) => setTelefone(e.target.value)}
+                        onChange={(e) => setTelefone(formatarTelefoneInput(e.target.value))}
                         className="checkout-input"
-                        placeholder="Ex: (11) 98765-4321"
+                        placeholder="Ex: (48) 99123-4567"
                       />
                     </div>
                     <div className="checkout-input-group">
-                      <label>CPF do Destinatário (Exigido pelos Correios) *</label>
+                      <label>Seu CPF *</label>
                       <input
                         type="text"
                         required
@@ -927,7 +975,7 @@ export default function CheckoutPage() {
                           }
                         }}
                         className="checkout-input"
-                        placeholder="000.000.000-00"
+                        placeholder="Ex: 123.456.789-00"
                       />
                     </div>
                   </div>
