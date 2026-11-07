@@ -119,6 +119,7 @@ class PedidoController extends Controller
                     'transaction_amount' => round((float) $pedido->valor_total, 2),
                     'description'        => "Pedido #{$pedido->id} - Salv Sacra",
                     'payment_method_id'  => 'pix',
+                    'date_of_expiration' => now()->addMinutes(30)->format('Y-m-d\TH:i:s.000P'),
                     'external_reference' => (string) $pedido->id,
                     'payer'              => [
                         'email'      => $pedido->email_contato ?: $user->email,
@@ -434,6 +435,22 @@ class PedidoController extends Controller
         $user = $request->user();
         $userId = $user->id;
 
+        // 1. Cancela automaticamente pedidos pendentes que já expiraram (mais de 30 minutos)
+        $this->cancelarPedidosPendentesExpirados($userId);
+
+        // 2. Verifica se o cliente ainda possui um pedido pendente em aberto (dentro do prazo de 30 min)
+        $pedidoPendenteAtivo = Pedido::where('user_id', $userId)
+            ->where('status', 'Pendente')
+            ->latest('id')
+            ->first();
+
+        if ($pedidoPendenteAtivo) {
+            return response()->json([
+                'message'            => "Você já possui um pedido pendente em aberto (Pedido #{$pedidoPendenteAtivo->id}). Conclua o pagamento ou cancele-o na aba 'Meus Pedidos' antes de iniciar outra compra.",
+                'pedido_pendente_id' => $pedidoPendenteAtivo->id,
+            ], 422);
+        }
+
         // Salva/atualiza o CPF no cadastro do cliente para futuras compras e envios
         if (! empty($validated['cpf'])) {
             $cpfLimpo = preg_replace('/\D/', '', $validated['cpf']);
@@ -608,8 +625,7 @@ class PedidoController extends Controller
             \Log::error('Erro ao enviar e-mail de pedido criado: ' . $e->getMessage());
         }
 
-        // Dispara e-mail de notificação de novo pedido para o administrador APENAS se já estiver Pago
-        // (Se for PIX Pendente, o e-mail só será enviado após a confirmação do pagamento)
+        // Dispara e-mail de notificação de novo pedido para o administrador apenas quando o pedido estiver Pago
         if ($pedido->status === 'Pago') {
             try {
                 \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovoPedidoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
@@ -626,6 +642,85 @@ class PedidoController extends Controller
     }
 
     /**
+     * Cancela o pagamento pendente no Mercado Pago (invalida imediatamente o QR Code PIX e o link de pagamento).
+     */
+    private function cancelarPagamentoMercadoPago(Pedido $pedido): void
+    {
+        if (empty($pedido->pagamento_id) || str_starts_with((string) $pedido->pagamento_id, 'SIM-')) {
+            return;
+        }
+
+        $mpToken = Configuracao::where('chave', 'mercadopago_access_token')->value('valor')
+            ?: env('MERCADOPAGO_ACCESS_TOKEN');
+
+        if (empty($mpToken)) {
+            return;
+        }
+
+        try {
+            Http::withoutVerifying()
+                ->withHeaders([
+                    'Authorization' => 'Bearer ' . trim($mpToken),
+                    'Content-Type'  => 'application/json',
+                ])
+                ->timeout(3)
+                ->put("https://api.mercadopago.com/v1/payments/{$pedido->pagamento_id}", [
+                    'status' => 'cancelled',
+                ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("Erro ao cancelar cobrança no Mercado Pago #{$pedido->pagamento_id}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Cancela automaticamente pedidos com status 'Pendente' que já ultrapassaram 30 minutos
+     * desde a geração (tempo oficial de expiração do QR Code PIX), restaurando o estoque de forma instantânea.
+     */
+    public function cancelarPedidosPendentesExpirados(?int $userId = null): void
+    {
+        $limite = now()->subMinutes(30);
+
+        $query = Pedido::where('status', 'Pendente')
+            ->where(function ($q) use ($limite) {
+                $q->where('data_pedido', '<=', $limite)
+                  ->orWhere('created_at', '<=', $limite);
+            });
+
+        if ($userId) {
+            $query->where('user_id', $userId);
+        }
+
+        $expirados = $query->with('itens.variacao')->get();
+
+        foreach ($expirados as $pedido) {
+            try {
+                // Se tiver cobrança real no Mercado Pago, verifica antes se não foi paga nos últimos instantes
+                if (! empty($pedido->pagamento_id) && ! str_starts_with((string) $pedido->pagamento_id, 'SIM-')) {
+                    $mpToken = Configuracao::where('chave', 'mercadopago_access_token')->value('valor')
+                        ?: env('MERCADOPAGO_ACCESS_TOKEN');
+                    if (! empty($mpToken)) {
+                        try {
+                            $resp = Http::withoutVerifying()
+                                ->withHeaders(['Authorization' => 'Bearer ' . trim($mpToken)])
+                                ->timeout(2)->get("https://api.mercadopago.com/v1/payments/{$pedido->pagamento_id}");
+                            if ($resp->successful() && $resp->json('status') === 'approved') {
+                                $pedido->update(['status' => 'Pago']);
+                                continue;
+                            }
+                        } catch (\Throwable $e) {}
+                    }
+                }
+
+                $this->restaurarEstoquePedido($pedido);
+                $pedido->update(['status' => 'Cancelado']);
+                $this->cancelarPagamentoMercadoPago($pedido);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("Erro ao expirar pedido pendente #{$pedido->id}: " . $e->getMessage());
+            }
+        }
+    }
+
+    /**
      * Consultar pedido por ID (e sincroniza status na API do Mercado Pago caso esteja Pendente).
      */
     public function show(Request $request, Pedido $pedido): JsonResponse
@@ -633,7 +728,8 @@ class PedidoController extends Controller
         $user = $request->user();
         abort_unless($user->papel === 'admin' || $pedido->user_id === $user->id, 403, 'Acesso negado.');
 
-        if ($pedido->status === 'Pendente' && ! empty($pedido->pagamento_id)) {
+        // Sincroniza com o Mercado Pago caso haja pagamento_id real
+        if (! empty($pedido->pagamento_id) && ! str_starts_with((string) $pedido->pagamento_id, 'SIM-')) {
             $mpToken = Configuracao::where('chave', 'mercadopago_access_token')->value('valor')
                 ?: env('MERCADOPAGO_ACCESS_TOKEN');
 
@@ -642,23 +738,36 @@ class PedidoController extends Controller
                     $resp = Http::withoutVerifying()
                         ->withHeaders([
                             'Authorization' => 'Bearer ' . trim($mpToken),
-                        ])->timeout(8)->get("https://api.mercadopago.com/v1/payments/{$pedido->pagamento_id}");
+                        ])->timeout(2)->get("https://api.mercadopago.com/v1/payments/{$pedido->pagamento_id}");
 
                     if ($resp->successful() && ($resp->json('status') === 'approved')) {
-                        $pedido->update(['status' => 'Pago']);
-                        try {
-                            $destinatario = $pedido->email_contato ?: $pedido->user?->email;
-                            if ($destinatario) {
-                                \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\StatusPedidoMail($pedido->load('user')));
+                        if ($pedido->status !== 'Pago') {
+                            // Se estava cancelado, re-decrementa o estoque pois o pagamento foi efetuado
+                            if ($pedido->status === 'Cancelado') {
+                                foreach ($pedido->itens as $item) {
+                                    if ($item->variacao) {
+                                        $item->variacao->decrement('estoque', (int) $item->quantidade);
+                                    }
+                                }
                             }
-                            \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovoPedidoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
-                        } catch (\Throwable $e) {
-                            \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de aprovação MP: ' . $e->getMessage());
+                            $pedido->update(['status' => 'Pago']);
                         }
+                        return response()->json($pedido->fresh()->load(['itens.variacao.produto', 'user']));
                     }
                 } catch (\Throwable $e) {
                     // Silencioso no polling
                 }
+            }
+        }
+
+        // Se o pedido for Pendente e já passou de 30 minutos (e não foi pago), cancela e invalida no MP
+        if ($pedido->status === 'Pendente') {
+            $dataBase = $pedido->data_pedido ?? $pedido->created_at;
+            if ($dataBase && \Carbon\Carbon::parse($dataBase)->addMinutes(30)->isPast()) {
+                $this->restaurarEstoquePedido($pedido);
+                $pedido->update(['status' => 'Cancelado']);
+                $this->cancelarPagamentoMercadoPago($pedido);
+                return response()->json($pedido->fresh()->load(['itens.variacao.produto', 'user']));
             }
         }
 
@@ -737,7 +846,7 @@ class PedidoController extends Controller
                     'Content-Type'      => 'application/json',
                     'X-Idempotency-Key' => 'refund-pedido-' . $pedido->id . '-' . uniqid(),
                 ])
-                ->timeout(15)
+                ->timeout(4)
                 ->post("https://api.mercadopago.com/v1/payments/{$pedido->pagamento_id}/refunds");
 
             if ($resp->successful()) {
@@ -747,19 +856,6 @@ class PedidoController extends Controller
                         ? 'O estorno via PIX foi realizado automaticamente e o valor já foi devolvido para a sua conta bancária.'
                         : 'O estorno no cartão foi processado automaticamente junto à operadora.',
                 ];
-            }
-
-            // Se o pagamento no Mercado Pago ainda estava pending (ex: PIX não pago), cancela a cobrança
-            if ($pedido->status === 'Pendente') {
-                Http::withoutVerifying()
-                    ->withHeaders([
-                        'Authorization' => 'Bearer ' . trim($mpToken),
-                        'Content-Type'  => 'application/json',
-                    ])
-                    ->timeout(10)
-                    ->put("https://api.mercadopago.com/v1/payments/{$pedido->pagamento_id}", [
-                        'status' => 'cancelled',
-                    ]);
             }
 
             Log::warning("Aviso ao estornar pagamento MP #{$pedido->pagamento_id}: " . $resp->body());
@@ -798,30 +894,34 @@ class PedidoController extends Controller
             // 1. Devolve as unidades ao estoque das variações
             $this->restaurarEstoquePedido($pedido);
 
-            // 2. Se já estava pago (ou tinha cobrança gerada), aciona o estorno/cancelamento no Mercado Pago
-            if ($estavaPago || ! empty($pedido->pagamento_id)) {
+            // 2. Se já estava PAGO, aciona o estorno no Mercado Pago
+            if ($estavaPago) {
                 $infoEstorno = $this->estornarPagamentoMercadoPago($pedido);
+            } else {
+                // Se NÃO estava pago, cancela a cobrança no Mercado Pago (invalida imediatamente o QR Code e link)
+                $this->cancelarPagamentoMercadoPago($pedido);
             }
 
             // 3. Atualiza status para Cancelado
             $pedido->update(['status' => 'Cancelado']);
         });
 
-        // 4. Envia e-mail de confirmação de cancelamento para o cliente
-        try {
-            $destinatario = $pedido->email_contato ?: $pedido->user?->email;
-            if ($destinatario) {
-                \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\StatusPedidoMail($pedido->load('user')));
+        // 4. Se o pedido estava PAGO, avisa cliente e admin por e-mail (em pedidos não pagos não trava a resposta com SMTP)
+        if ($estavaPago) {
+            try {
+                $destinatario = $pedido->email_contato ?: $pedido->user?->email;
+                if ($destinatario) {
+                    \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\StatusPedidoMail($pedido->load('user')));
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de cancelamento do pedido: ' . $e->getMessage());
             }
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de cancelamento do pedido: ' . $e->getMessage());
-        }
 
-        // 5. Envia e-mail de alerta de cancelamento para o administrador
-        try {
-            \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\PedidoCanceladoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de cancelamento para o admin: ' . $e->getMessage());
+            try {
+                \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\PedidoCanceladoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de cancelamento para o admin: ' . $e->getMessage());
+            }
         }
 
         $msgRetorno = "Pedido #{$pedido->id} cancelado com sucesso.";
@@ -847,7 +947,7 @@ class PedidoController extends Controller
             $mpToken = Configuracao::where('chave', 'mercadopago_access_token')->value('valor')
                 ?: env('MERCADOPAGO_ACCESS_TOKEN');
 
-            if ($pedido && $pedido->status === 'Pendente' && ! empty($mpToken)) {
+            if ($pedido && ! empty($mpToken)) {
                 try {
                     $resp = Http::withoutVerifying()
                         ->withHeaders([
@@ -855,15 +955,24 @@ class PedidoController extends Controller
                         ])->timeout(10)->get("https://api.mercadopago.com/v1/payments/{$paymentId}");
 
                     if ($resp->successful() && ($resp->json('status') === 'approved')) {
-                        $pedido->update(['status' => 'Pago']);
-                        $destinatario = $pedido->email_contato ?: $pedido->user?->email;
-                        if ($destinatario) {
-                            \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\StatusPedidoMail($pedido->load('user')));
-                        }
-                        try {
-                            \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovoPedidoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
-                        } catch (\Throwable $e) {
-                            \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de novo pedido pago para o admin via webhook: ' . $e->getMessage());
+                        if ($pedido->status !== 'Pago') {
+                            if ($pedido->status === 'Cancelado') {
+                                foreach ($pedido->itens as $item) {
+                                    if ($item->variacao) {
+                                        $item->variacao->decrement('estoque', (int) $item->quantidade);
+                                    }
+                                }
+                            }
+                            $pedido->update(['status' => 'Pago']);
+                            $destinatario = $pedido->email_contato ?: $pedido->user?->email;
+                            if ($destinatario) {
+                                \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\StatusPedidoMail($pedido->load('user')));
+                            }
+                            try {
+                                \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovoPedidoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
+                            } catch (\Throwable $e) {
+                                \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de novo pedido pago para o admin via webhook: ' . $e->getMessage());
+                            }
                         }
                     }
                 } catch (\Throwable $e) {
@@ -880,13 +989,12 @@ class PedidoController extends Controller
      */
     public function indexAdmin(Request $request): JsonResponse
     {
+        $this->cancelarPedidosPendentesExpirados();
+
         $query = Pedido::with(['user', 'itens.variacao.produto'])->latest('data_pedido');
 
         if ($request->filled('status')) {
             $query->where('status', $request->query('status'));
-        } else {
-            // Por padrão, não exibe pedidos que estão em geração de PIX pendente não pago
-            $query->where('status', '!=', 'Pendente');
         }
 
         if ($request->filled('busca')) {
@@ -910,7 +1018,7 @@ class PedidoController extends Controller
     public function updateStatus(Request $request, Pedido $pedido): JsonResponse
     {
         $validated = $request->validate([
-            'status'          => ['nullable', 'string', 'in:Pago,Em separação,Em montagem,Enviado,Em transporte,Entregue,Cancelado'],
+            'status'          => ['nullable', 'string', 'in:Pendente,Pago,Em separação,Em montagem,Enviado,Em transporte,Entregue,Cancelado'],
             'codigo_rastreio' => ['nullable', 'string', 'max:100'],
         ]);
 

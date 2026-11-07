@@ -112,9 +112,9 @@ export default function AdminLayout() {
       api.get('/admin/pedidos')
         .then(({ data }) => {
           const lista = Array.isArray(data) ? data : (data.data || []);
-          // Pedidos novos com pagamento confirmado aguardando início do processamento.
+          // Pedidos novos aguardando início do processamento (Pendente ou Pago).
           // Só deixam de contar como notificação quando forem movidos para 'Em separação' (ou posteriores).
-          const novos = lista.filter((p) => p.status === 'Pago').length;
+          const novos = lista.filter((p) => p.status === 'Pendente' || p.status === 'Pago').length;
           setNovosPedidosCount(novos);
         })
         .catch(() => {});

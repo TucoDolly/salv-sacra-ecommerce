@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useCart } from '../contexts/CartContext';
 import { useWishlist } from '../contexts/WishlistContext';
 import MainLayout from '../layouts/MainLayout';
+import api from '../services/api';
+import { imprimirReciboPedido } from '../utils/imprimirRecibo';
 import {
   alterarSenha,
   atualizarEndereco,
@@ -68,15 +71,16 @@ const calcularPrevisaoEntrega = (dataPedido, tipoFrete) => {
 };
 
 // Determina em qual etapa da linha do tempo o pedido se encontra
-// 1: Pago, 2: Em separação, 3: Enviado, 4: Em transporte, 5: Entregue
+// 1: Pendente, 2: Pago, 3: Em separação, 4: Enviado, 5: Em transporte, 6: Entregue
 const obterEtapaRastreio = (status) => {
   const s = (status || '').toLowerCase();
-  if (s === 'entregue') return 5;
-  if (s === 'em transporte') return 4;
-  if (s === 'enviado') return 3;
-  if (s === 'em separação' || s === 'em separacao' || s === 'em montagem') return 2;
-  if (s === 'pago') return 1;
-  return 0; // Pendente ou Cancelado
+  if (s === 'entregue') return 6;
+  if (s === 'em transporte') return 5;
+  if (s === 'enviado') return 4;
+  if (s === 'em separação' || s === 'em separacao' || s === 'em montagem') return 3;
+  if (s === 'pago') return 2;
+  if (s === 'pendente') return 1;
+  return 0; // Cancelado
 };
 
 const primeiroErro = (err) => {
@@ -147,19 +151,165 @@ function Resumo({ user, pedidos, enderecos, cartoes, totalFavoritos, resumo, irP
 }
 
 /* ───────────────────────── Pedidos ───────────────────────── */
-function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
-  const [aberto, setAberto] = useState(pedidoSelecionadoInicial ? Number(pedidoSelecionadoInicial) : null);
+function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar, carregando }) {
+  const pendenteMaisRecente = pedidos.find((p) => p.status === 'Pendente');
+  const [aberto, setAberto] = useState(
+    pedidoSelecionadoInicial ? Number(pedidoSelecionadoInicial) : (pendenteMaisRecente ? pendenteMaisRecente.id : null)
+  );
+  const [pixAbertoId, setPixAbertoId] = useState(pendenteMaisRecente ? pendenteMaisRecente.id : null);
+  const [copiadoId, setCopiadoId] = useState(null);
+  const [confirmandoId, setConfirmandoId] = useState(null);
+  const [agoraMs, setAgoraMs] = useState(() => Date.now());
   const [pedidoParaCancelar, setPedidoParaCancelar] = useState(null);
   const [cancelando, setCancelando] = useState(false);
   const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
   const [excluindoPedido, setExcluindoPedido] = useState(false);
   const [msgCancelamento, setMsgCancelamento] = useState({ tipo: '', texto: '', pedidoId: null });
+  const { addItem, openCart } = useCart();
+  const [produtoParaAvaliar, setProdutoParaAvaliar] = useState(null);
+  const [formAvaliacao, setFormAvaliacao] = useState({ nota: 5, comentario: '' });
+  const [enviandoAvaliacao, setEnviandoAvaliacao] = useState(false);
+  const [msgAvaliacao, setMsgAvaliacao] = useState({ tipo: '', texto: '' });
+  const [avaliadosIds, setAvaliadosIds] = useState([]);
+
+  const handleComprarNovamente = (pedido) => {
+    if (!pedido?.itens?.length) return;
+    pedido.itens.forEach((it) => {
+      const prod = it.variacao?.produto || it.produto;
+      const fotoProd =
+        (Array.isArray(prod?.imagens_vitrine) && prod.imagens_vitrine[0]) ||
+        (Array.isArray(prod?.imagens) && prod.imagens[0]) ||
+        prod?.imagem_url ||
+        '';
+
+      addItem({
+        produtoId: it.variacao?.produto_id || it.produto_id || prod?.id,
+        variacaoId: it.variacao_produto_id || it.variacao?.id,
+        nome: prod?.nome || 'Camiseta Salv Sacra',
+        preco: Number(it.preco_unitario || it.preco || prod?.preco_base || 0),
+        imagem: fotoProd,
+        modelo: prod?.modelo || 'Regular Fit',
+        tamanho: it.variacao?.tamanho || 'M',
+        cor: it.variacao?.cor || 'Padrão',
+        quantidade: Number(it.quantidade) || 1,
+      });
+    });
+    setMsgCancelamento({
+      tipo: 'ok',
+      texto: `Os itens do Pedido #${pedido.id} foram adicionados à sua sacola de compras!`,
+      pedidoId: pedido.id,
+    });
+    openCart();
+  };
+
+  const handleSubmeterAvaliacao = async (e) => {
+    e.preventDefault();
+    if (!produtoParaAvaliar) return;
+    if (!formAvaliacao.comentario || formAvaliacao.comentario.trim().length < 3) {
+      setMsgAvaliacao({ tipo: 'erro', texto: 'Por favor, escreva um comentário com pelo menos 3 caracteres.' });
+      return;
+    }
+    setEnviandoAvaliacao(true);
+    setMsgAvaliacao({ tipo: '', texto: '' });
+    try {
+      await api.post(`/produtos/${produtoParaAvaliar.id}/avaliacoes`, {
+        nota: Number(formAvaliacao.nota),
+        comentario: formAvaliacao.comentario.trim(),
+      });
+      setAvaliadosIds((prev) => [...prev, produtoParaAvaliar.id]);
+      setMsgAvaliacao({ tipo: 'ok', texto: 'Avaliação publicada com sucesso! Muito obrigado pelo feedback.' });
+      setTimeout(() => {
+        setProdutoParaAvaliar(null);
+        setMsgAvaliacao({ tipo: '', texto: '' });
+      }, 1800);
+    } catch (err) {
+      setMsgAvaliacao({
+        tipo: 'erro',
+        texto: err.response?.data?.message || 'Não foi possível enviar a avaliação. Tente novamente.',
+      });
+    } finally {
+      setEnviandoAvaliacao(false);
+    }
+  };
 
   useEffect(() => {
     if (pedidoSelecionadoInicial) {
       setAberto(Number(pedidoSelecionadoInicial));
+      setPixAbertoId(Number(pedidoSelecionadoInicial));
+    } else if (pendenteMaisRecente && aberto === null) {
+      setAberto(pendenteMaisRecente.id);
+      setPixAbertoId(pendenteMaisRecente.id);
     }
-  }, [pedidoSelecionadoInicial]);
+  }, [pedidoSelecionadoInicial, pendenteMaisRecente?.id]);
+
+  // Atualiza cronômetro regressivo de 30 minutos para pedidos Pendente e cancela automaticamente ao zerar
+  useEffect(() => {
+    const pendentes = pedidos.filter((p) => p.status === 'Pendente');
+    if (pendentes.length === 0) return;
+
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setAgoraMs(now);
+
+      pendentes.forEach((ped) => {
+        const dtBase = new Date(ped.created_at || ped.data_pedido).getTime();
+        const expiraEm = dtBase + 30 * 60 * 1000;
+        if (now >= expiraEm) {
+          cancelarPedido(ped.id)
+            .then(() => {
+              window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+              if (recarregar) recarregar();
+            })
+            .catch(() => {
+              if (recarregar) recarregar();
+            });
+        }
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [pedidos, recarregar]);
+
+  // Polling para detectar aprovação automática do PIX apenas para o pedido pendente que está sendo visualizado
+  useEffect(() => {
+    if (!pixAbertoId) return;
+    const pedidoAberto = pedidos.find((p) => p.id === pixAbertoId && p.status === 'Pendente');
+    if (!pedidoAberto) return;
+
+    const poll = setInterval(async () => {
+      try {
+        const { data } = await api.get(`/pedidos/${pedidoAberto.id}`);
+        if (data && data.status && data.status !== 'Pendente') {
+          window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+          if (recarregar) recarregar();
+        }
+      } catch {}
+    }, 6000);
+
+    return () => clearInterval(poll);
+  }, [pixAbertoId, pedidos, recarregar]);
+
+  const handleConfirmarPagamentoPedido = async (pedidoId) => {
+    setConfirmandoId(pedidoId);
+    try {
+      await api.post(`/pedidos/${pedidoId}/confirmar-pagamento`);
+      setMsgCancelamento({
+        tipo: 'ok',
+        texto: `Pagamento do Pedido #${pedidoId} confirmado com sucesso!`,
+        pedidoId,
+      });
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+      if (recarregar) recarregar();
+    } catch (err) {
+      setMsgCancelamento({
+        tipo: 'erro',
+        texto: err.response?.data?.message || 'Não foi possível confirmar o pagamento no momento.',
+        pedidoId,
+      });
+    } finally {
+      setConfirmandoId(null);
+    }
+  };
 
   const confirmarCancelamento = async () => {
     if (!pedidoParaCancelar) return;
@@ -173,6 +323,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
         pedidoId: pedidoParaCancelar.id,
       });
       setPedidoParaCancelar(null);
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
       if (recarregar) recarregar();
     } catch (err) {
       setMsgCancelamento({
@@ -215,9 +366,15 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
     return (
       <>
         <h2 className="conta-section-title">Meus pedidos</h2>
-        <p className="conta-vazio">
-          Você ainda não fez nenhum pedido. <Link to="/produtos">Ver produtos</Link>
-        </p>
+        {carregando ? (
+          <div style={{ padding: '24px 0', color: '#666', fontSize: '14px' }}>
+            Carregando seus pedidos...
+          </div>
+        ) : (
+          <p className="conta-vazio">
+            Você ainda não fez nenhum pedido. <Link to="/produtos">Ver produtos</Link>
+          </p>
+        )}
       </>
     );
   }
@@ -245,6 +402,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
 
       <div className="conta-lista">
         {pedidos.map((p) => {
+          const isPendente = p.status === 'Pendente';
           const podeCancelar = ['Pendente', 'Pago', 'Em separação', 'Em montagem'].includes(p.status);
           const jaEnviadoOuEntregue = ['Enviado', 'Em transporte', 'Entregue'].includes(p.status);
           const podeExcluir = ['Entregue', 'Cancelado'].includes(p.status);
@@ -255,17 +413,54 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
             `Olá! Gostaria de solicitar a devolução referente ao meu Pedido #${p.id} (${itensResumo}).`
           )}`;
 
+          // Cálculo de tempo restante (30 min) para pedidos Pendente
+          const dtBaseMs = new Date(p.created_at || p.data_pedido).getTime();
+          const segundosRestantes = isPendente
+            ? Math.max(0, Math.floor((dtBaseMs + 30 * 60 * 1000 - agoraMs) / 1000))
+            : 0;
+          const minFmt = String(Math.floor(segundosRestantes / 60)).padStart(2, '0');
+          const secFmt = String(segundosRestantes % 60).padStart(2, '0');
+
+          const codigoPixPedido =
+            p.pix_copia_e_cola ||
+            `00020126580014br.gov.bcb.pix0120salvsacra2@gmail.com5204000053039865405${Number(p.valor_total || 0).toFixed(2)}5802BR5910SALV SACRA6007TUBARAO62140510PEDIDO${String(p.id).padStart(4, '0')}6304B14F`;
+          const qrCodeUrlPedido =
+            p.pix_qr_code_base64 ||
+            `https://api.qrserver.com/v1/create-qr-code/?size=210x210&margin=10&data=${encodeURIComponent(codigoPixPedido)}`;
+
           return (
-          <div key={p.id} className="conta-box">
+          <div
+            key={p.id}
+            className="conta-box"
+            style={isPendente ? { border: '1.5px solid #f59e0b', background: '#fffdf7' } : undefined}
+          >
             <button
               type="button"
               className="conta-pedido-head"
               onClick={() => setAberto(aberto === p.id ? null : p.id)}
               aria-expanded={aberto === p.id}
             >
-              <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <strong>Pedido #{p.id}</strong>
                 <span className="conta-muted"> · {dataBR(p.data_pedido)}</span>
+                {isPendente && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      background: '#fef3c7',
+                      color: '#b45309',
+                      border: '1px solid #fde68a',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      padding: '2px 8px',
+                      borderRadius: '999px',
+                    }}
+                  >
+                    🔔 Pagamento Pendente ({minFmt}:{secFmt})
+                  </span>
+                )}
               </div>
               <div className="conta-pedido-right">
                 <span className={`conta-status ${STATUS_CLASS[p.status] ?? 'pendente'}`}>
@@ -278,6 +473,159 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
 
             {aberto === p.id && (
               <div className="conta-pedido-detalhe">
+                {/* ── Alerta e Área de Pagamento PIX para Pedido Pendente ── */}
+                {isPendente && (
+                  <div
+                    style={{
+                      background: '#fffbeb',
+                      border: '1px solid #fde68a',
+                      borderRadius: '10px',
+                      padding: '16px 18px',
+                      marginBottom: '18px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                      <div>
+                        <strong style={{ color: '#92400e', fontSize: '14px', display: 'block' }}>
+                          ⚠️ Aguardando Pagamento via PIX · Expira em {minFmt}:{secFmt}
+                        </strong>
+                        <span style={{ fontSize: '12px', color: '#78350f' }}>
+                          Se o pagamento não for realizado dentro do prazo de 30 minutos, o pedido será cancelado automaticamente.
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => setPixAbertoId(pixAbertoId === p.id ? null : p.id)}
+                          style={{
+                            background: '#111',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '9px 16px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {pixAbertoId === p.id ? 'Ocultar QR Code PIX' : '💠 Pagar Agora (Ver QR Code)'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPedidoParaCancelar(p)}
+                          style={{
+                            background: '#fff',
+                            color: '#dc2626',
+                            border: '1px solid #fca5a5',
+                            borderRadius: '6px',
+                            padding: '9px 14px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ✕ Cancelar Pedido
+                        </button>
+                      </div>
+                    </div>
+
+                    {pixAbertoId === p.id && (
+                      <div
+                        style={{
+                          marginTop: '16px',
+                          paddingTop: '16px',
+                          borderTop: '1px dashed #fcd34d',
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: '20px',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: '#fff',
+                          borderRadius: '8px',
+                          padding: '18px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            border: '2px solid #111',
+                            borderRadius: '10px',
+                            padding: '10px',
+                            background: '#fff',
+                          }}
+                        >
+                          <img
+                            src={qrCodeUrlPedido}
+                            alt={`QR Code PIX Pedido #${p.id}`}
+                            style={{ width: '175px', height: '175px', display: 'block' }}
+                          />
+                        </div>
+
+                        <div style={{ flex: '1 1 260px', maxWidth: '420px' }}>
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#92400e', textTransform: 'uppercase', marginBottom: '6px' }}>
+                            PIX Copia e Cola (Valor: {moeda(p.valor_total)})
+                          </div>
+                          <code
+                            style={{
+                              display: 'block',
+                              fontSize: '11px',
+                              background: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '6px',
+                              padding: '10px',
+                              wordBreak: 'break-all',
+                              color: '#334155',
+                              marginBottom: '10px',
+                            }}
+                          >
+                            {codigoPixPedido}
+                          </code>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(codigoPixPedido);
+                                setCopiadoId(p.id);
+                                setTimeout(() => setCopiadoId(null), 3000);
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: '10px 14px',
+                                background: copiadoId === p.id ? '#15803d' : '#111',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {copiadoId === p.id ? '✓ Código PIX Copiado!' : '📋 Copiar Código PIX'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={confirmandoId === p.id}
+                              onClick={() => handleConfirmarPagamentoPedido(p.id)}
+                              style={{
+                                flex: 1,
+                                padding: '10px 14px',
+                                background: '#f0fdf4',
+                                color: '#166534',
+                                border: '1.5px solid #86efac',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {confirmandoId === p.id ? 'Verificando...' : '✓ Já realizei o pagamento'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* ── Rastreamento e Linha do Tempo ── */}
                 <div className="conta-rastreio-container">
                   <div className="conta-previsao-banner">
@@ -318,22 +666,23 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
                     </div>
                   </div>
 
-                  {/* Stepper / Linha do Tempo (inicia em Pago) */}
+                  {/* Stepper / Linha do Tempo (6 etapas: Pendente -> Entregue) */}
                   {p.status !== 'Cancelado' && (() => {
                     const etapaAtual = obterEtapaRastreio(p.status);
                     const steps = [
-                      { num: 1, label: 'Pago', sub: etapaAtual >= 1 ? (p.status === 'Pendente' ? 'Aguardando' : 'Confirmado') : 'Aguardando' },
-                      { num: 2, label: 'Em separação', sub: etapaAtual > 2 ? 'Concluído' : (etapaAtual === 2 ? 'Separando peças' : 'Pendente') },
-                      { num: 3, label: 'Enviado', sub: etapaAtual >= 3 ? 'Postado na agência' : 'Pendente' },
-                      { num: 4, label: 'Em transporte', sub: etapaAtual >= 4 ? 'A caminho' : 'Pendente' },
-                      { num: 5, label: 'Entregue', sub: etapaAtual >= 5 ? 'Pacote recebido' : 'Pendente' },
+                      { num: 1, label: 'Pendente', sub: etapaAtual > 1 ? 'Concluído' : 'Aguardando pagamento' },
+                      { num: 2, label: 'Pago', sub: etapaAtual >= 2 ? 'Confirmado' : 'Aguardando' },
+                      { num: 3, label: 'Em separação', sub: etapaAtual > 3 ? 'Concluído' : (etapaAtual === 3 ? 'Separando peças' : 'Pendente') },
+                      { num: 4, label: 'Enviado', sub: etapaAtual >= 4 ? 'Postado na agência' : 'Pendente' },
+                      { num: 5, label: 'Em transporte', sub: etapaAtual >= 5 ? 'A caminho' : 'Pendente' },
+                      { num: 6, label: 'Entregue', sub: etapaAtual >= 6 ? 'Pacote recebido' : 'Pendente' },
                     ];
 
                     return (
                       <div className="conta-timeline">
                         {steps.map((st) => {
-                          const isCompleted = etapaAtual > st.num || (etapaAtual === 5 && st.num === 5);
-                          const isActive = etapaAtual === st.num && etapaAtual !== 5;
+                          const isCompleted = etapaAtual > st.num || (etapaAtual === 6 && st.num === 6);
+                          const isActive = etapaAtual === st.num && etapaAtual !== 6;
                           return (
                             <div
                               key={st.num}
@@ -354,23 +703,64 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
 
                 <table className="conta-tabela">
                   <thead>
-                    <tr><th>Produto</th><th>Qtd</th><th>Preço</th></tr>
+                    <tr>
+                      <th>Produto</th>
+                      <th style={{ textAlign: 'center' }}>Qtd</th>
+                      <th style={{ textAlign: 'right' }}>Preço</th>
+                      {p.status === 'Entregue' && <th style={{ textAlign: 'center' }}>Avaliação</th>}
+                    </tr>
                   </thead>
                   <tbody>
-                    {p.itens?.map((i) => (
-                      <tr key={i.id}>
-                        <td>
-                          {i.variacao?.produto?.nome ?? 'Produto'}
-                          {i.variacao && (
-                            <span className="conta-muted">
-                              {' '}— {i.variacao.tamanho}{i.variacao.cor ? ` / ${i.variacao.cor}` : ''}
-                            </span>
+                    {p.itens?.map((i) => {
+                      const prodObj = i.variacao?.produto || { id: i.produto_id, nome: i.produto?.nome || 'Camiseta' };
+                      const jaAvaliado = avaliadosIds.includes(prodObj.id);
+
+                      return (
+                        <tr key={i.id}>
+                          <td>
+                            <strong>{i.variacao?.produto?.nome ?? 'Produto'}</strong>
+                            {i.variacao && (
+                              <span className="conta-muted" style={{ display: 'block', fontSize: '12px' }}>
+                                Tamanho: {i.variacao.tamanho}{i.variacao.cor ? ` · Cor: ${i.variacao.cor}` : ''}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>{i.quantidade}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 600 }}>{moeda(i.preco_unitario)}</td>
+                          {p.status === 'Entregue' && (
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setProdutoParaAvaliar(prodObj);
+                                  setFormAvaliacao({ nota: 5, titulo: '', comentario: '' });
+                                  setMsgAvaliacao({ tipo: '', texto: '' });
+                                }}
+                                style={{
+                                  background: jaAvaliado ? '#f0fdf4' : '#fef3c7',
+                                  color: jaAvaliado ? '#166534' : '#92400e',
+                                  border: `1px solid ${jaAvaliado ? '#86efac' : '#fde68a'}`,
+                                  borderRadius: '6px',
+                                  padding: '5px 11px',
+                                  fontSize: '11.5px',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  transition: 'all 0.2s ease',
+                                }}
+                                onMouseOver={(e) => { e.currentTarget.style.opacity = '0.85'; }}
+                                onMouseOut={(e) => { e.currentTarget.style.opacity = '1'; }}
+                                title="Deixe sua avaliação com estrelas sobre este produto"
+                              >
+                                {jaAvaliado ? '✓ Avaliado' : '⭐ Avaliar'}
+                              </button>
+                            </td>
                           )}
-                        </td>
-                        <td>{i.quantidade}</td>
-                        <td>{moeda(i.preco_unitario)}</td>
-                      </tr>
-                    ))}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 <div className="conta-pedido-info">
@@ -387,6 +777,44 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
                     <strong>Entrega:</strong> {p.logradouro}, {p.numero}
                     {p.complemento ? ` - ${p.complemento}` : ''} — {p.bairro}, {p.cidade}/{p.estado} · CEP {p.cep}
                   </p>
+                </div>
+
+                {/* ── Ação de Comprar Novamente ── */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    flexWrap: 'wrap',
+                    gap: '10px',
+                    marginTop: '16px',
+                    paddingTop: '14px',
+                    borderTop: '1px solid #f1f5f9',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleComprarNovamente(p)}
+                    style={{
+                      background: '#0f172a',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '8px 18px',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s ease',
+                    }}
+                    onMouseOver={(e) => { e.currentTarget.style.background = '#1e293b'; }}
+                    onMouseOut={(e) => { e.currentTarget.style.background = '#0f172a'; }}
+                    title="Adicionar todos os itens deste pedido ao carrinho para comprar novamente"
+                  >
+                    🛒 Comprar Novamente
+                  </button>
                 </div>
 
                 {/* ── Ações do Pedido: Cancelamento ou Troca/Devolução ── */}
@@ -665,9 +1093,204 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar }) {
                   cursor: cancelando ? 'not-allowed' : 'pointer',
                 }}
               >
-                {cancelando ? 'Cancelando e estornando...' : 'Sim, cancelar pedido'}
+                {cancelando
+                  ? (pedidoParaCancelar.status === 'Pendente' ? 'Cancelando...' : 'Cancelando e estornando...')
+                  : 'Sim, cancelar pedido'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de Avaliação Rápida de Produto ── */}
+      {produtoParaAvaliar && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1300,
+            padding: '20px',
+          }}
+          onClick={() => !enviandoAvaliacao && setProdutoParaAvaliar(null)}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '14px',
+              padding: '28px 30px',
+              maxWidth: '480px',
+              width: '100%',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+              <div>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    color: '#d97706',
+                    textTransform: 'uppercase',
+                    letterSpacing: '1px',
+                    background: '#fef3c7',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                  }}
+                >
+                  Compra Verificada
+                </span>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '8px 0 2px 0' }}>
+                  Avaliar Produto
+                </h3>
+                <p style={{ fontSize: '13px', color: '#64748b' }}>
+                  {produtoParaAvaliar.nome}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProdutoParaAvaliar(null)}
+                disabled={enviandoAvaliacao}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  fontSize: '20px',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  padding: '4px',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {msgAvaliacao.texto && (
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  marginBottom: '16px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  background: msgAvaliacao.tipo === 'ok' ? '#f0fdf4' : '#fef2f2',
+                  color: msgAvaliacao.tipo === 'ok' ? '#166534' : '#991b1b',
+                  border: `1px solid ${msgAvaliacao.tipo === 'ok' ? '#bbf7d0' : '#fecaca'}`,
+                }}
+              >
+                {msgAvaliacao.texto}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmeterAvaliacao}>
+              {/* Seletor de Estrelas */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                  Sua nota *
+                </label>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  {[1, 2, 3, 4, 5].map((estrela) => (
+                    <button
+                      key={estrela}
+                      type="button"
+                      onClick={() => setFormAvaliacao((prev) => ({ ...prev, nota: estrela }))}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '30px',
+                        lineHeight: 1,
+                        color: estrela <= formAvaliacao.nota ? '#f59e0b' : '#cbd5e1',
+                        padding: '2px',
+                        transition: 'transform 0.15s ease',
+                      }}
+                      onMouseOver={(e) => { e.currentTarget.style.transform = 'scale(1.2)'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                      title={`${estrela} estrela${estrela > 1 ? 's' : ''}`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#64748b', marginLeft: '8px' }}>
+                    {formAvaliacao.nota === 5
+                      ? '5/5 · Excelente'
+                      : formAvaliacao.nota === 4
+                      ? '4/5 · Muito bom'
+                      : formAvaliacao.nota === 3
+                      ? '3/5 · Bom'
+                      : formAvaliacao.nota === 2
+                      ? '2/5 · Regular'
+                      : '1/5 · Ruim'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Comentário obrigatório */}
+              <div style={{ marginBottom: '22px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                  Seu comentário *
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  maxLength={1500}
+                  value={formAvaliacao.comentario}
+                  onChange={(e) => setFormAvaliacao((prev) => ({ ...prev, comentario: e.target.value }))}
+                  placeholder="Conte para outros devotos o que achou da camiseta, qualidade da estampa e caimento..."
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '13px',
+                    outline: 'none',
+                    resize: 'vertical',
+                    boxSizing: 'border-box',
+                    fontFamily: 'inherit',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setProdutoParaAvaliar(null)}
+                  disabled={enviandoAvaliacao}
+                  style={{
+                    background: '#f1f5f9',
+                    color: '#475569',
+                    border: 'none',
+                    padding: '9px 18px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={enviandoAvaliacao}
+                  style={{
+                    background: '#0f172a',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '9px 20px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: enviandoAvaliacao ? 'not-allowed' : 'pointer',
+                    opacity: enviandoAvaliacao ? 0.7 : 1,
+                  }}
+                >
+                  {enviandoAvaliacao ? 'Publicando...' : 'Publicar Avaliação'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1349,7 +1972,21 @@ export default function MinhaContaPage() {
   const urlEmail = searchParams.get('email');
 
   const [aba, setAba] = useState(() => (urlAba && TABS.some((t) => t.id === urlAba) ? urlAba : 'resumo'));
-  const [pedidos, setPedidos] = useState([]);
+  const [pedidos, setPedidos] = useState(() => {
+    try {
+      const salvo = localStorage.getItem('minha_conta_pedidos');
+      return salvo ? JSON.parse(salvo) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [carregandoPedidos, setCarregandoPedidos] = useState(() => {
+    try {
+      return !localStorage.getItem('minha_conta_pedidos');
+    } catch {
+      return true;
+    }
+  });
   const [enderecos, setEnderecos] = useState([]);
   const [cartoes, setCartoes] = useState([]);
   const [excluindoConta, setExcluindoConta] = useState(false);
@@ -1383,7 +2020,16 @@ export default function MinhaContaPage() {
   const [carregandoDados, setCarregandoDados] = useState(!resumo);
 
   const carregarPedidos = useCallback(
-    () => listarPedidos().then(({ data }) => setPedidos(data)).catch(() => {}),
+    () =>
+      listarPedidos()
+        .then(({ data }) => {
+          setPedidos(data);
+          try {
+            localStorage.setItem('minha_conta_pedidos', JSON.stringify(data));
+          } catch {}
+        })
+        .catch(() => {})
+        .finally(() => setCarregandoPedidos(false)),
     [],
   );
   const carregarEnderecos = useCallback(
@@ -1416,11 +2062,21 @@ export default function MinhaContaPage() {
     }
   }, [isAuthenticated, carregarResumo, carregarPedidos, carregarEnderecos, carregarCartoes]);
 
+  useEffect(() => {
+    const handleAtualizados = () => {
+      carregarPedidos();
+      carregarResumo();
+    };
+    window.addEventListener('salv-pedidos-atualizados', handleAtualizados);
+    return () => window.removeEventListener('salv-pedidos-atualizados', handleAtualizados);
+  }, [carregarPedidos, carregarResumo]);
+
   if (loading) return null;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
   const sair = async () => {
     localStorage.removeItem('minha_conta_resumo');
+    localStorage.removeItem('minha_conta_pedidos');
     await signOut();
     navigate('/');
   };
@@ -1435,6 +2091,7 @@ export default function MinhaContaPage() {
       await excluirConta();
       localStorage.removeItem('sanctum_token');
       localStorage.removeItem('minha_conta_resumo');
+      localStorage.removeItem('minha_conta_pedidos');
       localStorage.removeItem('@SalvSacra:carrinho');
       localStorage.removeItem('@SalvSacra:cupom');
       // Limpa a sessão diretamente sem chamar signOut() na API (pois a conta e tokens foram excluídos)
@@ -1461,16 +2118,36 @@ export default function MinhaContaPage() {
 
         <div className="conta-layout">
           <aside className="conta-menu" aria-label="Menu da conta">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={`conta-menu-item ${aba === t.id ? 'ativo' : ''}`}
-                onClick={() => setAba(t.id)}
-              >
-                {t.label}
-              </button>
-            ))}
+            {TABS.map((t) => {
+              const qtdPendente = pedidos.filter((p) => p.status === 'Pendente').length || Number(resumo?.pedidos_pendentes || 0);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`conta-menu-item ${aba === t.id ? 'ativo' : ''}`}
+                  onClick={() => setAba(t.id)}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <span>{t.label}</span>
+                  {t.id === 'pedidos' && qtdPendente > 0 && (
+                    <span
+                      style={{
+                        background: '#dc2626',
+                        color: '#fff',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        padding: '1px 7px',
+                        borderRadius: '999px',
+                        lineHeight: '16px',
+                      }}
+                      title="Você possui pedido pendente aguardando pagamento"
+                    >
+                      !
+                    </span>
+                  )}
+                </button>
+              );
+            })}
             <button type="button" className="conta-menu-item sair" onClick={sair}>
               Sair
             </button>
@@ -1502,6 +2179,7 @@ export default function MinhaContaPage() {
               <Pedidos
                 pedidos={pedidos}
                 pedidoSelecionadoInicial={urlPedido}
+                carregando={carregandoPedidos}
                 recarregar={() => {
                   carregarPedidos();
                   carregarResumo();

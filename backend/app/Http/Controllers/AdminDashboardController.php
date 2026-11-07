@@ -20,12 +20,12 @@ class AdminDashboardController extends Controller
         $inicioDoMes = Carbon::now()->startOfMonth();
         $fimDoMes    = Carbon::now()->endOfMonth();
 
-        // 1. Faturamento Total (soma real de pedidos pagos e não cancelados/pendentes)
-        $faturamentoTotal = (float) Pedido::whereNotIn('status', ['Cancelado', 'Pendente'])
+        // 1. Faturamento Total (soma real de pedidos não cancelados)
+        $faturamentoTotal = (float) Pedido::where('status', '!=', 'Cancelado')
             ->sum('valor_total');
 
-        // 2. Total de Pedidos Mensais (pedidos pagos no mês atual)
-        $pedidosMensais = (int) Pedido::whereNotIn('status', ['Cancelado', 'Pendente'])
+        // 2. Total de Pedidos Mensais (pedidos realizados no mês atual, exceto cancelados)
+        $pedidosMensais = (int) Pedido::where('status', '!=', 'Cancelado')
             ->whereBetween('data_pedido', [$inicioDoMes, $fimDoMes])
             ->count();
 
@@ -48,8 +48,8 @@ class AdminDashboardController extends Controller
 
         $inicio30Dias = Carbon::today()->subDays(29);
 
-        // Agrupa pedidos dos últimos 30 dias (somente pedidos pagos)
-        $vendasPorDia = Pedido::whereNotIn('status', ['Cancelado', 'Pendente'])
+        // Agrupa pedidos dos últimos 30 dias (exceto cancelados)
+        $vendasPorDia = Pedido::where('status', '!=', 'Cancelado')
             ->whereDate('data_pedido', '>=', $inicio30Dias)
             ->get()
             ->groupBy(function ($pedido) {

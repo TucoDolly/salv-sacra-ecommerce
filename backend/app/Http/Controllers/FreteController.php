@@ -147,7 +147,8 @@ class FreteController extends Controller
                         'weight' => round(max(0.25, $quantidade * 0.25), 2),
                     ],
                     'options' => [
-                        'insurance_value' => round($subtotal, 2),
+                        // Mantém seguro base padronizado para evitar oscilação de centavos entre telas
+                        'insurance_value' => max(1.00, min(10.00, round($subtotal, 2))),
                         'receipt'         => false,
                         'own_hand'        => false,
                     ],

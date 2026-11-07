@@ -306,7 +306,7 @@ export default function ProdutoDetalhe() {
     }
   };
 
-  const { addItem, setCep: setGlobalCep } = useCart();
+  const { addItem, setCep: setGlobalCep, calcularFretePorCep } = useCart();
 
   // ── Aviso de reposição de estoque ──
   const tamanhoEsgotado = variacoes.length > 0 && getEstoqueTamanho(tamanhoSelecionado) <= 0;
@@ -406,11 +406,16 @@ export default function ProdutoDetalhe() {
     setCalculandoFrete(true);
     setFreteResultado(null);
     try {
-      const { data } = await api.post('/frete/calcular', {
-        cep: limpo,
-        subtotal: Number(produto.preco_base || 79.9) * quantidade,
-        quantidade: quantidade,
-      });
+      const data = await calcularFretePorCep(
+        limpo,
+        Number(produto.preco_base || 79.9) * quantidade,
+        quantidade
+      );
+
+      if (!data) {
+        alert('Não foi possível calcular o frete para este CEP.');
+        return;
+      }
 
       const formatado = `${limpo.slice(0, 5)}-${limpo.slice(5)}`;
       setCep(formatado);

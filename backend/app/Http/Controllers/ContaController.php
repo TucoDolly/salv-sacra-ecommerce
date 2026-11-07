@@ -21,17 +21,25 @@ class ContaController extends Controller
     {
         $user = $request->user();
 
+        app(PedidoController::class)->cancelarPedidosPendentesExpirados($user->id);
+
         $ultimoPedido = Pedido::where('user_id', $user->id)
-            ->where('status', '!=', 'Pendente')
             ->orderByDesc('data_pedido')
             ->first();
 
+        $pedidoPendente = Pedido::where('user_id', $user->id)
+            ->where('status', 'Pendente')
+            ->latest('id')
+            ->first();
+
         return response()->json([
-            'total_pedidos'   => $user->pedidos()->where('status', '!=', 'Pendente')->count(),
-            'total_enderecos' => $user->enderecos()->count(),
-            'total_cartoes'   => $user->cartoes()->count(),
-            'total_favoritos' => $user->favoritos()->count(),
-            'ultimo_pedido'   => $ultimoPedido,
+            'total_pedidos'      => $user->pedidos()->count(),
+            'pedidos_pendentes'  => $pedidoPendente ? 1 : 0,
+            'pedido_pendente_id' => $pedidoPendente?->id,
+            'total_enderecos'    => $user->enderecos()->count(),
+            'total_cartoes'      => $user->cartoes()->count(),
+            'total_favoritos'    => $user->favoritos()->count(),
+            'ultimo_pedido'      => $ultimoPedido,
         ]);
     }
 
@@ -136,8 +144,11 @@ class ContaController extends Controller
 
     public function pedidos(Request $request): JsonResponse
     {
-        $pedidos = Pedido::where('user_id', $request->user()->id)
-            ->where('status', '!=', 'Pendente')
+        $user = $request->user();
+
+        app(PedidoController::class)->cancelarPedidosPendentesExpirados($user->id);
+
+        $pedidos = Pedido::where('user_id', $user->id)
             ->with(['itens.variacao.produto'])
             ->orderByDesc('data_pedido')
             ->get();

@@ -19,6 +19,7 @@ import GuiaMedidasPage from './pages/public/GuiaMedidasPage';
 import PoliticaPrivacidadePage from './pages/public/PoliticaPrivacidadePage';
 import TermosUsoPage from './pages/public/TermosUsoPage';
 import QuemSomosPage from './pages/public/QuemSomosPage';
+import NotFoundPage from './pages/public/NotFoundPage';
 import ProdutosList from './pages/admin/ProdutosList';
 import ProdutoForm from './pages/admin/ProdutoForm';
 import PedidosList from './pages/admin/PedidosList';
@@ -60,6 +61,9 @@ function App() {
         <Route path="/politica-de-privacidade" element={<PoliticaPrivacidadePage />} />
         <Route path="/termos-de-uso" element={<TermosUsoPage />} />
         <Route path="/quem-somos" element={<QuemSomosPage />} />
+        {/* Rota 404 personalizada para URLs não mapeadas */}
+        <Route path="/404" element={<NotFoundPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
 
       {/* ── Fluxo de Checkout ── */}
@@ -109,9 +113,6 @@ function App() {
         {/* Configurações da Loja */}
         <Route path="config"              element={<ConfiguracoesPage />} />
       </Route>
-
-      {/* Qualquer rota não mapeada → vitrine */}
-      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </>
   );

@@ -20,10 +20,18 @@
           <tr>
             <td style="padding: 36px 32px;">
               <h2 style="margin: 0 0 14px; font-size: 20px; font-weight: 600; color: #111111;">
-                Obrigado pelo seu pedido, {{ $pedido->user->name ?? 'Cliente' }}!
+                @if($pedido->status === 'Pendente')
+                  Pedido Gerado · Aguardando Pagamento via PIX
+                @else
+                  Obrigado pelo seu pedido, {{ $pedido->user->name ?? 'Cliente' }}!
+                @endif
               </h2>
               <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: #444444;">
-                Seu pedido <strong>#{{ $pedido->id }}</strong> foi recebido com sucesso e já está registrado no nosso sistema.
+                @if($pedido->status === 'Pendente')
+                  Seu pedido <strong>#{{ $pedido->id }}</strong> foi gerado e aguarda o pagamento via PIX para ser aprovado e enviado para separação.
+                @else
+                  Seu pedido <strong>#{{ $pedido->id }}</strong> foi recebido com sucesso e já está registrado no nosso sistema.
+                @endif
               </p>
 
               <!-- Order Summary Box -->
@@ -53,14 +61,14 @@
                 <tr>
                   <td align="center" style="background-color: #111111; border-radius: 6px;">
                     <a href="{{ $minhaContaUrl }}" target="_blank" style="display: inline-block; padding: 14px 32px; font-size: 14px; font-weight: 600; color: #ffffff; text-decoration: none; letter-spacing: 1px; text-transform: uppercase;">
-                      Acompanhar Pedido
+                      {{ $pedido->status === 'Pendente' ? 'Pagar Pedido via PIX' : 'Acompanhar Pedido' }}
                     </a>
                   </td>
                 </tr>
               </table>
 
               <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #888888; border-top: 1px solid #eeeeee; padding-top: 20px;">
-                Status atual: <strong>{{ $pedido->status }}</strong><br>
+                Status atual: <strong>{{ $pedido->status === 'Pendente' ? 'Aguardando Pagamento' : $pedido->status }}</strong><br>
                 Forma de pagamento: <strong>{{ strtoupper($pedido->metodo_pagamento ?? 'PIX') }}</strong>
               </p>
             </td>

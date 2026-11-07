@@ -7,10 +7,12 @@ import {
   sincronizarTodosRastreiosAdmin,
   excluirPedidoAdmin,
 } from '../../services/adminPedidoService';
+import { imprimirReciboPedido } from '../../utils/imprimirRecibo';
 import '../../styles/admin.css';
 import '../../styles/minha-conta.css';
 
 const STATUS_OPCOES = [
+  'Pendente',
   'Pago',
   'Em separação',
   'Enviado',
@@ -38,14 +40,15 @@ const formatData = (val) =>
 
 function obterEtapaRastreio(status) {
   switch (status) {
-    case 'Pago': return 1;
+    case 'Pendente': return 1;
+    case 'Pago': return 2;
     case 'Em separação':
-    case 'Em montagem': return 2;
-    case 'Enviado': return 3;
-    case 'Em transporte': return 4;
-    case 'Entregue': return 5;
+    case 'Em montagem': return 3;
+    case 'Enviado': return 4;
+    case 'Em transporte': return 5;
+    case 'Entregue': return 6;
     case 'Cancelado': return 0;
-    default: return 0;
+    default: return 1;
   }
 }
 
@@ -473,8 +476,8 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
             </thead>
             <tbody>
               {pedidos.map((p) => {
-                // Notificação de novo pedido só para pedidos com pagamento confirmado (Pago)
-                const isNovo = p.status === 'Pago';
+                // Notificação de novo pedido permanece ativa enquanto não avançar para 'Em separação' (ou posteriores)
+                const isNovo = p.status === 'Pendente' || p.status === 'Pago';
                 const isCancelado = p.status === 'Cancelado';
                 return (
                   <tr
@@ -644,17 +647,18 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                 {(() => {
                   const etapaAtual = obterEtapaRastreio(pedidoSelecionado.status);
                   const steps = [
-                    { num: 1, label: 'Pago' },
-                    { num: 2, label: 'Em separação' },
-                    { num: 3, label: 'Enviado' },
-                    { num: 4, label: 'Em transporte' },
-                    { num: 5, label: 'Entregue' },
+                    { num: 1, label: 'Pendente' },
+                    { num: 2, label: 'Pago' },
+                    { num: 3, label: 'Em separação' },
+                    { num: 4, label: 'Enviado' },
+                    { num: 5, label: 'Em transporte' },
+                    { num: 6, label: 'Entregue' },
                   ];
                   return (
                     <div className="conta-timeline" style={{ margin: '12px 0 18px', padding: '12px', background: '#f8f9fa', borderRadius: '8px' }}>
                       {steps.map((st) => {
-                        const isCompleted = etapaAtual > st.num || (etapaAtual === 5 && st.num === 5);
-                        const isActive = etapaAtual === st.num && etapaAtual !== 5;
+                        const isCompleted = etapaAtual > st.num || (etapaAtual === 6 && st.num === 6);
+                        const isActive = etapaAtual === st.num && etapaAtual !== 6;
                         return (
                           <div
                             key={st.num}
@@ -728,6 +732,15 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                       onClick={() => handleImprimirEtiqueta(pedidoSelecionado)}
                     >
                       🖨️ Imprimir Etiqueta / Romaneio
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn-secondary"
+                      style={{ padding: '8px 14px', fontSize: '12px', borderRadius: '6px', background: '#fff' }}
+                      onClick={() => imprimirReciboPedido(pedidoSelecionado)}
+                      title="Imprimir comprovante completo de venda em PDF"
+                    >
+                      📄 Imprimir Recibo
                     </button>
                   </div>
                 </div>

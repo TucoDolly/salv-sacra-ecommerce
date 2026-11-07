@@ -1,22 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import api from '../services/api';
 
 const CartContext = createContext({});
 
-const OPCOES_PADRAO = [
-  {
-    id: 'pac',
-    nome: 'Correios PAC',
-    prazo: 'Chega em 2 dias úteis',
-    preco: 10.90,
-  },
-  {
-    id: 'sedex',
-    nome: 'Correios SEDEX',
-    prazo: 'Chega em 1 dia útil',
-    preco: 12.47,
-  },
-];
+// Cache em memória das cotações já calculadas para resposta instantânea (0ms) sem flash de valores
+const cacheCotacoesFrete = new Map();
 
 export function CartProvider({ children }) {
   const [items, setItems] = useState(() => {
@@ -45,6 +33,7 @@ export function CartProvider({ children }) {
   const [cidadeDestino, setCidadeDestino] = useState('');
   const [ufDestino, setUfDestino] = useState('');
   const [loadingFrete, setLoadingFrete] = useState(false);
+  const reqIdRef = useRef(0);
 
   // Salvar no localStorage sempre que items mudar
   const salvarCarrinho = (novosItens) => {
@@ -66,15 +55,41 @@ export function CartProvider({ children }) {
     const limpo = String(cepAlvo || '').replace(/\D/g, '');
     if (limpo.length !== 8) return null;
 
+    const qtdNormalizada = qtd > 0 ? qtd : 1;
+    const subNormalizado = sub > 0 ? Number(sub.toFixed(2)) : 1.00;
+    const chaveCache = `${limpo}_${qtdNormalizada}`;
+
+    // Se já calculamos para este mesmo CEP e quantidade de itens, aplica imediatamente sem delay e sem flash!
+    if (cacheCotacoesFrete.has(chaveCache)) {
+      const cached = cacheCotacoesFrete.get(chaveCache);
+      setShippingOptions(cached.opcoes);
+      setCidadeDestino(cached.cidade || '');
+      setUfDestino(cached.uf || '');
+      setSelectedShipping((atual) => {
+        const mesma = cached.opcoes.find((o) => o.id === atual?.id);
+        return mesma || cached.opcoes[0];
+      });
+      setLoadingFrete(false);
+      return cached;
+    }
+
+    const reqAtual = ++reqIdRef.current;
+    // Limpa valores antigos enquanto calcula um novo CEP/quantidade para nunca exibir valor errado por 1 segundo
+    setShippingOptions([]);
+    setSelectedShipping(null);
     setLoadingFrete(true);
+
     try {
       const { data } = await api.post('/frete/calcular', {
         cep: limpo,
-        subtotal: sub > 0 ? sub : 79.90,
-        quantidade: qtd > 0 ? qtd : 1,
+        subtotal: subNormalizado,
+        quantidade: qtdNormalizada,
       });
 
+      if (reqAtual !== reqIdRef.current) return data;
+
       if (data?.opcoes?.length) {
+        cacheCotacoesFrete.set(chaveCache, data);
         setShippingOptions(data.opcoes);
         setCidadeDestino(data.cidade || '');
         setUfDestino(data.uf || '');
@@ -87,14 +102,18 @@ export function CartProvider({ children }) {
       }
       return data;
     } catch (err) {
-      console.warn('Erro ao calcular frete:', err.response?.data?.message || err.message);
+      if (reqAtual === reqIdRef.current) {
+        console.warn('Erro ao calcular frete:', err.response?.data?.message || err.message);
+      }
       return null;
     } finally {
-      setLoadingFrete(false);
+      if (reqAtual === reqIdRef.current) {
+        setLoadingFrete(false);
+      }
     }
   }, [subtotal, totalItens]);
 
-  // Recalcula automaticamente quando o CEP, subtotal ou quantidade de itens mudar
+  // Recalcula automaticamente quando o CEP ou quantidade de itens mudar
   useEffect(() => {
     const limpo = String(cep || '').replace(/\D/g, '');
     if (limpo.length === 8) {
@@ -107,7 +126,7 @@ export function CartProvider({ children }) {
       setCidadeDestino('');
       setUfDestino('');
     }
-  }, [cep, subtotal, totalItens, calcularFretePorCep]);
+  }, [cep, totalItens, calcularFretePorCep]);
 
   const addItem = (item) => {
     const novos = [...items];

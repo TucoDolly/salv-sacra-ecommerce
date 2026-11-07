@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
+import { obterResumoConta } from '../services/contaService';
 import CupomSelector from './CupomSelector';
 import '../styles/carrinho-drawer.css';
 import '../styles/cupom.css';
@@ -69,6 +70,32 @@ export default function CarrinhoDrawer() {
 
   const [editandoCep, setEditandoCep] = useState(false);
   const [cepInput, setCepInput] = useState(cep);
+  const [verificandoPendente, setVerificandoPendente] = useState(false);
+  const [modalPedidoPendente, setModalPedidoPendente] = useState(null);
+
+  const handleIniciarCompra = async () => {
+    if (!isAuthenticated) {
+      closeCart();
+      navigate('/login', { state: { from: '/checkout' } });
+      return;
+    }
+
+    setVerificandoPendente(true);
+    try {
+      const { data } = await obterResumoConta();
+      if (data?.pedidos_pendentes > 0) {
+        setModalPedidoPendente(data.pedido_pendente_id || true);
+        return;
+      }
+      closeCart();
+      navigate('/checkout');
+    } catch {
+      closeCart();
+      navigate('/checkout');
+    } finally {
+      setVerificandoPendente(false);
+    }
+  };
 
   const handleSalvarCep = (e) => {
     e.preventDefault();
@@ -136,7 +163,11 @@ export default function CarrinhoDrawer() {
                     <div key={`${item.produtoId}-${item.modelo || 'Regular Fit'}-${item.tamanho}-${item.cor}-${index}`} className="cart-item-row">
                       <div className="cart-item-thumb">
                         {item.imagem ? (
-                          <img src={item.imagem} alt={item.nome} />
+                          <img
+                            src={item.imagem}
+                            alt={item.nome}
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
                         ) : (
                           <span style={{ fontSize: '20px' }}>🕊️</span>
                         )}
@@ -338,20 +369,109 @@ export default function CarrinhoDrawer() {
             <button
               type="button"
               className="cart-checkout-btn"
-              onClick={() => {
-                closeCart();
-                if (isAuthenticated) {
-                  navigate('/checkout');
-                } else {
-                  navigate('/login', { state: { from: '/checkout' } });
-                }
-              }}
+              disabled={verificandoPendente}
+              onClick={handleIniciarCompra}
             >
-              INICIAR COMPRA
+              {verificandoPendente ? 'VERIFICANDO...' : 'INICIAR COMPRA'}
             </button>
           </div>
         )}
       </aside>
+
+      {/* Modal de bloqueio caso já exista pedido pendente em aberto */}
+      {modalPedidoPendente && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '20px',
+          }}
+          onClick={() => setModalPedidoPendente(null)}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '12px',
+              padding: '28px 24px',
+              maxWidth: '430px',
+              width: '100%',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.3)',
+              textAlign: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                width: '54px',
+                height: '54px',
+                borderRadius: '50%',
+                background: '#fef3c7',
+                color: '#b45309',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 14px',
+                fontSize: '26px',
+              }}
+            >
+              ⚠️
+            </div>
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#111', margin: '0 0 10px' }}>
+              Pedido Pendente em Aberto
+            </h3>
+            <p style={{ fontSize: '14px', color: '#4b5563', lineHeight: 1.6, margin: '0 0 22px' }}>
+              Você já possui um pedido pendente de pagamento
+              {typeof modalPedidoPendente === 'number' ? ` (Pedido #${modalPedidoPendente})` : ''} em aberto. Conclua o pagamento via PIX ou cancele o pedido em <strong>Meus Pedidos</strong> antes de iniciar uma nova compra.
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setModalPedidoPendente(null)}
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: '6px',
+                  border: '1px solid #d1d5db',
+                  background: '#fff',
+                  color: '#374151',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const idPed = typeof modalPedidoPendente === 'number' ? `&pedido=${modalPedidoPendente}` : '';
+                  setModalPedidoPendente(null);
+                  closeCart();
+                  navigate(`/minha-conta?aba=pedidos${idPed}`);
+                }}
+                style={{
+                  flex: 1.4,
+                  padding: '10px 14px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: '#111',
+                  color: '#fff',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Ver Pedido Pendente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

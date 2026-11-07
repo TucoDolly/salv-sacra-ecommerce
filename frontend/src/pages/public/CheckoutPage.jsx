@@ -273,12 +273,35 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!pedidoConcluido || pedidoConcluido.status !== 'Pendente' || metodoPagamento !== 'pix') return;
 
+    if (pedidoConcluido.created_at || pedidoConcluido.data_pedido) {
+      const dt = new Date(pedidoConcluido.created_at || pedidoConcluido.data_pedido).getTime();
+      const restante = Math.max(0, Math.floor((dt + 30 * 60 * 1000 - Date.now()) / 1000));
+      setTempoRestantePix(restante);
+    }
+
     const timerCountdown = setInterval(() => {
-      setTempoRestantePix((prev) => (prev > 0 ? prev - 1 : 0));
+      setTempoRestantePix((prev) => {
+        if (prev <= 1) {
+          clearInterval(timerCountdown);
+          // Cancela automaticamente ao atingir 5 minutos sem pagamento
+          api.post(`/pedidos/${pedidoConcluido.id}/cancelar`)
+            .then(() => {
+              window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+              setPedidoConcluido(null);
+              navigate('/minha-conta?aba=pedidos');
+            })
+            .catch(() => {
+              setPedidoConcluido(null);
+              navigate('/minha-conta?aba=pedidos');
+            });
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
 
     return () => clearInterval(timerCountdown);
-  }, [pedidoConcluido, metodoPagamento]);
+  }, [pedidoConcluido, metodoPagamento, navigate]);
 
   const formatarCronometro = (segundos) => {
     const min = String(Math.floor(segundos / 60)).padStart(2, '0');
@@ -318,14 +341,32 @@ export default function CheckoutPage() {
     setCancelandoPix(true);
     try {
       await api.post(`/pedidos/${pedidoConcluido.id}/cancelar`);
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
       setPedidoConcluido(null);
-      setEtapa('pagamento');
+      navigate('/minha-conta?aba=pedidos');
     } catch {
-      // Se der erro, apenas limpa o estado concluído para voltar ao checkout
       setPedidoConcluido(null);
-      setEtapa('pagamento');
+      navigate('/minha-conta?aba=pedidos');
     } finally {
       setCancelandoPix(false);
+    }
+  };
+
+  const handleVoltarParaPagamento = async () => {
+    if (!pedidoConcluido) {
+      setEtapa('pagamento');
+      return;
+    }
+    setCancelandoPix(true);
+    try {
+      await api.post(`/pedidos/${pedidoConcluido.id}/cancelar`);
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+    } catch {
+      // Silencioso se der erro no cancelamento
+    } finally {
+      setCancelandoPix(false);
+      setPedidoConcluido(null);
+      setEtapa('pagamento');
     }
   };
 
@@ -621,13 +662,16 @@ export default function CheckoutPage() {
         updateUser(res.data.user);
       }
 
-      // Se o pedido já foi pago e aprovado (Cartão), limpa o carrinho
+      // Se o pedido já foi pago e aprovado (Cartão), limpa o carrinho imediatamente
       if (res.data.pedido?.status === 'Pago') {
         clearCart();
         removerCupom();
       }
-      // Se for PIX (status Pendente com QR Code na tela), NÃO limpa o carrinho agora!
-      // Assim, se o cliente desistir ou fechar, o carrinho dele continua intacto.
+      try {
+        localStorage.removeItem('minha_conta_pedidos');
+        localStorage.removeItem('minha_conta_resumo');
+      } catch {}
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
     } catch (err) {
       console.error('Erro ao finalizar pedido:', err);
       if (err.response?.status === 401) {
@@ -673,11 +717,7 @@ export default function CheckoutPage() {
             <Link
               to={logoDestino}
               className="checkout-logo-link"
-              onClick={() => {
-                if (aguardandoPix && pedidoConcluido?.id) {
-                  api.post(`/pedidos/${pedidoConcluido.id}/cancelar`).catch(() => {});
-                }
-              }}
+              title="Voltar para a página inicial"
             >
               <img src={logoImg} alt="Salv Sacra" className="checkout-logo-img" />
             </Link>
@@ -827,7 +867,7 @@ export default function CheckoutPage() {
               <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
                 <button
                   type="button"
-                  onClick={handleCancelarPix}
+                  onClick={handleVoltarParaPagamento}
                   disabled={cancelandoPix}
                   style={{
                     flex: 1,
@@ -848,8 +888,10 @@ export default function CheckoutPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleCancelarPix}
-                  disabled={cancelandoPix}
+                  onClick={() => {
+                    setPedidoConcluido(null);
+                    navigate('/');
+                  }}
                   style={{
                     flex: 1,
                     padding: '10px 14px',
@@ -859,13 +901,13 @@ export default function CheckoutPage() {
                     borderRadius: '8px',
                     fontWeight: 600,
                     fontSize: '12px',
-                    cursor: cancelandoPix ? 'not-allowed' : 'pointer',
+                    cursor: 'pointer',
                     transition: 'all 0.2s',
                   }}
                   onMouseOver={(e) => { e.currentTarget.style.background = '#f1f5f9'; }}
                   onMouseOut={(e) => { e.currentTarget.style.background = '#fff'; }}
                 >
-                  ← Alterar forma de pagamento
+                  ← Voltar para a loja (pagar depois)
                 </button>
               </div>
             </div>
@@ -1202,10 +1244,14 @@ export default function CheckoutPage() {
                   </div>
 
                   {/* Seleção do Tipo de Envio */}
-                  {opcoesFrete.length > 0 ? (
+                  {loadingFrete && opcoesFrete.length === 0 ? (
+                    <div style={{ marginTop: '16px', padding: '12px 14px', background: '#f8f9fa', borderRadius: '6px', border: '1px dashed #ccc', fontSize: '13px', color: '#666' }}>
+                      Calculando opções e prazos de frete para o seu CEP...
+                    </div>
+                  ) : opcoesFrete.length > 0 ? (
                     <div style={{ marginTop: '10px' }}>
                       <label style={{ fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', color: '#555' }}>
-                        Selecione a Modalidade de Envio {loadingFrete && <small style={{ fontWeight: 400 }}>(atualizando valores para o CEP...)</small>}:
+                        Selecione a Modalidade de Envio:
                       </label>
                       <div className="checkout-shipping-select-list">
                         {opcoesFrete.map((opt) => {

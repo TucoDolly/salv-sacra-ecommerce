@@ -3,6 +3,7 @@ import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useCart } from "../contexts/CartContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useWishlist } from "../contexts/WishlistContext";
+import { obterResumoConta } from "../services/contaService";
 import CarrinhoDrawer from "../components/CarrinhoDrawer";
 import logoImg from "../assets/logo.webp";
 import "./MainLayout.css";
@@ -75,8 +76,28 @@ function SiteHeader({ configs }) {
   const { totalFavoritos } = useWishlist();
   const [termoBusca, setTermoBusca] = useState('');
   const [modalFavoritosLogin, setModalFavoritosLogin] = useState(false);
+  const [pedidosPendentesCount, setPedidosPendentesCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setPedidosPendentesCount(0);
+      return;
+    }
+
+    const verificarPendentes = () => {
+      obterResumoConta()
+        .then(({ data }) => {
+          setPedidosPendentesCount(Number(data?.pedidos_pendentes || 0));
+        })
+        .catch(() => {});
+    };
+
+    verificarPendentes();
+    window.addEventListener('salv-pedidos-atualizados', verificarPendentes);
+    return () => window.removeEventListener('salv-pedidos-atualizados', verificarPendentes);
+  }, [isAuthenticated, location.pathname]);
 
   const logoDestino = isAuthenticated && user?.papel === 'admin' ? '/admin' : '/';
 
@@ -136,8 +157,32 @@ function SiteHeader({ configs }) {
             >
               <IconHeart /> Favoritos
             </button>
-            <Link to={isAuthenticated ? '/minha-conta' : '/login'} className="header-action-item">
+            <Link
+              to={isAuthenticated ? (pedidosPendentesCount > 0 ? '/minha-conta?aba=pedidos' : '/minha-conta') : '/login'}
+              className="header-action-item"
+              style={{ position: 'relative' }}
+              title={pedidosPendentesCount > 0 ? 'Você possui um pedido pendente aguardando pagamento!' : 'Minha conta'}
+            >
               <IconUser /> Minha conta
+              {isAuthenticated && pedidosPendentesCount > 0 && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '-6px',
+                    left: '12px',
+                    background: '#dc2626',
+                    color: '#fff',
+                    borderRadius: '999px',
+                    padding: '1px 6px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    boxShadow: '0 2px 6px rgba(220,38,38,0.45)',
+                    lineHeight: '14px',
+                  }}
+                >
+                  !
+                </span>
+              )}
             </Link>
             <button
               type="button"

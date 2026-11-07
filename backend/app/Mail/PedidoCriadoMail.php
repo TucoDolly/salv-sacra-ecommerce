@@ -31,8 +31,12 @@ class PedidoCriadoMail extends Mailable
      */
     public function envelope(): Envelope
     {
+        $assunto = $this->pedido->status === 'Pendente'
+            ? "Aguardando Pagamento PIX · Pedido #{$this->pedido->id} - Salv Sacra"
+            : "Pedido #{$this->pedido->id} Confirmado! - Salv Sacra";
+
         return new Envelope(
-            subject: "Pedido #{$this->pedido->id} Confirmado! - Salv Sacra",
+            subject: $assunto,
         );
     }
 
