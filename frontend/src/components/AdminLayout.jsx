@@ -47,6 +47,13 @@ const IconStock = () => (
   </svg>
 );
 
+const IconReturn = () => (
+  <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24">
+    <polyline points="1 4 1 10 7 10"/>
+    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+  </svg>
+);
+
 const IconReports = () => (
   <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24">
     <line x1="18" y1="20" x2="18" y2="10"/>
@@ -78,6 +85,7 @@ const IconSearch = () => (
 const NAV_ITEMS = [
   { label: 'Início',                  to: '/admin',           icon: <IconHome />,     end: true  },
   { label: 'Pedidos e Pagamentos',    to: '/admin/pedidos',   icon: <IconOrders />,   end: false },
+  { label: 'Devoluções e Trocas',     to: '/admin/devolucoes',icon: <IconReturn />,   end: false },
   { label: 'Catálogo de Produtos',    to: '/admin/produtos',  icon: <IconCatalog />,  end: false },
   { label: 'Categorias e Devoções',   to: '/admin/categorias',icon: <IconTag />,      end: false },
   { label: 'Gestão de Estoque',       to: '/admin/estoque',   icon: <IconStock />,    end: false },

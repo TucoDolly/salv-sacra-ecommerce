@@ -6,6 +6,7 @@ import {
   consultarRastreioAdmin,
   sincronizarTodosRastreiosAdmin,
   excluirPedidoAdmin,
+  limparFinalizadosAdmin,
 } from '../../services/adminPedidoService';
 import { imprimirReciboPedido } from '../../utils/imprimirRecibo';
 import '../../styles/admin.css';
@@ -68,6 +69,26 @@ function formatarCliente(user, emailContato) {
   };
 }
 
+function podeExcluirPedido(p) {
+  if (p.status === 'Cancelado') return true;
+  if (p.status === 'Entregue') {
+    // Se tiver devolução em andamento, não permite excluir
+    if (p.devolucao && ['Pendente', 'Aprovada', 'Em transporte'].includes(p.devolucao.status)) {
+      return false;
+    }
+    const dataRef = new Date(p.updated_at || p.data_pedido).getTime();
+    const seteDiasMs = 7 * 24 * 60 * 60 * 1000;
+    return (Date.now() - dataRef) >= seteDiasMs;
+  }
+  return false;
+}
+
+function diasRestantesDevolucao(p) {
+  const dataRef = new Date(p.updated_at || p.data_pedido).getTime();
+  const diasPassados = Math.floor((Date.now() - dataRef) / (24 * 60 * 60 * 1000));
+  return Math.max(1, 7 - diasPassados);
+}
+
 export default function PedidosList() {
   const [pedidos, setPedidos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +98,14 @@ export default function PedidosList() {
   // Filtros
   const [statusFiltro, setStatusFiltro] = useState('');
   const [busca, setBusca] = useState('');
+
+  // Paginação
+  const [itensPorPagina, setItensPorPagina] = useState(10);
+  const [paginaAtual, setPaginaAtual] = useState(1);
+
+  // Limpeza em lote
+  const [modalLimpeza, setModalLimpeza] = useState(false);
+  const [limpandoLote, setLimpandoLote] = useState(false);
 
   // Detalhe lateral (drawer)
   const [pedidoSelecionado, setPedidoSelecionado] = useState(null);
@@ -111,19 +140,37 @@ export default function PedidosList() {
   };
 
   useEffect(() => {
+    setPaginaAtual(1);
     carregarPedidos();
   }, [statusFiltro]);
+
+  const handleBuscar = (e) => {
+    e.preventDefault();
+    setPaginaAtual(1);
+    carregarPedidos();
+  };
+
+  const handleLimparFinalizados = async () => {
+    setLimpandoLote(true);
+    setError('');
+    setSuccess('');
+    try {
+      const { data } = await limparFinalizadosAdmin();
+      setSuccess(data.message);
+      setModalLimpeza(false);
+      carregarPedidos();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Erro ao limpar pedidos finalizados.');
+    } finally {
+      setLimpandoLote(false);
+    }
+  };
 
   const handleAbrirDetalhe = (pedido) => {
     setPedidoSelecionado(pedido);
     setRastreioInput(pedido.codigo_rastreio || '');
     setCpfManual(pedido.user?.cpf || '');
     setRastreioFeedback(null);
-  };
-
-  const handleBuscar = (e) => {
-    e.preventDefault();
-    carregarPedidos();
   };
 
   const handleAlterarStatus = async (id, novoStatus) => {
@@ -393,6 +440,15 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
     janela.document.close();
   };
 
+  // Cálculo de Paginação
+  const totalPedidos = pedidos.length;
+  const totalPaginas = itensPorPagina === 'todos' ? 1 : Math.ceil(totalPedidos / Number(itensPorPagina)) || 1;
+  const paginaCorrigida = Math.min(Math.max(1, paginaAtual), totalPaginas);
+
+  const inicioIdx = itensPorPagina === 'todos' ? 0 : (paginaCorrigida - 1) * Number(itensPorPagina);
+  const fimIdx = itensPorPagina === 'todos' ? totalPedidos : Math.min(inicioIdx + Number(itensPorPagina), totalPedidos);
+  const pedidosPaginados = pedidos.slice(inicioIdx, fimIdx);
+
   return (
     <div className="admin-page">
       {/* ── Cabeçalho ── */}
@@ -403,16 +459,27 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
             Gerencie pedidos realizados, informe o código de rastreio dos Correios, imprima etiquetas e acompanhe entregas.
           </p>
         </div>
-        <button
-          type="button"
-          className="admin-btn admin-btn-secondary"
-          onClick={handleSincronizarTodos}
-          disabled={sincronizandoTodos}
-          title="Verifica se os pacotes em transporte foram entregues"
-          style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}
-        >
-          {sincronizandoTodos ? '🔄 Verificando...' : '🔄 Sincronizar Rastreios'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            type="button"
+            className="admin-btn admin-btn-secondary"
+            onClick={() => setModalLimpeza(true)}
+            title="Exclui em lote todos os pedidos cancelados e os pedidos entregues há mais de 7 dias"
+            style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            🧹 Limpar Pedidos Finalizados
+          </button>
+          <button
+            type="button"
+            className="admin-btn admin-btn-secondary"
+            onClick={handleSincronizarTodos}
+            disabled={sincronizandoTodos}
+            title="Verifica se os pacotes em transporte foram entregues"
+            style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            {sincronizandoTodos ? '🔄 Verificando...' : '🔄 Sincronizar Rastreios'}
+          </button>
+        </div>
       </div>
 
       {/* ── Feedback ── */}
@@ -462,7 +529,7 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
         </div>
       ) : (
         <div className="admin-table-wrapper">
-          <table className="admin-table">
+          <table className="admin-table" style={{ minWidth: '1050px' }}>
             <thead>
               <tr>
                 <th>Pedido</th>
@@ -471,11 +538,11 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                 <th>Envio / Rastreio</th>
                 <th>Total</th>
                 <th>Status Atual</th>
-                <th>Ações</th>
+                <th style={{ minWidth: '250px' }}>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {pedidos.map((p) => {
+              {pedidosPaginados.map((p) => {
                 // Notificação de novo pedido permanece ativa enquanto não avançar para 'Em separação' (ou posteriores)
                 const isNovo = p.status === 'Pendente' || p.status === 'Pago';
                 const isCancelado = p.status === 'Cancelado';
@@ -588,16 +655,17 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                       ))}
                     </select>
                   </td>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <td style={{ minWidth: '250px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
                       <button
                         type="button"
                         className="admin-btn admin-btn-secondary admin-btn-sm"
                         onClick={() => handleAbrirDetalhe(p)}
+                        style={{ whiteSpace: 'nowrap' }}
                       >
                         Gerenciar Entrega
                       </button>
-                      {['Entregue', 'Cancelado'].includes(p.status) && (
+                      {podeExcluirPedido(p) ? (
                         <button
                           type="button"
                           className="admin-btn admin-btn-danger admin-btn-sm"
@@ -607,7 +675,27 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                         >
                           Excluir
                         </button>
-                      )}
+                      ) : p.status === 'Entregue' ? (
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            color: '#854d0e',
+                            background: '#fef9c3',
+                            padding: '5px 9px',
+                            borderRadius: '4px',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                            border: '1px solid #fde047',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            flexShrink: 0,
+                          }}
+                          title="Pedido entregue está dentro do prazo legal de 7 dias para trocas/devoluções (Art. 49 CDC)."
+                        >
+                          🔒 Devolução ({diasRestantesDevolucao(p)}d)
+                        </span>
+                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -615,6 +703,67 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
             })}
             </tbody>
           </table>
+
+          {/* ── Controles de Paginação ── */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '14px 16px',
+              borderTop: '1px solid #eee',
+              background: '#fafafa',
+              flexWrap: 'wrap',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#555', flexWrap: 'wrap' }}>
+              <span>Exibir por página:</span>
+              <select
+                className="admin-filter-select"
+                style={{ padding: '4px 8px', fontSize: '13px' }}
+                value={itensPorPagina}
+                onChange={(e) => {
+                  setItensPorPagina(e.target.value === 'todos' ? 'todos' : Number(e.target.value));
+                  setPaginaAtual(1);
+                }}
+              >
+                <option value={10}>10 pedidos</option>
+                <option value={20}>20 pedidos</option>
+                <option value={50}>50 pedidos</option>
+                <option value="todos">Mostrar todos ({totalPedidos})</option>
+              </select>
+              <span>
+                Mostrando <strong>{totalPedidos === 0 ? 0 : inicioIdx + 1}</strong> a <strong>{fimIdx}</strong> de <strong>{totalPedidos}</strong> pedidos
+              </span>
+            </div>
+
+            {itensPorPagina !== 'todos' && totalPaginas > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary admin-btn-sm"
+                  onClick={() => setPaginaAtual((p) => Math.max(1, p - 1))}
+                  disabled={paginaCorrigida <= 1}
+                  style={{ padding: '6px 12px' }}
+                >
+                  ◀ Anterior
+                </button>
+                <span style={{ fontSize: '13px', color: '#444', fontWeight: 600, padding: '0 8px' }}>
+                  Página {paginaCorrigida} de {totalPaginas}
+                </span>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary admin-btn-sm"
+                  onClick={() => setPaginaAtual((p) => Math.min(totalPaginas, p + 1))}
+                  disabled={paginaCorrigida >= totalPaginas}
+                  style={{ padding: '6px 12px' }}
+                >
+                  Próxima ▶
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1031,8 +1180,8 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                 </div>
               </div>
 
-              {/* Botão de Excluir dentro do Drawer (se entregue ou cancelado) */}
-              {['Entregue', 'Cancelado'].includes(pedidoSelecionado.status) && (
+              {/* Botão de Excluir dentro do Drawer (se entregue após 7 dias ou cancelado) */}
+              {podeExcluirPedido(pedidoSelecionado) ? (
                 <div className="admin-drawer-section" style={{ borderTop: '1px solid #eee', paddingTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
                   <button
                     type="button"
@@ -1043,7 +1192,51 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                     🗑 Excluir Pedido Permanentemente
                   </button>
                 </div>
-              )}
+              ) : pedidoSelecionado.status === 'Entregue' ? (
+                <div className="admin-drawer-section" style={{ borderTop: '1px solid #eee', paddingTop: '16px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#854d0e', background: '#fef9c3', padding: '6px 12px', borderRadius: '4px', border: '1px solid #fde047' }}>
+                    🔒 Prazo legal de 7 dias para devolução/troca em vigor (restam {diasRestantesDevolucao(pedidoSelecionado)} dia(s)).
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de Limpeza em Lote de Pedidos Finalizados ── */}
+      {modalLimpeza && (
+        <div className="admin-modal-overlay" role="dialog" aria-modal="true">
+          <div className="admin-modal" style={{ maxWidth: '480px' }}>
+            <h3 id="modal-title" style={{ color: '#b91c1c' }}>🧹 Limpar Pedidos Finalizados</h3>
+            <p style={{ fontSize: '14px', lineHeight: 1.6, color: '#444' }}>
+              Esta ação excluirá permanentemente em lote:
+            </p>
+            <ul style={{ fontSize: '13px', color: '#555', lineHeight: 1.6, margin: '8px 0 16px 20px' }}>
+              <li><strong>Todos os pedidos cancelados</strong> (qualquer data).</li>
+              <li><strong>Pedidos entregues há mais de 7 dias</strong> (cujo prazo legal de devolução/troca de 7 dias já expirou e não possuem devolução em andamento).</li>
+            </ul>
+            <p style={{ fontSize: '13px', color: '#b91c1c', fontWeight: 600 }}>
+              ⚠️ Esta operação não pode ser desfeita. Deseja prosseguir com a limpeza?
+            </p>
+            <div className="admin-modal-actions">
+              <button
+                type="button"
+                className="admin-btn admin-btn-secondary"
+                onClick={() => setModalLimpeza(false)}
+                disabled={limpandoLote}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="admin-btn admin-btn-primary"
+                style={{ background: '#c0392b' }}
+                onClick={handleLimparFinalizados}
+                disabled={limpandoLote}
+              >
+                {limpandoLote ? 'Limpando...' : 'Confirmar Limpeza em Lote'}
+              </button>
             </div>
           </div>
         </div>

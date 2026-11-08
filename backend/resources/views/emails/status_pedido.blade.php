@@ -46,20 +46,49 @@
                                 @endif
                             </div>
 
-                            <p style="margin: 0 0 28px; font-size: 14px; line-height: 1.6; color: #555555;">
-                                Você pode acompanhar todos os detalhes e a evolução da sua compra diretamente na sua área de cliente.
-                            </p>
+                            @if($pedido->status === 'Entregue')
+                                <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #333333;">
+                                    Seu pacote foi entregue com sucesso! Esperamos que as peças tenham correspondido a todas as suas expectativas.
+                                </p>
 
-                            <!-- CTA Button -->
-                            <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 auto 28px;">
-                                <tr>
-                                    <td align="center" style="background-color: #111111; border-radius: 6px;">
-                                        <a href="{{ $minhaContaUrl }}" target="_blank" style="display: inline-block; padding: 14px 32px; font-size: 14px; font-weight: 600; color: #ffffff; text-decoration: none; letter-spacing: 1px; text-transform: uppercase;">
-                                            Acompanhar Pedido
-                                        </a>
-                                    </td>
-                                </tr>
-                            </table>
+                                <!-- Box de Avaliação com Destaque -->
+                                <div style="background-color: #faf8f2; border: 1.5px solid #d4ac0d; border-radius: 8px; padding: 24px 20px; text-align: center; margin-bottom: 28px;">
+                                    <h3 style="margin: 0 0 8px; font-size: 17px; font-weight: 700; color: #111111;">
+                                        ⭐ O que achou do seu produto?
+                                    </h3>
+                                    <p style="margin: 0 0 18px; font-size: 13px; color: #555555; line-height: 1.5;">
+                                        Sua avaliação ajuda outros clientes a escolherem a melhor peça e garante seu selo de <strong>Compra Verificada</strong>. Leva menos de 1 minuto!
+                                    </p>
+                                    <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
+                                        <tr>
+                                            <td align="center" style="background-color: #111111; border-radius: 6px;">
+                                                <a href="{{ $avaliarUrl }}" target="_blank" style="display: inline-block; padding: 13px 28px; font-size: 13px; font-weight: 700; color: #ffffff; text-decoration: none; letter-spacing: 0.5px; text-transform: uppercase;">
+                                                    ⭐ Avaliar Meus Produtos
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                                <p style="margin: 0 0 20px; font-size: 13px; text-align: center; color: #666666;">
+                                    Ou se preferir, você também pode <a href="{{ $minhaContaUrl }}" target="_blank" style="color: #111111; font-weight: 600; text-decoration: underline;">ver todos os detalhes do seu pedido</a>.
+                                </p>
+                            @else
+                                <p style="margin: 0 0 28px; font-size: 14px; line-height: 1.6; color: #555555;">
+                                    Você pode acompanhar todos os detalhes e a evolução da sua compra diretamente na sua área de cliente.
+                                </p>
+
+                                <!-- CTA Button -->
+                                <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 auto 28px;">
+                                    <tr>
+                                        <td align="center" style="background-color: #111111; border-radius: 6px;">
+                                            <a href="{{ $minhaContaUrl }}" target="_blank" style="display: inline-block; padding: 14px 32px; font-size: 14px; font-weight: 600; color: #ffffff; text-decoration: none; letter-spacing: 1px; text-transform: uppercase;">
+                                                Acompanhar Pedido
+                                            </a>
+                                        </td>
+                                    </tr>
+                                </table>
+                            @endif
 
                             <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #888888; border-top: 1px solid #eeeeee; padding-top: 20px;">
                                 Total do pedido: <strong>R$ {{ number_format($pedido->total ?? $pedido->valor_total, 2, ',', '.') }}</strong><br>

@@ -50,4 +50,14 @@ class Pedido extends Model
     {
         return $this->hasMany(ItemPedido::class);
     }
+
+    public function devolucoes(): HasMany
+    {
+        return $this->hasMany(Devolucao::class);
+    }
+
+    public function devolucao()
+    {
+        return $this->hasOne(Devolucao::class)->latestOfMany();
+    }
 }

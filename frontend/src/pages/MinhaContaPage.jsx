@@ -151,7 +151,7 @@ function Resumo({ user, pedidos, enderecos, cartoes, totalFavoritos, resumo, irP
 }
 
 /* ───────────────────────── Pedidos ───────────────────────── */
-function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar, carregando }) {
+function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, carregando }) {
   const pendenteMaisRecente = pedidos.find((p) => p.status === 'Pendente');
   const [aberto, setAberto] = useState(
     pedidoSelecionadoInicial ? Number(pedidoSelecionadoInicial) : (pendenteMaisRecente ? pendenteMaisRecente.id : null)
@@ -162,8 +162,6 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar, carregando }) 
   const [agoraMs, setAgoraMs] = useState(() => Date.now());
   const [pedidoParaCancelar, setPedidoParaCancelar] = useState(null);
   const [cancelando, setCancelando] = useState(false);
-  const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
-  const [excluindoPedido, setExcluindoPedido] = useState(false);
   const [msgCancelamento, setMsgCancelamento] = useState({ tipo: '', texto: '', pedidoId: null });
   const { addItem, openCart } = useCart();
   const [produtoParaAvaliar, setProdutoParaAvaliar] = useState(null);
@@ -171,6 +169,122 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar, carregando }) 
   const [enviandoAvaliacao, setEnviandoAvaliacao] = useState(false);
   const [msgAvaliacao, setMsgAvaliacao] = useState({ tipo: '', texto: '' });
   const [avaliadosIds, setAvaliadosIds] = useState([]);
+
+  // Devoluções & Trocas (Logística Reversa)
+  const [pedidoParaDevolucao, setPedidoParaDevolucao] = useState(null);
+  const [itensDevolucaoSelecionados, setItensDevolucaoSelecionados] = useState({});
+  const [motivoDevolucao, setMotivoDevolucao] = useState('Tamanho não serviu / Troca de tamanho');
+  const [tipoDevolucao, setTipoDevolucao] = useState('cupom');
+  const [descricaoDevolucao, setDescricaoDevolucao] = useState('');
+  const [fotosDevolucao, setFotosDevolucao] = useState([]);
+  const [fotosPreviews, setFotosPreviews] = useState([]);
+  const [enviandoDevolucao, setEnviandoDevolucao] = useState(false);
+  const [devolucaoSucessoMsg, setDevolucaoSucessoMsg] = useState('');
+
+  // Modal customizado para avisos (substitui alerts do navegador)
+  const [modalAviso, setModalAviso] = useState({ aberto: false, titulo: '', mensagem: '', icon: '✓' });
+
+  const abrirModalDevolucao = (ped) => {
+    setPedidoParaDevolucao(ped);
+    const selecionadosInit = {};
+    (ped.itens || []).forEach((it) => {
+      selecionadosInit[it.id] = { selecionado: true, quantidade: it.quantidade || 1 };
+    });
+    setItensDevolucaoSelecionados(selecionadosInit);
+    setMotivoDevolucao('Tamanho não serviu / Troca de tamanho');
+    setTipoDevolucao('cupom');
+    setDescricaoDevolucao('');
+    setDevolucaoSucessoMsg('');
+    fotosPreviews.forEach((url) => URL.revokeObjectURL(url));
+    setFotosDevolucao([]);
+    setFotosPreviews([]);
+  };
+
+  const handleAdicionarFotos = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const espacoRestante = 5 - fotosDevolucao.length;
+    if (espacoRestante <= 0) {
+      setModalAviso({
+        aberto: true,
+        titulo: 'Limite de fotos atingido',
+        mensagem: 'Você pode anexar no máximo 5 fotos.',
+        icon: '📷',
+      });
+      return;
+    }
+
+    const novosFiles = files.slice(0, espacoRestante);
+    const novosPreviews = novosFiles.map((f) => URL.createObjectURL(f));
+
+    setFotosDevolucao((prev) => [...prev, ...novosFiles]);
+    setFotosPreviews((prev) => [...prev, ...novosPreviews]);
+  };
+
+  const handleRemoverFoto = (idx) => {
+    URL.revokeObjectURL(fotosPreviews[idx]);
+    setFotosDevolucao((prev) => prev.filter((_, i) => i !== idx));
+    setFotosPreviews((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSubmeterDevolucao = async (e) => {
+    e.preventDefault();
+    if (!pedidoParaDevolucao) return;
+
+    const itensPayload = Object.entries(itensDevolucaoSelecionados)
+      .filter(([_, val]) => val.selecionado && val.quantidade > 0)
+      .map(([itemId, val]) => ({
+        item_id: Number(itemId),
+        quantidade: Number(val.quantidade),
+      }));
+
+    if (itensPayload.length === 0) {
+      setModalAviso({
+        aberto: true,
+        titulo: 'Atenção',
+        mensagem: 'Selecione ao menos 1 item para devolução ou troca.',
+        icon: '⚠️',
+      });
+      return;
+    }
+
+    setEnviandoDevolucao(true);
+    try {
+      const formData = new FormData();
+      formData.append('tipo_solicitacao', tipoDevolucao);
+      formData.append('motivo', motivoDevolucao);
+      if (descricaoDevolucao) {
+        formData.append('descricao', descricaoDevolucao);
+      }
+      itensPayload.forEach((it, idx) => {
+        formData.append(`itens[${idx}][item_id]`, it.item_id);
+        formData.append(`itens[${idx}][quantidade]`, it.quantidade);
+      });
+      fotosDevolucao.forEach((file) => {
+        formData.append('fotos[]', file);
+      });
+
+      await api.post(`/pedidos/${pedidoParaDevolucao.id}/devolucoes`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      setDevolucaoSucessoMsg('✓ Solicitação de devolução enviada com sucesso! Você receberá atualizações por e-mail.');
+      setTimeout(() => {
+        setPedidoParaDevolucao(null);
+        recarregar();
+      }, 1500);
+    } catch (err) {
+      setModalAviso({
+        aberto: true,
+        titulo: 'Erro na solicitação',
+        mensagem: err.response?.data?.message || 'Erro ao solicitar devolução.',
+        icon: '✕',
+      });
+    } finally {
+      setEnviandoDevolucao(false);
+    }
+  };
 
   const handleComprarNovamente = (pedido) => {
     if (!pedido?.itens?.length) return;
@@ -236,11 +350,21 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar, carregando }) 
     if (pedidoSelecionadoInicial) {
       setAberto(Number(pedidoSelecionadoInicial));
       setPixAbertoId(Number(pedidoSelecionadoInicial));
+
+      if (autoAvaliar && pedidos.length) {
+        const ped = pedidos.find((p) => p.id === Number(pedidoSelecionadoInicial));
+        if (ped && ped.status === 'Entregue' && ped.itens?.length) {
+          const itemParaAvaliar = ped.itens.find((i) => i.variacao?.produto && !avaliadosIds.includes(i.variacao.produto.id)) || ped.itens[0];
+          if (itemParaAvaliar?.variacao?.produto) {
+            setProdutoParaAvaliar(itemParaAvaliar.variacao.produto);
+          }
+        }
+      }
     } else if (pendenteMaisRecente && aberto === null) {
       setAberto(pendenteMaisRecente.id);
       setPixAbertoId(pendenteMaisRecente.id);
     }
-  }, [pedidoSelecionadoInicial, pendenteMaisRecente?.id]);
+  }, [pedidoSelecionadoInicial, pendenteMaisRecente?.id, autoAvaliar, pedidos]);
 
   // Atualiza cronômetro regressivo de 30 minutos para pedidos Pendente e cancela automaticamente ao zerar
   useEffect(() => {
@@ -337,31 +461,6 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar, carregando }) 
     }
   };
 
-  const confirmarExclusaoPedido = async () => {
-    if (!pedidoParaExcluir) return;
-    setExcluindoPedido(true);
-    setMsgCancelamento({ tipo: '', texto: '', pedidoId: null });
-    try {
-      const { data } = await excluirPedido(pedidoParaExcluir.id);
-      setMsgCancelamento({
-        tipo: 'ok',
-        texto: data.mensagem || `Pedido #${pedidoParaExcluir.id} excluído com sucesso.`,
-        pedidoId: pedidoParaExcluir.id,
-      });
-      setPedidoParaExcluir(null);
-      if (recarregar) recarregar();
-    } catch (err) {
-      setMsgCancelamento({
-        tipo: 'erro',
-        texto: err.response?.data?.message || primeiroErro(err),
-        pedidoId: pedidoParaExcluir.id,
-      });
-      setPedidoParaExcluir(null);
-    } finally {
-      setExcluindoPedido(false);
-    }
-  };
-
   if (!pedidos.length) {
     return (
       <>
@@ -405,7 +504,6 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar, carregando }) 
           const isPendente = p.status === 'Pendente';
           const podeCancelar = ['Pendente', 'Pago', 'Em separação', 'Em montagem'].includes(p.status);
           const jaEnviadoOuEntregue = ['Enviado', 'Em transporte', 'Entregue'].includes(p.status);
-          const podeExcluir = ['Entregue', 'Cancelado'].includes(p.status);
           const itensResumo = (p.itens || [])
             .map((i) => `${i.quantidade}x ${i.variacao?.produto?.nome ?? 'Produto'} (${i.variacao?.tamanho || ''}/${i.variacao?.cor || ''})`)
             .join(', ');
@@ -864,82 +962,177 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar, carregando }) 
                   </div>
                 )}
 
-                {jaEnviadoOuEntregue && (
-                  <div
-                    style={{
-                      marginTop: '18px',
-                      paddingTop: '16px',
-                      borderTop: '1px solid #eee',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '12px',
-                    }}
-                  >
-                    <span style={{ fontSize: '13px', color: '#666', maxWidth: '540px', lineHeight: 1.45 }}>
-                      {p.status === 'Entregue'
-                        ? 'Precisa devolver o produto ou comprar outro tamanho? Solicite a devolução (em até 7 dias corridos após o recebimento) para receber o reembolso integral e realizar uma nova compra.'
-                        : 'Como o pacote já foi despachado aos Correios, para cancelar você pode recusar o recebimento na entrega ou solicitar a devolução assim que receber.'}
-                    </span>
-                    <a
-                      href={linkWhatsappSuporte}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        background: '#111',
-                        color: '#fff',
-                        textDecoration: 'none',
-                        borderRadius: '6px',
-                        padding: '8px 16px',
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      ↩ Solicitar Devolução
-                    </a>
+                {/* ── Seção de Logística Reversa & Devoluções Automatizadas ── */}
+                {p.status === 'Entregue' && (
+                  <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: '1px solid #eee' }}>
+                    {p.devolucao ? (
+                      /* Card com o Status Atual da Devolução */
+                      <div
+                        style={{
+                          borderRadius: '8px',
+                          padding: '16px 18px',
+                          background:
+                            p.devolucao.status === 'Concluida'
+                              ? '#f0fdf4'
+                              : p.devolucao.status === 'Aprovada'
+                              ? '#f0f9ff'
+                              : p.devolucao.status === 'Recusada'
+                              ? '#fef2f2'
+                              : '#fffbeb',
+                          border: `1.5px solid ${
+                            p.devolucao.status === 'Concluida'
+                              ? '#86efac'
+                              : p.devolucao.status === 'Aprovada'
+                              ? '#7dd3fc'
+                              : p.devolucao.status === 'Recusada'
+                              ? '#fca5a5'
+                              : '#fde047'
+                          }`,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#111' }}>
+                            {p.devolucao.status === 'Pendente' && '🟡 Solicitação de Devolução em Análise'}
+                            {p.devolucao.status === 'Aprovada' && '📦 Devolução Autorizada · Código de Postagem'}
+                            {p.devolucao.status === 'Concluida' && '✓ Devolução Concluída'}
+                            {p.devolucao.status === 'Recusada' && '✕ Devolução Não Aprovada'}
+                          </span>
+                          <span style={{ fontSize: '12px', color: '#666' }}>
+                            Opção: <strong>{p.devolucao.tipo_solicitacao === 'cupom' ? 'Vale-Compras (Troca)' : 'Estorno / Reembolso'}</strong> &bull; R$ {Number(p.devolucao.valor_estorno).toFixed(2).replace('.', ',')}
+                          </span>
+                        </div>
+
+                        {p.devolucao.status === 'Pendente' && (
+                          <p style={{ margin: 0, fontSize: '13px', color: '#854d0e', lineHeight: 1.5 }}>
+                            Sua solicitação foi registrada e está em análise pela nossa equipe. Em até 2 dias úteis, o seu código gratuito de postagem dos Correios será disponibilizado aqui e no seu e-mail.
+                          </p>
+                        )}
+
+                        {p.devolucao.status === 'Aprovada' && (
+                          <div>
+                            <p style={{ margin: '0 0 10px', fontSize: '13px', color: '#0369a1', lineHeight: 1.5 }}>
+                              Leve as peças embaladas a qualquer agência dos Correios e apresente a autorização abaixo. <strong>A postagem é 100% gratuita para você</strong>:
+                            </p>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: '#fff', padding: '10px 14px', borderRadius: '6px', border: '1.5px dashed #0284c7', width: 'fit-content' }}>
+                              <span style={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 700, color: '#64748b' }}>CÓDIGO CORREIOS:</span>
+                              <strong style={{ fontFamily: 'monospace', fontSize: '18px', color: '#0369a1', letterSpacing: '1px' }}>
+                                {p.devolucao.codigo_postagem_reversa || 'CÓDIGO EM EMISSÃO'}
+                              </strong>
+                              {p.devolucao.codigo_postagem_reversa && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(p.devolucao.codigo_postagem_reversa);
+                                    setModalAviso({
+                                      aberto: true,
+                                      titulo: 'Código de Postagem Copiado!',
+                                      mensagem: 'O código de logística reversa foi copiado. Apresente-o em qualquer agência dos Correios para despacho gratuito.',
+                                      icon: '📦',
+                                    });
+                                  }}
+                                  style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                                >
+                                  Copiar
+                                </button>
+                              )}
+                              <span style={{ fontSize: '11px', color: '#b45309', fontWeight: 600 }}>
+                                (Válido por {p.devolucao.prazo_postagem || '7 dias corridos'})
+                              </span>
+                            </div>
+                            {p.devolucao.instrucoes_admin && (
+                              <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#555' }}>
+                                💡 <em>Instruções do lojista: {p.devolucao.instrucoes_admin}</em>
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {p.devolucao.status === 'Concluida' && (
+                          <div>
+                            {p.devolucao.tipo_solicitacao === 'cupom' && p.devolucao.cupom_gerado_codigo ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: '#fff', padding: '10px 14px', borderRadius: '6px', border: '1.5px dashed #9333ea', width: 'fit-content' }}>
+                                <span style={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 700, color: '#7e22ce' }}>SEU VALE-COMPRAS:</span>
+                                <strong style={{ fontFamily: 'monospace', fontSize: '18px', color: '#6b21a8', letterSpacing: '1px' }}>
+                                  {p.devolucao.cupom_gerado_codigo}
+                                </strong>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(p.devolucao.cupom_gerado_codigo);
+                                    setModalAviso({
+                                      aberto: true,
+                                      titulo: 'Cupom Copiado com Sucesso!',
+                                      mensagem: 'O código do seu Vale-Compras foi copiado. Cole no carrinho ou no checkout da sua próxima compra para resgatar seus créditos!',
+                                      icon: '🎟️',
+                                    });
+                                  }}
+                                  style={{ background: '#7e22ce', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                                >
+                                  Copiar Cupom
+                                </button>
+                                <span style={{ fontSize: '12px', color: '#15803d', fontWeight: 700 }}>
+                                  (Crédito de R$ {Number(p.devolucao.valor_estorno).toFixed(2).replace('.', ',')})
+                                </span>
+                              </div>
+                            ) : (
+                              <p style={{ margin: 0, fontSize: '13px', color: '#166534', lineHeight: 1.5 }}>
+                                O estorno no valor de <strong>R$ {Number(p.devolucao.valor_estorno).toFixed(2).replace('.', ',')}</strong> foi concluído com sucesso na mesma forma de pagamento da sua compra.
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {p.devolucao.status === 'Recusada' && (
+                          <div>
+                            <p style={{ margin: '0 0 6px', fontSize: '13px', color: '#991b1b', lineHeight: 1.5 }}>
+                              Motivo da recusa: {p.devolucao.motivo_recusa || 'Não atendeu aos requisitos das políticas de devolução.'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => abrirModalDevolucao(p)}
+                              style={{ background: '#111', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                            >
+                              Nova Solicitação
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* Botão para Iniciar a Solicitação */
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                        <span style={{ fontSize: '13px', color: '#666', maxWidth: '540px', lineHeight: 1.45 }}>
+                          Precisa devolver alguma peça ou trocar o tamanho? Você tem até 7 dias corridos após o recebimento para solicitar a devolução ou vale-compras gratuito.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => abrirModalDevolucao(p)}
+                          style={{
+                            background: '#111',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '9px 18px',
+                            fontSize: '13px',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ↩ Solicitar Devolução / Troca
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Exclusão do Histórico (somente se Entregue ou Cancelado) */}
-                {podeExcluir && (
-                  <div
-                    style={{
-                      marginTop: '14px',
-                      paddingTop: '12px',
-                      borderTop: '1px dashed #eee',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '10px',
-                    }}
-                  >
-                    <span style={{ fontSize: '12px', color: '#888' }}>
-                      Este pedido já foi {p.status === 'Cancelado' ? 'cancelado' : 'entregue'}. Deseja removê-lo do histórico?
+                {/* Pacotes em trânsito */}
+                {['Enviado', 'Em transporte'].includes(p.status) && (
+                  <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #eee' }}>
+                    <span style={{ fontSize: '13px', color: '#666' }}>
+                      Como o pacote já foi despachado aos Correios, a opção de devolução ou troca estará disponível assim que a entrega for confirmada.
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setPedidoParaExcluir(p)}
-                      style={{
-                        background: 'transparent',
-                        color: '#b91c1c',
-                        border: '1px solid #fecaca',
-                        borderRadius: '6px',
-                        padding: '6px 12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                      }}
-                      onMouseOver={(e) => { e.currentTarget.style.background = '#fef2f2'; }}
-                      onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                    >
-                      🗑 Excluir do Histórico
-                    </button>
                   </div>
                 )}
               </div>
@@ -948,73 +1141,6 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar, carregando }) 
           );
         })}
       </div>
-
-      {/* Modal de Confirmação de Exclusão de Pedido */}
-      {pedidoParaExcluir && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.55)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1200,
-            padding: '20px',
-          }}
-          onClick={() => !excluindoPedido && setPedidoParaExcluir(null)}
-        >
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: '12px',
-              padding: '28px',
-              maxWidth: '460px',
-              width: '100%',
-              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.25)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#b91c1c', margin: '0 0 12px 0' }}>
-              Excluir Pedido #{pedidoParaExcluir.id}?
-            </h3>
-            <p style={{ fontSize: '14px', color: '#444', lineHeight: 1.6, margin: '0 0 16px 0' }}>
-              Tem certeza de que deseja remover o <strong>Pedido #{pedidoParaExcluir.id}</strong> do seu histórico?
-              <br />
-              <span style={{ fontSize: '12px', color: '#777' }}>
-                O pedido não será mais exibido na sua lista de compras. Esta ação não pode ser desfeita.
-              </span>
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button
-                type="button"
-                className="conta-btn-sec"
-                onClick={() => setPedidoParaExcluir(null)}
-                disabled={excluindoPedido}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={confirmarExclusaoPedido}
-                disabled={excluindoPedido}
-                style={{
-                  background: '#dc2626',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '10px 18px',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  cursor: excluindoPedido ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {excluindoPedido ? 'Excluindo...' : 'Sim, excluir pedido'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Modal de Confirmação de Cancelamento de Pedido */}
       {pedidoParaCancelar && (
@@ -1291,6 +1417,419 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, recarregar, carregando }) 
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de Solicitação de Devolução / Troca ── */}
+      {pedidoParaDevolucao && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1300,
+            padding: '20px',
+          }}
+          onClick={() => !enviandoDevolucao && setPedidoParaDevolucao(null)}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '14px',
+              maxWidth: '560px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: '28px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #eee', paddingBottom: '14px', marginBottom: '18px' }}>
+              <div>
+                <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#888', fontWeight: 700 }}>
+                  Logística Reversa Gratuita
+                </span>
+                <h3 style={{ fontSize: '19px', fontWeight: 800, margin: '4px 0 0', color: '#111' }}>
+                  Solicitar Devolução / Troca · Pedido #{pedidoParaDevolucao.id}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPedidoParaDevolucao(null)}
+                disabled={enviandoDevolucao}
+                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#888' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {devolucaoSucessoMsg && (
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, marginBottom: '18px' }}>
+                {devolucaoSucessoMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmeterDevolucao}>
+              {/* 1. Seleção de Peças */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#475569', marginBottom: '8px', letterSpacing: '0.5px' }}>
+                  1. Selecione as peças que deseja devolver ou trocar:
+                </label>
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                  {(pedidoParaDevolucao.itens || []).map((it) => {
+                    const itemState = itensDevolucaoSelecionados[it.id] || { selecionado: false, quantidade: 1 };
+                    const prod = it.variacao?.produto || it.produto;
+                    const nome = prod?.nome || 'Camiseta Salv Sacra';
+                    const varInfo = [it.variacao?.tamanho, it.variacao?.cor].filter(Boolean).join(' / ');
+                    const preco = Number(it.preco_unitario || 0);
+
+                    return (
+                      <div
+                        key={it.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '12px 14px',
+                          borderBottom: '1px solid #f1f5f9',
+                          background: itemState.selecionado ? '#f8fafc' : '#fff',
+                        }}
+                      >
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flex: 1 }}>
+                          <input
+                            type="checkbox"
+                            checked={itemState.selecionado}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setItensDevolucaoSelecionados((prev) => ({
+                                ...prev,
+                                [it.id]: {
+                                  selecionado: checked,
+                                  quantidade: prev[it.id]?.quantidade || 1,
+                                },
+                              }));
+                            }}
+                            style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                          />
+                          <div>
+                            <strong style={{ fontSize: '13px', color: '#111' }}>{nome}</strong>
+                            <span style={{ display: 'block', fontSize: '11px', color: '#64748b' }}>
+                              {varInfo ? `Variação: ${varInfo} · ` : ''}
+                              {preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} un
+                            </span>
+                          </div>
+                        </label>
+
+                        {itemState.selecionado && it.quantidade > 1 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', color: '#64748b' }}>Qtd:</span>
+                            <select
+                              value={itemState.quantidade}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setItensDevolucaoSelecionados((prev) => ({
+                                  ...prev,
+                                  [it.id]: { ...prev[it.id], quantidade: val },
+                                }));
+                              }}
+                              style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}
+                            >
+                              {Array.from({ length: it.quantidade }, (_, i) => i + 1).map((n) => (
+                                <option key={n} value={n}>{n}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Motivo */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#475569', marginBottom: '6px', letterSpacing: '0.5px' }}>
+                  2. Motivo da solicitação *
+                </label>
+                <select
+                  value={motivoDevolucao}
+                  onChange={(e) => setMotivoDevolucao(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none' }}
+                >
+                  <option value="Tamanho não serviu / Troca de tamanho">Tamanho não serviu / Desejo trocar de tamanho</option>
+                  <option value="Arrependimento de compra (7 dias CDC)">Arrependimento da compra (em até 7 dias corridos)</option>
+                  <option value="Produto divergente do pedido">Produto divergente ou estampa trocada</option>
+                  <option value="Defeito de fabricação">Defeito de fabricação ou costura</option>
+                  <option value="Outro">Outro motivo</option>
+                </select>
+              </div>
+
+              {/* 3. O que prefere (Vale-Compras vs Estorno) */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#475569', marginBottom: '8px', letterSpacing: '0.5px' }}>
+                  3. Como prefere receber o ressarcimento? *
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '10px',
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      border: tipoDevolucao === 'cupom' ? '1.5px solid #9333ea' : '1px solid #e2e8f0',
+                      background: tipoDevolucao === 'cupom' ? '#faf5ff' : '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="tipo_devolucao"
+                      value="cupom"
+                      checked={tipoDevolucao === 'cupom'}
+                      onChange={() => setTipoDevolucao('cupom')}
+                      style={{ marginTop: '2px' }}
+                    />
+                    <div>
+                      <strong style={{ fontSize: '13px', color: '#111' }}>
+                        🎟️ Vale-Compras / Troca (Recomendado)
+                      </strong>
+                      <span style={{ display: 'block', fontSize: '12px', color: '#64748b', marginTop: '2px', lineHeight: 1.4 }}>
+                        Receba um cupom de 100% do valor para adquirir outro tamanho ou modelo imediatamente sem taxas de envio.
+                      </span>
+                    </div>
+                  </label>
+
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '10px',
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      border: tipoDevolucao === 'reembolso' ? '1.5px solid #0284c7' : '1px solid #e2e8f0',
+                      background: tipoDevolucao === 'reembolso' ? '#f0f9ff' : '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="tipo_devolucao"
+                      value="reembolso"
+                      checked={tipoDevolucao === 'reembolso'}
+                      onChange={() => setTipoDevolucao('reembolso')}
+                      style={{ marginTop: '2px' }}
+                    />
+                    <div>
+                      <strong style={{ fontSize: '13px', color: '#111' }}>
+                        💳 Estorno / Reembolso Integral
+                      </strong>
+                      <span style={{ display: 'block', fontSize: '12px', color: '#64748b', marginTop: '2px', lineHeight: 1.4 }}>
+                        Ressarcimento na mesma forma de pagamento utilizada (estorno na fatura do cartão ou PIX).
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* 4. Comentários adicionais */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#475569', marginBottom: '6px', letterSpacing: '0.5px' }}>
+                  4. Detalhes ou observações (opcional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={descricaoDevolucao}
+                  onChange={(e) => setDescricaoDevolucao(e.target.value)}
+                  placeholder="Ex: Gostaria de trocar pela numeração G ou relatar detalhes sobre o produto..."
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', resize: 'vertical' }}
+                />
+              </div>
+
+              {/* 5. Fotos do Produto / Defeito */}
+              <div style={{ marginBottom: '22px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#475569', letterSpacing: '0.5px' }}>
+                    5. Fotos do produto ou defeito (opcional)
+                  </label>
+                  <span style={{ fontSize: '11px', color: '#888' }}>
+                    {fotosDevolucao.length}/5 fotos
+                  </span>
+                </div>
+                <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+                  Caso a peça tenha vindo com defeito, avaria ou seja diferente do pedido, anexe fotos nítidas para agilizar a conferência.
+                </p>
+
+                {/* Previews das fotos selecionadas */}
+                {fotosPreviews.length > 0 && (
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    {fotosPreviews.map((src, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          position: 'relative',
+                          width: '74px',
+                          height: '74px',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          border: '1px solid #cbd5e1',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                        }}
+                      >
+                        <img src={src} alt={`Preview ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoverFoto(idx)}
+                          style={{
+                            position: 'absolute',
+                            top: '3px',
+                            right: '3px',
+                            background: 'rgba(0, 0, 0, 0.7)',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '18px',
+                            height: '18px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            lineHeight: 1,
+                          }}
+                          title="Remover foto"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {fotosDevolucao.length < 5 && (
+                  <label
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '9px 14px',
+                      borderRadius: '8px',
+                      border: '1.5px dashed #cbd5e1',
+                      background: '#f8fafc',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: '#334155',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseOver={(e) => { e.currentTarget.style.borderColor = '#94a3b8'; e.currentTarget.style.background = '#f1f5f9'; }}
+                    onMouseOut={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
+                  >
+                    <span>📷 Anexar Fotos do Produto</span>
+                    <input
+                      type="file"
+                      accept="image/png, image/jpeg, image/jpg, image/webp"
+                      multiple
+                      onChange={handleAdicionarFotos}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setPedidoParaDevolucao(null)}
+                  disabled={enviandoDevolucao}
+                  style={{ background: '#f1f5f9', color: '#475569', border: 'none', padding: '10px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={enviandoDevolucao}
+                  style={{ background: '#0f172a', color: '#fff', border: 'none', padding: '10px 22px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, cursor: enviandoDevolucao ? 'not-allowed' : 'pointer' }}
+                >
+                  {enviandoDevolucao ? 'Enviando Solicitação...' : 'Confirmar e Solicitar Devolução'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de Aviso Elegante (Substitui alerts nativos do navegador) ── */}
+      {modalAviso.aberto && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1400,
+            padding: '20px',
+          }}
+          onClick={() => setModalAviso({ aberto: false, titulo: '', mensagem: '', icon: '✓' })}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '14px',
+              padding: '28px 24px',
+              maxWidth: '420px',
+              width: '100%',
+              textAlign: 'center',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                background: '#f1f5f9',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '26px',
+                margin: '0 auto 16px',
+              }}
+            >
+              {modalAviso.icon || '✓'}
+            </div>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 8px 0' }}>
+              {modalAviso.titulo}
+            </h3>
+            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: 1.5, margin: '0 0 20px 0' }}>
+              {modalAviso.mensagem}
+            </p>
+            <button
+              type="button"
+              onClick={() => setModalAviso({ aberto: false, titulo: '', mensagem: '', icon: '✓' })}
+              style={{
+                background: '#0f172a',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '10px 24px',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                width: '100%',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              OK, Entendi
+            </button>
           </div>
         </div>
       )}
@@ -1970,6 +2509,7 @@ export default function MinhaContaPage() {
   const urlAba = searchParams.get('aba');
   const urlPedido = searchParams.get('pedido');
   const urlEmail = searchParams.get('email');
+  const urlAvaliar = searchParams.get('avaliar');
 
   const [aba, setAba] = useState(() => (urlAba && TABS.some((t) => t.id === urlAba) ? urlAba : 'resumo'));
   const [pedidos, setPedidos] = useState(() => {
@@ -2179,6 +2719,7 @@ export default function MinhaContaPage() {
               <Pedidos
                 pedidos={pedidos}
                 pedidoSelecionadoInicial={urlPedido}
+                autoAvaliar={urlAvaliar === '1' || urlAvaliar === 'true'}
                 carregando={carregandoPedidos}
                 recarregar={() => {
                   carregarPedidos();

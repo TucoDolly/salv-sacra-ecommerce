@@ -64,6 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('pedidos/{pedido}',                     [PedidoController::class, 'show']);
     Route::post('pedidos/{pedido}/confirmar-pagamento',[PedidoController::class, 'confirmarPagamento']);
     Route::post('pedidos/{pedido}/cancelar',           [PedidoController::class, 'cancelarPeloCliente']);
+    Route::post('pedidos/{pedido}/devolucoes',         [\App\Http\Controllers\DevolucaoController::class, 'solicitar']);
     Route::delete('pedidos/{pedido}',                  [PedidoController::class, 'destroy']);
 
     // Avisos de Reposição de Estoque (cliente autenticado)
@@ -78,6 +79,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('perfil',               [\App\Http\Controllers\ContaController::class, 'atualizarPerfil']);
         Route::put('senha',                [\App\Http\Controllers\ContaController::class, 'alterarSenha']);
         Route::get('pedidos',              [\App\Http\Controllers\ContaController::class, 'pedidos']);
+        Route::post('pedidos/{pedido}/devolucoes', [\App\Http\Controllers\DevolucaoController::class, 'solicitar']);
         Route::get('enderecos',            [\App\Http\Controllers\ContaController::class, 'enderecos']);
         Route::get('ultimo-endereco',      [\App\Http\Controllers\ContaController::class, 'ultimoEnderecoPedido']);
         Route::post('enderecos',           [\App\Http\Controllers\ContaController::class, 'criarEndereco']);
@@ -119,6 +121,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('admin/pedidos/{pedido}/melhor-envio/enviar', [PedidoController::class, 'enviarMelhorEnvio']);
         Route::post('admin/pedidos/{pedido}/rastreio/consultar',  [PedidoController::class, 'consultarRastreio']);
         Route::post('admin/pedidos/rastreio/sincronizar-todos',   [PedidoController::class, 'sincronizarTodosRastreios']);
+        Route::delete('admin/pedidos/limpar-finalizados',         [PedidoController::class, 'limparFinalizados']);
+
+        // ── Gestão de Devoluções & Trocas (Administração) ─────────────────
+        Route::get('admin/devolucoes',                      [\App\Http\Controllers\DevolucaoController::class, 'adminIndex']);
+        Route::put('admin/devolucoes/{devolucao}/aprovar',  [\App\Http\Controllers\DevolucaoController::class, 'adminAprovar']);
+        Route::put('admin/devolucoes/{devolucao}/recusar',  [\App\Http\Controllers\DevolucaoController::class, 'adminRecusar']);
+        Route::put('admin/devolucoes/{devolucao}/concluir', [\App\Http\Controllers\DevolucaoController::class, 'adminConcluir']);
 
         // ── Cupons de desconto (Administração) ────────────────────────────
         Route::get('admin/cupons',            [\App\Http\Controllers\CupomController::class, 'index']);

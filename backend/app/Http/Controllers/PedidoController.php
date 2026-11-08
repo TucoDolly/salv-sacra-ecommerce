@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use App\Services\RastreioService;
+use Carbon\Carbon;
 
 class PedidoController extends Controller
 {
@@ -1066,6 +1067,8 @@ class PedidoController extends Controller
 
     /**
      * Excluir pedido do histórico (apenas se Entregue ou Cancelado).
+     * - Cancelado: pode ser excluído a qualquer momento.
+     * - Entregue: somente após 7 dias corridos (prazo legal de devolução/troca) e sem devolução ativa.
      */
     public function destroy(Request $request, Pedido $pedido): JsonResponse
     {
@@ -1078,12 +1081,83 @@ class PedidoController extends Controller
             ], 422);
         }
 
+        // Regra dos 7 dias para pedidos Entregues (prazo legal de arrependimento / devolução do CDC)
+        if ($pedido->status === 'Entregue') {
+            $dataBase = $pedido->updated_at ?? $pedido->data_pedido ?? $pedido->created_at;
+            $diasDesdeEntrega = Carbon::parse($dataBase)->diffInDays(now());
+            if ($diasDesdeEntrega < 7) {
+                $diasFaltando = 7 - $diasDesdeEntrega;
+                return response()->json([
+                    'message' => "Pedidos com status 'Entregue' só podem ser excluídos após o prazo legal de 7 dias para devolução/troca (faltam {$diasFaltando} dia(s)).",
+                ], 422);
+            }
+
+            // Não exclui se houver devolução em andamento
+            $temDevolucaoAtiva = $pedido->devolucoes()->whereIn('status', ['Pendente', 'Aprovada'])->exists();
+            if ($temDevolucaoAtiva) {
+                return response()->json([
+                    'message' => "Este pedido possui uma solicitação de devolução/troca em andamento e não pode ser excluído.",
+                ], 422);
+            }
+        }
+
         $id = $pedido->id;
         $pedido->itens()->delete();
         $pedido->delete();
 
         return response()->json([
             'mensagem' => "Pedido #{$id} excluído com sucesso.",
+        ]);
+    }
+
+    /**
+     * Exclui em lote todos os pedidos finalizados elegíveis (Apenas Admin).
+     * - Cancelados: a qualquer hora.
+     * - Entregues: apenas após 7 dias e sem devoluções ativas.
+     */
+    public function limparFinalizados(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user->papel === 'admin', 403, 'Acesso negado.');
+
+        $limite7Dias = now()->subDays(7);
+
+        // 1. Pedidos cancelados
+        $cancelados = Pedido::where('status', 'Cancelado')->get();
+
+        // 2. Pedidos entregues há mais de 7 dias e sem devolução ativa
+        $entreguesElegiveis = Pedido::where('status', 'Entregue')
+            ->where(function ($q) use ($limite7Dias) {
+                $q->where('updated_at', '<=', $limite7Dias)
+                  ->orWhere('data_pedido', '<=', $limite7Dias);
+            })
+            ->whereDoesntHave('devolucoes', function ($dq) {
+                $dq->whereIn('status', ['Pendente', 'Aprovada']);
+            })
+            ->get();
+
+        $todosParaExcluir = $cancelados->merge($entreguesElegiveis);
+        $totalExcluidos = $todosParaExcluir->count();
+
+        if ($totalExcluidos === 0) {
+            return response()->json([
+                'message' => 'Nenhum pedido elegível para exclusão no momento (pedidos entregues precisam ter mais de 7 dias de recebimento).',
+                'total_excluidos' => 0,
+            ]);
+        }
+
+        DB::transaction(function () use ($todosParaExcluir) {
+            foreach ($todosParaExcluir as $ped) {
+                $ped->itens()->delete();
+                $ped->delete();
+            }
+        });
+
+        return response()->json([
+            'message' => "Limpeza concluída com sucesso! {$cancelados->count()} pedido(s) cancelado(s) e {$entreguesElegiveis->count()} pedido(s) entregue(s) com mais de 7 dias foram excluídos.",
+            'total_excluidos' => $totalExcluidos,
+            'qtd_cancelados'  => $cancelados->count(),
+            'qtd_entregues'   => $entreguesElegiveis->count(),
         ]);
     }
 

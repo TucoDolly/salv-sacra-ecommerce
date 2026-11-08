@@ -781,3 +781,45 @@
   -webkit-appearance: none;
   margin: 0;
 }
+
+/* ── Estilos de Impressão Global para Telas Admin ── */
+.print-only {
+  display: none;
+}
+
+@media print {
+  .print-only {
+    display: block !important;
+  }
+
+  .no-print,
+  .admin-btn,
+  form.no-print {
+    display: none !important;
+  }
+
+  .admin-page {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  .admin-header {
+    margin-bottom: 16px !important;
+  }
+
+  table {
+    page-break-inside: auto !important;
+    width: 100% !important;
+  }
+
+  tr, .print-avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+}

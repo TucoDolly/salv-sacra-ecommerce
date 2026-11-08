@@ -321,3 +321,44 @@
     display: none;
   }
 }
+
+/* ================================================================
+   IMPRESSÃO — Permite paginação completa de relatórios sem corte
+   ================================================================ */
+@media print {
+  @page {
+    size: auto;
+    margin: 12mm 15mm;
+  }
+
+  html,
+  body,
+  #root,
+  .al-root,
+  .al-main-col,
+  .al-content {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+    position: static !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    box-shadow: none !important;
+  }
+
+  .al-sidebar,
+  .al-topbar,
+  .no-print {
+    display: none !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

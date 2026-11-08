@@ -28,6 +28,7 @@ import RelatoriosPage from './pages/admin/RelatoriosPage';
 import ConfiguracoesPage from './pages/admin/ConfiguracoesPage';
 import CategoriasDevocoesPage from './pages/admin/CategoriasDevocoesPage';
 import AvaliacoesAdminPage from './pages/admin/AvaliacoesAdminPage';
+import DevolucoesList from './pages/admin/DevolucoesList';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import './App.css';
 
@@ -97,6 +98,9 @@ function App() {
 
         {/* Gestão de Pedidos e Pagamentos */}
         <Route path="pedidos"             element={<PedidosList />} />
+
+        {/* Gestão de Devoluções e Trocas */}
+        <Route path="devolucoes"          element={<DevolucoesList />} />
 
         {/* Categorias e Devoções */}
         <Route path="categorias"          element={<CategoriasDevocoesPage />} />

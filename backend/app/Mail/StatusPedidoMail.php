@@ -15,6 +15,7 @@ class StatusPedidoMail extends Mailable
 
     public Pedido $pedido;
     public string $minhaContaUrl;
+    public string $avaliarUrl;
 
     /**
      * Create a new message instance.
@@ -23,7 +24,9 @@ class StatusPedidoMail extends Mailable
     {
         $this->pedido = $pedido;
         $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
-        $this->minhaContaUrl = rtrim($frontendUrl, '/') . '/minha-conta?aba=pedidos&pedido=' . $pedido->id . '&email=' . urlencode($pedido->user?->email ?? $pedido->email_contato ?? '');
+        $emailParam = urlencode($pedido->user?->email ?? $pedido->email_contato ?? '');
+        $this->minhaContaUrl = rtrim($frontendUrl, '/') . '/minha-conta?aba=pedidos&pedido=' . $pedido->id . '&email=' . $emailParam;
+        $this->avaliarUrl = rtrim($frontendUrl, '/') . '/minha-conta?aba=pedidos&pedido=' . $pedido->id . '&avaliar=1&email=' . $emailParam;
     }
 
     /**
@@ -31,8 +34,12 @@ class StatusPedidoMail extends Mailable
      */
     public function envelope(): Envelope
     {
+        $assunto = $this->pedido->status === 'Entregue'
+            ? "🎉 Seu Pedido #{$this->pedido->id} foi entregue! Avalie seus produtos - Salv Sacra"
+            : "Atualização no seu Pedido #{$this->pedido->id} - Status: {$this->pedido->status}";
+
         return new Envelope(
-            subject: "Atualização no seu Pedido #{$this->pedido->id} - Status: {$this->pedido->status}",
+            subject: $assunto,
         );
     }
 

@@ -149,7 +149,7 @@ class ContaController extends Controller
         app(PedidoController::class)->cancelarPedidosPendentesExpirados($user->id);
 
         $pedidos = Pedido::where('user_id', $user->id)
-            ->with(['itens.variacao.produto'])
+            ->with(['itens.variacao.produto', 'devolucao'])
             ->orderByDesc('data_pedido')
             ->get();
 

@@ -9,10 +9,11 @@ class Cupom extends Model
 {
     protected $table = 'cupons';
 
-    protected $fillable = ['codigo', 'descricao', 'percentual', 'tipo', 'todos_produtos', 'ativo'];
+    protected $fillable = ['codigo', 'descricao', 'percentual', 'valor_fixo', 'tipo', 'todos_produtos', 'ativo'];
 
     protected $casts = [
         'percentual'     => 'float',
+        'valor_fixo'     => 'decimal:2',
         'todos_produtos' => 'boolean',
         'ativo'          => 'boolean',
     ];
@@ -27,7 +28,6 @@ class Cupom extends Model
      */
     public function calcularDesconto(array $itens, float $frete): float
     {
-        $pct = min(100, max(0, $this->percentual)) / 100;
         $idsPermitidos = ($this->todos_produtos ?? true) ? null : $this->produtos()->pluck('produtos.id')->all();
 
         $itensValidos = collect($itens)->filter(
@@ -39,10 +39,18 @@ class Cupom extends Model
         }
 
         if ($this->tipo === 'frete') {
+            $pct = min(100, max(0, $this->percentual)) / 100;
             return round($frete * $pct, 2);
         }
 
         $base = $itensValidos->sum(fn ($i) => (float) $i['preco'] * (int) $i['quantidade']);
+
+        // Se o cupom tiver valor fixo (ex: Vale-Compras de Troca/Devolução)
+        if (!empty($this->valor_fixo) && (float) $this->valor_fixo > 0) {
+            return round(min($base, (float) $this->valor_fixo), 2);
+        }
+
+        $pct = min(100, max(0, $this->percentual)) / 100;
         return round($base * $pct, 2);
     }
 }

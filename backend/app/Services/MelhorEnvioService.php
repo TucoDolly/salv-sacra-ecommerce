@@ -10,19 +10,35 @@ use Illuminate\Support\Facades\Log;
 class MelhorEnvioService
 {
     /**
+     * Identifica se está operando em sandbox ou produção.
+     */
+    private function getAmbiente(): string
+    {
+        $amb = Configuracao::where('chave', 'melhor_envio_ambiente')->value('valor')
+            ?: env('MELHOR_ENVIO_ENV', 'production');
+        return str_contains(strtolower($amb), 'sandbox') ? 'sandbox' : 'production';
+    }
+
+    /**
      * URL base da API do Melhor Envio (produção ou sandbox).
      */
     private function getBaseUrl(): string
     {
-        $isSandbox = str_contains(strtolower(env('MELHOR_ENVIO_ENV', 'production')), 'sandbox');
-        return $isSandbox ? 'https://sandbox.melhorenvio.com.br' : 'https://www.melhorenvio.com.br';
+        return $this->getAmbiente() === 'sandbox'
+            ? 'https://sandbox.melhorenvio.com.br'
+            : 'https://www.melhorenvio.com.br';
     }
 
     /**
-     * Obtém o token de acesso da loja.
+     * Obtém o token de acesso da loja conforme o ambiente ativo.
      */
     private function getToken(): ?string
     {
+        if ($this->getAmbiente() === 'sandbox') {
+            $sandboxToken = Configuracao::where('chave', 'melhor_envio_sandbox_token')->value('valor');
+            if (!empty($sandboxToken)) return $sandboxToken;
+        }
+
         return Configuracao::where('chave', 'melhor_envio_token')->value('valor')
             ?: env('MELHOR_ENVIO_TOKEN');
     }

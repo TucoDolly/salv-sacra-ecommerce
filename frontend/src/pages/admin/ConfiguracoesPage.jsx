@@ -49,7 +49,9 @@ export default function ConfiguracoesPage() {
     // Frete & Avisos
     frete_gratis_minimo: '',
     cep_origem: '88702-280',
+    melhor_envio_ambiente: 'production',
     melhor_envio_token: '',
+    melhor_envio_sandbox_token: '',
     aviso_topo_texto: '',
     aviso_topo_ativo: '1',
 
@@ -328,21 +330,77 @@ export default function ConfiguracoesPage() {
                 </div>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
-                  Token de API — Melhor Envio (Opcional para Cotação Oficial em Produção)
-                </label>
-                <input
-                  type="password"
-                  name="melhor_envio_token"
-                  value={form.melhor_envio_token || ''}
-                  onChange={handleChange}
-                  placeholder="Cole aqui o seu Bearer Token do Melhor Envio (se vazio, usa a tabela oficial dos Correios)"
-                  style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
-                />
-                <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
-                  Quando preenchido, conecta em tempo real na API do Melhor Envio (filtrando para Correios PAC e SEDEX). Caso esteja vazio, o sistema calcula automaticamente pela distância real via ViaCEP + Tabela Oficial dos Correios.
-                </span>
+              <div style={{ background: '#fafafa', padding: '18px 20px', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                <h4 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 12px', color: '#111' }}>
+                  Integração com Melhor Envio (Cotação de Frete & Logística)
+                </h4>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
+                    Ambiente Ativo do Melhor Envio
+                  </label>
+                  <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', fontWeight: 600 }}>
+                      <input
+                        type="radio"
+                        name="melhor_envio_ambiente"
+                        value="production"
+                        checked={form.melhor_envio_ambiente !== 'sandbox'}
+                        onChange={handleChange}
+                      />
+                      🟢 Produção Oficial (Frete Real)
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', fontWeight: 600 }}>
+                      <input
+                        type="radio"
+                        name="melhor_envio_ambiente"
+                        value="sandbox"
+                        checked={form.melhor_envio_ambiente === 'sandbox'}
+                        onChange={handleChange}
+                      />
+                      🧪 Sandbox (Ambiente de Testes Gratuito)
+                    </label>
+                  </div>
+                  <span style={{ display: 'block', fontSize: '12px', color: '#666', marginTop: '6px' }}>
+                    Em <strong>Produção</strong>, conecta em <code>melhorenvio.com.br</code>. Em <strong>Sandbox</strong>, conecta em <code>sandbox.melhorenvio.com.br</code> com saldo e postagens fictícias.
+                  </span>
+                </div>
+
+                {form.melhor_envio_ambiente === 'sandbox' ? (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#b45309', marginBottom: '6px' }}>
+                      Token de Sandbox (sandbox.melhorenvio.com.br)
+                    </label>
+                    <input
+                      type="password"
+                      name="melhor_envio_sandbox_token"
+                      value={form.melhor_envio_sandbox_token || ''}
+                      onChange={handleChange}
+                      placeholder="Cole aqui seu Token gerado na conta do Sandbox do Melhor Envio"
+                      style={{ width: '100%', padding: '10px 14px', borderRadius: '6px', border: '1.5px solid #f59e0b', fontSize: '14px', outline: 'none', background: '#fffbeb' }}
+                    />
+                    <span style={{ display: 'block', fontSize: '12px', color: '#92400e', marginTop: '4px' }}>
+                      Obtenha criando uma conta gratuita em <strong>https://sandbox.melhorenvio.com.br</strong> (Painel &gt; Integrações &gt; Gerar Token). Seu token de produção permanece salvo intacto.
+                    </span>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '6px' }}>
+                      Token de Produção (melhorenvio.com.br)
+                    </label>
+                    <input
+                      type="password"
+                      name="melhor_envio_token"
+                      value={form.melhor_envio_token || ''}
+                      onChange={handleChange}
+                      placeholder="Cole aqui seu Bearer Token Oficial do Melhor Envio"
+                      style={{ width: '100%', padding: '10px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
+                    />
+                    <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                      Quando preenchido, cota os valores oficiais em tempo real para Correios SEDEX e PAC.
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div>

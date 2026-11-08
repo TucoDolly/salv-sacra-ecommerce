@@ -11,6 +11,31 @@ use Illuminate\Support\Facades\Mail;
 
 class RastreioService
 {
+    private static function getAmbiente(): string
+    {
+        $amb = Configuracao::where('chave', 'melhor_envio_ambiente')->value('valor')
+            ?: env('MELHOR_ENVIO_ENV', 'production');
+        return str_contains(strtolower($amb), 'sandbox') ? 'sandbox' : 'production';
+    }
+
+    private static function getBaseUrl(): string
+    {
+        return self::getAmbiente() === 'sandbox'
+            ? 'https://sandbox.melhorenvio.com.br'
+            : 'https://www.melhorenvio.com.br';
+    }
+
+    private static function getToken(): ?string
+    {
+        if (self::getAmbiente() === 'sandbox') {
+            $sandboxToken = Configuracao::where('chave', 'melhor_envio_sandbox_token')->value('valor');
+            if (!empty($sandboxToken)) return $sandboxToken;
+        }
+
+        return Configuracao::where('chave', 'melhor_envio_token')->value('valor')
+            ?: env('MELHOR_ENVIO_TOKEN');
+    }
+
     /**
      * Retorna a URL oficial de rastreamento dos Correios para um determinado código.
      */
@@ -45,7 +70,8 @@ class RastreioService
         }
 
         $linkCorreios = self::obterLinkCorreios($codigoRastreio ?: $identificador);
-        $token = Configuracao::where('chave', 'melhor_envio_token')->value('valor') ?: env('MELHOR_ENVIO_TOKEN');
+        $token = self::getToken();
+        $baseUrl = self::getBaseUrl();
 
         $resultado = [
             'sucesso'       => true,
@@ -73,7 +99,7 @@ class RastreioService
                             'User-Agent'    => 'SalvSacraEcommerce (salvsacra2@gmail.com)',
                         ])
                         ->timeout(8)
-                        ->post('https://www.melhorenvio.com.br/api/v2/me/shipment/tracking', [
+                        ->post("{$baseUrl}/api/v2/me/shipment/tracking", [
                             'orders' => [$identificador],
                         ]);
 
@@ -128,7 +154,7 @@ class RastreioService
                             'User-Agent'    => 'SalvSacraEcommerce (salvsacra2@gmail.com)',
                         ])
                         ->timeout(6)
-                        ->get("https://www.melhorenvio.com.br/api/v2/me/orders/search?q={$identificador}");
+                        ->get("{$baseUrl}/api/v2/me/orders/search?q={$identificador}");
 
                     if ($searchResp->successful()) {
                         $lista = $searchResp->json();

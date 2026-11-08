@@ -60,30 +60,99 @@ export default function RelatoriosPage() {
     setPeriodo(pId);
   };
 
-  // Exportação rápida para CSV
+  // Exportação completa e executiva para planilha CSV (formato compatível com Excel pt-BR)
   const exportarCSV = () => {
-    if (!dados?.pedidos?.length) return;
+    if (!dados) return;
 
-    const headers = ['ID', 'Cliente', 'Email', 'Data', 'Status', 'Pagamento', 'Frete (R$)', 'Total (R$)'];
-    const rows = dados.pedidos.map((p) => [
-      `#${p.id}`,
-      `"${p.cliente.replace(/"/g, '""')}"`,
-      `"${p.email || ''}"`,
-      p.data,
-      p.status,
-      p.metodo_pagamento,
-      p.valor_frete.toFixed(2),
-      p.valor_total.toFixed(2),
-    ]);
+    const linhas = [];
 
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    // 1. Cabeçalho Executivo
+    linhas.push(['RELATÓRIO GERENCIAL DE VENDAS & FATURAMENTO - SALV SACRA']);
+    linhas.push([`Período Analisado: ${dados?.intervalo?.inicio || ''} até ${dados?.intervalo?.fim || ''} (${periodo})`]);
+    linhas.push([`Data de Emissão: ${new Date().toLocaleString('pt-BR')}`]);
+    linhas.push(['']);
+
+    // 2. Resumo de Indicadores Principais (KPIs)
+    linhas.push(['--- INDICADORES PRINCIPAIS (KPIS) ---']);
+    linhas.push(['Indicador', 'Valor']);
+    linhas.push(['Faturamento Bruto Total', `"R$ ${Number(kpis.faturamento_total || 0).toFixed(2).replace('.', ',')}"`]);
+    linhas.push(['Receita Líquida (Produtos)', `"R$ ${Number(kpis.faturamento_liquido || 0).toFixed(2).replace('.', ',')}"`]);
+    linhas.push(['Frete Repassado', `"R$ ${Number(kpis.faturamento_frete || 0).toFixed(2).replace('.', ',')}"`]);
+    linhas.push(['Total de Pedidos Realizados', kpis.pedidos_realizados || 0]);
+    linhas.push(['Pedidos Confirmados / Pagos', kpis.pedidos_validos || 0]);
+    linhas.push(['Pedidos Cancelados', kpis.pedidos_cancelados || 0]);
+    linhas.push(['Ticket Médio por Venda', `"R$ ${Number(kpis.ticket_medio || 0).toFixed(2).replace('.', ',')}"`]);
+    linhas.push(['Taxa de Aprovação / Sucesso', `"${(kpis.taxa_aprovacao ?? 0)}%"`]);
+    linhas.push(['']);
+
+    // 3. Distribuição por Canais de Pagamento
+    linhas.push(['--- CANAIS DE PAGAMENTO ---']);
+    linhas.push(['Forma de Pagamento', 'Qtd de Pedidos', 'Volume Total (R$)', '% Participação']);
+    if (pagamentos.length > 0) {
+      pagamentos.forEach((pg) => {
+        linhas.push([
+          `"${pg.metodo}"`,
+          pg.quantidade,
+          `"${Number(pg.total || 0).toFixed(2).replace('.', ',')}"`,
+          `"${pg.porcentagem}%"`,
+        ]);
+      });
+    } else {
+      linhas.push(['Nenhuma venda no período', 0, '0,00', '0%']);
+    }
+    linhas.push(['']);
+
+    // 4. Ranking de Produtos Mais Vendidos
+    linhas.push(['--- PRODUTOS MAIS VENDIDOS ---']);
+    linhas.push(['Ranking', 'Produto', 'Categoria', 'Quantidade Vendida', 'Total Faturado (R$)']);
+    if (topProdutos.length > 0) {
+      topProdutos.forEach((tp, i) => {
+        linhas.push([
+          `#${i + 1}`,
+          `"${(tp.nome || '').replace(/"/g, '""')}"`,
+          `"${tp.categoria || ''}"`,
+          tp.qtd_total,
+          `"${Number(tp.valor_total || 0).toFixed(2).replace('.', ',')}"`,
+        ]);
+      });
+    } else {
+      linhas.push(['-', 'Nenhum item vendido no período', '-', 0, '0,00']);
+    }
+    linhas.push(['']);
+
+    // 5. Detalhamento de Todos os Pedidos Registrados
+    linhas.push(['--- DETALHAMENTO DE PEDIDOS ---']);
+    linhas.push(['Pedido ID', 'Cliente', 'E-mail', 'Data / Hora', 'Status', 'Forma de Pagamento', 'Frete (R$)', 'Total (R$)']);
+    if (pedidos.length > 0) {
+      pedidos.forEach((p) => {
+        const nomeLimpo = (p.cliente || 'Cliente').replace(/\s*\(Conta Desativada\)/i, '').trim();
+        const emailLimpo = (p.email || '').replace(/^desativado_\d+_/, '');
+        linhas.push([
+          `Pedido #${p.id}`,
+          `"${nomeLimpo.replace(/"/g, '""')}"`,
+          `"${emailLimpo.replace(/"/g, '""')}"`,
+          `"${p.data || ''}"`,
+          `"${p.status || ''}"`,
+          `"${p.metodo_pagamento || ''}"`,
+          `"${Number(p.valor_frete || 0).toFixed(2).replace('.', ',')}"`,
+          `"${Number(p.valor_total || 0).toFixed(2).replace('.', ',')}"`,
+        ]);
+      });
+    } else {
+      linhas.push(['-', 'Nenhum pedido encontrado para o período selecionado', '-', '-', '-', '-', '0,00', '0,00']);
+    }
+
+    // Monta o conteúdo com delimitador ';' e BOM UTF-8 para compatibilidade perfeita com Excel no Brasil
+    const csvContent = '\uFEFF' + linhas.map((linha) => (Array.isArray(linha) ? linha.join(';') : linha)).join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.href = url;
     link.setAttribute('download', `relatorio_vendas_${periodo}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const kpis = dados?.kpis || {};
@@ -93,8 +162,25 @@ export default function RelatoriosPage() {
 
   return (
     <div className="admin-page" style={{ maxWidth: '1200px' }}>
-      {/* ── Topo do Painel de Relatórios ── */}
-      <div className="admin-header" style={{ marginBottom: '24px' }}>
+      {/* ── Cabeçalho Exclusivo para Impressão / PDF ── */}
+      <div className="print-only" style={{ marginBottom: '24px', borderBottom: '2px solid #111', paddingBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h1 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '1.5px', color: '#111' }}>
+              SALV SACRA · RELATÓRIO DE VENDAS & FATURAMENTO
+            </h1>
+            <p style={{ margin: 0, fontSize: '13px', color: '#444' }}>
+              Período: <strong>{dados?.intervalo?.inicio || '-'} até {dados?.intervalo?.fim || '-'}</strong> ({PERIODOS.find((p) => p.id === periodo)?.rotulo || periodo})
+            </p>
+          </div>
+          <div style={{ textAlign: 'right', fontSize: '12px', color: '#666' }}>
+            <span>Emitido em: <strong>{new Date().toLocaleString('pt-BR')}</strong></span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Topo do Painel de Relatórios (Tela) ── */}
+      <div className="admin-header no-print" style={{ marginBottom: '24px' }}>
         <div>
           <h1 className="admin-title">Relatórios & Faturamento</h1>
           <p style={{ color: '#777', fontSize: '14px', marginTop: '4px' }}>
@@ -102,13 +188,13 @@ export default function RelatoriosPage() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="no-print" style={{ display: 'flex', gap: '10px' }}>
           <button
             type="button"
             onClick={exportarCSV}
             disabled={loading || !pedidos.length}
             className="admin-btn admin-btn-secondary"
-            title="Exportar pedidos deste período em planilha CSV"
+            title="Exportar relatório completo em planilha CSV"
           >
             📊 Exportar CSV
           </button>
@@ -116,15 +202,15 @@ export default function RelatoriosPage() {
             type="button"
             onClick={() => window.print()}
             className="admin-btn admin-btn-secondary"
-            title="Imprimir relatório"
+            title="Imprimir relatório completo"
           >
             🖨️ Imprimir
           </button>
         </div>
       </div>
 
-      {/* ── Barra de Seleção de Período ── */}
-      <div style={{
+      {/* ── Barra de Seleção de Período (Tela) ── */}
+      <div className="no-print" style={{
         background: '#fff',
         borderRadius: '12px',
         padding: '16px 20px',
@@ -209,7 +295,7 @@ export default function RelatoriosPage() {
       )}
 
       {/* ── 4 Cards de Métricas Principais ── */}
-      <div style={{
+      <div className="print-avoid-break" style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
         gap: '16px',
@@ -269,7 +355,7 @@ export default function RelatoriosPage() {
       </div>
 
       {/* ── Seção Dupla: Métodos de Pagamento + Top Produtos Mais Vendidos ── */}
-      <div style={{
+      <div className="print-avoid-break" style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
         gap: '24px',

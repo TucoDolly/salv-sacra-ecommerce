@@ -11,3 +11,4 @@ export const enviarMelhorEnvioAdmin = (id, payload = {}) => api.post(`/admin/ped
 export const consultarRastreioAdmin = (id) => api.post(`/admin/pedidos/${id}/rastreio/consultar`);
 export const sincronizarTodosRastreiosAdmin = () => api.post('/admin/pedidos/rastreio/sincronizar-todos');
 export const excluirPedidoAdmin = (id) => api.delete(`/pedidos/${id}`);
+export const limparFinalizadosAdmin = () => api.delete('/admin/pedidos/limpar-finalizados');
