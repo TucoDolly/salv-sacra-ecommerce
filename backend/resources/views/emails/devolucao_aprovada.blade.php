@@ -8,7 +8,7 @@
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f4f4f4; padding: 40px 15px;">
         <tr>
             <td align="center">
-                <table role="presentation" width="100%" style="max-width: 580px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
+                <table role="presentation" width="100%" style="max-width: 590px; background-color: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
                     <tr>
                         <td align="center" style="background-color: #111111; padding: 26px 20px;">
                             <h1 style="margin: 0; color: #ffffff; font-size: 22px; letter-spacing: 3px; font-weight: 700; text-transform: uppercase;">SALV SACRA</h1>
@@ -26,43 +26,69 @@
                             </div>
 
                             <p style="margin: 0 0 16px; font-size: 14px; line-height: 1.6; color: #333;">
-                                Olá, {{ $devolucao->user?->name ?? 'Cliente' }}! Sua solicitação de logística reversa foi autorizada. Apresente o código abaixo em qualquer agência própria ou franqueada dos Correios:
+                                Olá, <strong>{{ $devolucao->user?->name ?? 'Cliente' }}</strong>! Sua solicitação de logística reversa foi autorizada pela nossa equipe. Apresente o código abaixo em qualquer agência própria ou conveniada dos Correios:
                             </p>
 
                             <!-- Código de Postagem Reversa -->
-                            <div style="background-color: #f8fafc; border: 2px dashed #0284c7; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 24px;">
+                            <div style="background-color: #f8fafc; border: 2px dashed #0284c7; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 22px;">
                                 <span style="display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; font-weight: 700; margin-bottom: 6px;">
                                     CÓDIGO DE AUTORIZAÇÃO DE POSTAGEM REVERSA (CORREIOS):
                                 </span>
-                                <span style="font-family: monospace; font-size: 24px; font-weight: 800; letter-spacing: 2px; color: #0369a1; background: #e0f2fe; padding: 6px 14px; border-radius: 6px; display: inline-block;">
+                                <span style="font-family: monospace; font-size: 24px; font-weight: 800; letter-spacing: 2px; color: #0369a1; background: #e0f2fe; padding: 6px 16px; border-radius: 6px; display: inline-block;">
                                     {{ $devolucao->codigo_postagem_reversa ?: 'DISPONÍVEL NA ÁREA DO CLIENTE' }}
                                 </span>
-                                @if(!empty($devolucao->prazo_postagem))
-                                    <p style="margin: 10px 0 0; font-size: 12px; color: #b45309; font-weight: 600;">
-                                        ⏳ Validade do código: {{ $devolucao->prazo_postagem }}
-                                    </p>
-                                @endif
+                                <p style="margin: 10px 0 0; font-size: 12px; color: #b45309; font-weight: 700;">
+                                    🚩 Atenção: Este código de logística reversa tem validade de {{ $devolucao->prazo_postagem ?: '7 dias corridos' }} a partir da data de emissão.
+                                </p>
                             </div>
+
+                            <!-- Declaração de Conteúdo (se houver) -->
+                            @if(!empty($devolucao->declaracao_conteudo_url))
+                                <div style="background-color: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 16px 18px; margin-bottom: 24px; text-align: center;">
+                                    <span style="font-size: 13px; font-weight: 700; color: #166534; display: block; margin-bottom: 6px;">
+                                        📄 Declaração de Conteúdo Pronta para Impressão
+                                    </span>
+                                    <p style="margin: 0 0 12px; font-size: 12px; color: #15803d; line-height: 1.4;">
+                                        O arquivo da declaração de conteúdo está anexado a este e-mail. Você também pode visualizá-lo ou baixá-lo diretamente pelo link abaixo:
+                                    </p>
+                                    <a href="{{ $devolucao->declaracao_conteudo_url }}" target="_blank" style="display: inline-block; background-color: #166534; color: #ffffff; text-decoration: none; padding: 9px 18px; border-radius: 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px;">
+                                        Baixar Declaração de Conteúdo ↗
+                                    </a>
+                                </div>
+                            @endif
 
                             @if(!empty($devolucao->instrucoes_admin))
                                 <div style="background-color: #fefce8; border-left: 4px solid #ca8a04; padding: 14px 18px; border-radius: 4px; margin-bottom: 24px;">
-                                    <strong style="font-size: 13px; color: #854d0e;">Orientações do lojista:</strong>
+                                    <strong style="font-size: 13px; color: #854d0e;">Orientações da Salv Sacra:</strong>
                                     <p style="margin: 4px 0 0; font-size: 13px; color: #713f12; line-height: 1.5;">
                                         {{ $devolucao->instrucoes_admin }}
                                     </p>
                                 </div>
                             @endif
 
-                            <h3 style="margin: 0 0 10px; font-size: 14px; font-weight: 700; color: #111;">
-                                Como preparar o seu pacote:
-                            </h3>
-                            <ul style="margin: 0 0 24px; padding-left: 20px; font-size: 13px; color: #555; line-height: 1.6;">
-                                <li>Coloque as peças dobradas na embalagem original ou em caixa parda/pacote similar.</li>
-                                <li>As peças devem conter as etiquetas afixadas e sem sinais de uso ou lavagem.</li>
-                                <li>Informe o código de postagem reversa ao atendente dos Correios. <strong>Você não paga nada no balcão</strong>.</li>
-                            </ul>
+                            <!-- Instruções Passo a Passo Adaptadas -->
+                            <div style="background-color: #fafafa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                                <h3 style="margin: 0 0 12px; font-size: 14px; font-weight: 800; color: #111;">
+                                    👉 O que você precisa fazer (Passo a Passo):
+                                </h3>
+                                <ol style="margin: 0; padding-left: 20px; font-size: 13px; color: #374151; line-height: 1.7;">
+                                    <li style="margin-bottom: 8px;">
+                                        <strong>Reembalar o pacote:</strong> Utilize preferencialmente a embalagem original ou um pacote com dimensões similares às informadas na logística reversa. Com isso, evita-se divergência no frete após a conferência métrica da agência.
+                                    </li>
+                                    <li style="margin-bottom: 8px;">
+                                        <strong>Declaração de Conteúdo:</strong> Imprima a declaração de conteúdo (em anexo neste e-mail) e fixe-a na parte externa da embalagem ou entregue diretamente ao atendente da agência.
+                                    </li>
+                                    <li style="margin-bottom: 8px;">
+                                        <strong>Comparecer à agência dos Correios:</strong> Leve o pacote pronto para envio até qualquer agência dos Correios e informe o <strong>Código de Postagem Reversa</strong> durante o atendimento. <em>O envio é 100% gratuito para você!</em>
+                                    </li>
+                                    <li>
+                                        <strong>Acompanhamento e Liberação:</strong> O pacote seguirá o fluxo normal de postagem e será enviado para a Salv Sacra. Assim que recebido e verificado, liberaremos o seu <strong>{{ $devolucao->tipo_solicitacao === 'cupom' ? 'Vale-Compras para nova compra' : 'Estorno / Reembolso integral' }}</strong>.
+                                    </li>
+                                </ol>
+                            </div>
 
-                            <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
+                            <!-- Botão Minha Conta -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 auto 24px auto;">
                                 <tr>
                                     <td align="center" style="background-color: #111111; border-radius: 6px;">
                                         <a href="{{ $minhaContaUrl }}" target="_blank" style="display: inline-block; padding: 13px 28px; font-size: 13px; font-weight: 700; color: #ffffff; text-decoration: none; letter-spacing: 0.5px; text-transform: uppercase;">
@@ -71,11 +97,24 @@
                                     </td>
                                 </tr>
                             </table>
+
+                            <!-- Seção de Suporte WhatsApp -->
+                            <div style="background-color: #f0fdf4; border: 1.5px dashed #22c55e; border-radius: 8px; padding: 18px; text-align: center;">
+                                <p style="margin: 0 0 10px; font-size: 13px; font-weight: 700; color: #166534;">
+                                    💬 Ficou com alguma dúvida sobre a postagem ou processo de devolução?
+                                </p>
+                                <p style="margin: 0 0 14px; font-size: 12px; color: #15803d; line-height: 1.5;">
+                                    Nossa equipe está à disposição para te auxiliar em todas as etapas através do nosso canal oficial no WhatsApp.
+                                </p>
+                                <a href="https://wa.me/5548996205153?text={{ urlencode('Olá! Gostaria de tirar uma dúvida sobre a devolução do meu Pedido #' . $devolucao->pedido_id) }}" target="_blank" style="display: inline-block; background-color: #25d366; color: #ffffff; text-decoration: none; padding: 11px 22px; border-radius: 6px; font-size: 13px; font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 2px 8px rgba(37,211,102,0.35);">
+                                    Fale Conosco no WhatsApp (48) 99620-5153
+                                </a>
+                            </div>
                         </td>
                     </tr>
                     <tr>
                         <td align="center" style="background-color: #fafafa; padding: 18px; border-top: 1px solid #eee;">
-                            <p style="margin: 0; font-size: 12px; color: #999;">© {{ date('Y') }} Salv Sacra. Todos os direitos reservados.</p>
+                            <p style="margin: 0; font-size: 12px; color: #999;">© {{ date('Y') }} Salv Sacra. Vista a sua fé com elegância e propósito.</p>
                         </td>
                     </tr>
                 </table>
@@ -84,4 +123,3 @@
     </table>
 </body>
 </html>
-

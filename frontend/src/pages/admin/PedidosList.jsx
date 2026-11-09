@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   getPedidosAdmin,
   updateStatusPedidoAdmin,
@@ -71,6 +72,10 @@ function formatarCliente(user, emailContato) {
 
 function podeExcluirPedido(p) {
   if (p.status === 'Cancelado') return true;
+  // Se a devolução já tiver sido concluída, o botão de excluir é liberado para o administrador
+  if (p.devolucao && p.devolucao.status === 'Concluida') {
+    return true;
+  }
   if (p.status === 'Entregue') {
     // Se tiver devolução em andamento, não permite excluir
     if (p.devolucao && ['Pendente', 'Aprovada', 'Em transporte'].includes(p.devolucao.status)) {
@@ -81,6 +86,49 @@ function podeExcluirPedido(p) {
     return (Date.now() - dataRef) >= seteDiasMs;
   }
   return false;
+}
+
+function getInfoDevolucao(dev) {
+  if (!dev) return null;
+  const status = dev.status;
+  if (status === 'Pendente') {
+    return {
+      texto: 'Devolução Solicitada',
+      bg: '#fef3c7',
+      color: '#92400e',
+      border: '#fde68a',
+    };
+  }
+  if (status === 'Aprovada' || status === 'Em transporte') {
+    return {
+      texto: 'Em Devolução',
+      bg: '#e0f2fe',
+      color: '#0369a1',
+      border: '#7dd3fc',
+    };
+  }
+  if (status === 'Concluida') {
+    return {
+      texto: 'Devolução Concluída',
+      bg: '#dcfce7',
+      color: '#15803d',
+      border: '#86efac',
+    };
+  }
+  if (status === 'Recusada') {
+    return {
+      texto: 'Devolução Recusada',
+      bg: '#fee2e2',
+      color: '#b91c1c',
+      border: '#fca5a5',
+    };
+  }
+  return {
+    texto: `Devolução (${status})`,
+    bg: '#f1f5f9',
+    color: '#475569',
+    border: '#cbd5e1',
+  };
 }
 
 function diasRestantesDevolucao(p) {
@@ -121,6 +169,32 @@ export default function PedidosList() {
   // Exclusão de pedidos finalizados / cancelados
   const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
   const [excluindoPedido, setExcluindoPedido] = useState(false);
+  const [avisoBloqueio, setAvisoBloqueio] = useState(null);
+
+  const handleExcluirBloqueado = (p) => {
+    if (p.devolucao && ['Pendente', 'Aprovada', 'Em transporte'].includes(p.devolucao.status)) {
+      setAvisoBloqueio({
+        pedidoId: p.id,
+        titulo: 'Exclusão Bloqueada — Devolução Ativa',
+        mensagem: `O Pedido #${p.id} possui uma solicitação de devolução/troca em andamento (Status: ${p.devolucao.status}). Para segurança contábil e do cliente, o pedido só poderá ser removido após o término do processo e do prazo legal.`,
+      });
+      return;
+    }
+    if (p.status === 'Entregue') {
+      const faltam = diasRestantesDevolucao(p);
+      setAvisoBloqueio({
+        pedidoId: p.id,
+        titulo: 'Exclusão Bloqueada — Prazo de Devolução (CDC)',
+        mensagem: `Este pedido só pode ser excluído após os 7 dias do direito de devolução do cliente (Art. 49 do CDC). Faltam ainda ${faltam} dia(s) para liberação da exclusão do histórico.`,
+      });
+      return;
+    }
+    setAvisoBloqueio({
+      pedidoId: p.id,
+      titulo: 'Exclusão Não Permitida',
+      mensagem: `O Pedido #${p.id} está com status "${p.status}". Apenas pedidos finalizados ("Entregue" após 7 dias ou "Cancelado") podem ser excluídos.`,
+    });
+  };
 
   const carregarPedidos = async () => {
     setLoading(true);
@@ -554,44 +628,76 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                     }}
                   >
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <strong>#{p.id}</strong>
-                        {isNovo && (
-                          <span
-                            style={{
-                              background: '#15803d',
-                              color: '#fff',
-                              fontSize: '10px',
-                              fontWeight: 800,
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              letterSpacing: '0.5px',
-                              textTransform: 'uppercase',
-                              lineHeight: 1,
-                            }}
-                            title="Pedido novo pago aguardando processamento"
-                          >
-                            NOVO
-                          </span>
-                        )}
-                        {isCancelado && (
-                          <span
-                            style={{
-                              background: '#dc2626',
-                              color: '#fff',
-                              fontSize: '10px',
-                              fontWeight: 800,
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              letterSpacing: '0.5px',
-                              textTransform: 'uppercase',
-                              lineHeight: 1,
-                            }}
-                            title="Pedido cancelado"
-                          >
-                            CANCELADO
-                          </span>
-                        )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <strong style={{ fontSize: '13.5px' }}>#{p.id}</strong>
+                          {isNovo && (
+                            <span
+                              style={{
+                                background: '#15803d',
+                                color: '#fff',
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                letterSpacing: '0.5px',
+                                textTransform: 'uppercase',
+                                lineHeight: 1,
+                              }}
+                              title="Pedido novo pago aguardando processamento"
+                            >
+                              NOVO
+                            </span>
+                          )}
+                          {isCancelado && (
+                            <span
+                              style={{
+                                background: '#dc2626',
+                                color: '#fff',
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                letterSpacing: '0.5px',
+                                textTransform: 'uppercase',
+                                lineHeight: 1,
+                              }}
+                              title="Pedido cancelado"
+                            >
+                              CANCELADO
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Botão de Devolução: Varia entre Devolução Solicitada (amarelo), Em Devolução (azul) e Devolução Concluída (verde) */}
+                        {(() => {
+                          const infoDev = getInfoDevolucao(p.devolucao);
+                          if (!infoDev) return null;
+                          return (
+                            <Link
+                              to={`/admin/devolucoes?pedido_id=${p.id}&devolucao_id=${p.devolucao.id}`}
+                              style={{
+                                background: infoDev.bg,
+                                color: infoDev.color,
+                                border: `1px solid ${infoDev.border}`,
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                textDecoration: 'none',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                whiteSpace: 'nowrap',
+                                transition: 'all 0.15s ease',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                              }}
+                              title={`Status da Devolução: ${p.devolucao.status}. Clique para abrir na aba Devoluções e Trocas com destaque.`}
+                            >
+                              {infoDev.texto}
+                            </Link>
+                          );
+                        })()}
                       </div>
                     </td>
                   <td>{formatData(p.data_pedido)}</td>
@@ -655,7 +761,7 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                       ))}
                     </select>
                   </td>
-                  <td style={{ minWidth: '250px' }}>
+                  <td style={{ minWidth: '220px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
                       <button
                         type="button"
@@ -675,27 +781,25 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                         >
                           Excluir
                         </button>
-                      ) : p.status === 'Entregue' ? (
-                        <span
+                      ) : (
+                        <button
+                          type="button"
+                          className="admin-btn admin-btn-sm"
+                          onClick={() => handleExcluirBloqueado(p)}
                           style={{
+                            background: '#f1f5f9',
+                            color: '#94a3b8',
+                            border: '1px solid #e2e8f0',
+                            cursor: 'not-allowed',
+                            padding: '6px 10px',
                             fontSize: '11px',
-                            color: '#854d0e',
-                            background: '#fef9c3',
-                            padding: '5px 9px',
-                            borderRadius: '4px',
-                            fontWeight: 600,
                             whiteSpace: 'nowrap',
-                            border: '1px solid #fde047',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            flexShrink: 0,
                           }}
-                          title="Pedido entregue está dentro do prazo legal de 7 dias para trocas/devoluções (Art. 49 CDC)."
+                          title="Clique para ver o motivo do bloqueio de exclusão"
                         >
-                          🔒 Devolução ({diasRestantesDevolucao(p)}d)
-                        </span>
-                      ) : null}
+                          Excluir
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1269,6 +1373,40 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                 disabled={excluindoPedido}
               >
                 {excluindoPedido ? 'Excluindo…' : 'Sim, excluir pedido'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Modal informativo de bloqueio de exclusão (CDC / Devolução ativa) ── */}
+      {avisoBloqueio && (
+        <div
+          className="admin-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setAvisoBloqueio(null)}
+          style={{ zIndex: 99999 }}
+        >
+          <div
+            className="admin-modal"
+            style={{ maxWidth: '460px', textAlign: 'left' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <span style={{ fontSize: '24px' }}>🛡️</span>
+              <h3 style={{ margin: 0, fontSize: '17px', color: '#0f172a' }}>{avisoBloqueio.titulo}</h3>
+            </div>
+            <p style={{ fontSize: '13.5px', color: '#475569', lineHeight: 1.55, margin: '0 0 20px' }}>
+              {avisoBloqueio.mensagem}
+            </p>
+            <div className="admin-modal-actions" style={{ justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="admin-btn admin-btn-primary"
+                onClick={() => setAvisoBloqueio(null)}
+                style={{ padding: '8px 20px' }}
+              >
+                Entendi
               </button>
             </div>
           </div>

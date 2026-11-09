@@ -1,18 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import '../../styles/admin.css';
 
+const TEXTO_PADRAO_INSTRUCOES = `Reembalar o produto (preferencialmente na embalagem original ou pacote com dimensões similares). Imprimir a declaração de conteúdo anexa e fixar na parte externa da embalagem ou entregar ao atendente da agência dos Correios. Informar o código de postagem reversa no atendimento (envio gratuito). Atenção: validade de 7 dias corridos a partir da data de emissão. Dúvidas: WhatsApp (48) 99620-5153.`;
+
 export default function DevolucoesList() {
+  const [searchParams] = useSearchParams();
+  const pedidoIdParam = searchParams.get('pedido_id');
+  const devolucaoIdParam = searchParams.get('devolucao_id');
+
   const [devolucoes, setDevolucoes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtroStatus, setFiltroStatus] = useState('');
   const [busca, setBusca] = useState('');
   const [devolucaoSelecionada, setDevolucaoSelecionada] = useState(null);
+  const [destaqueId, setDestaqueId] = useState(null);
 
   // Form de aprovação
   const [codigoPostagem, setCodigoPostagem] = useState('');
   const [prazoPostagem, setPrazoPostagem] = useState('7 dias corridos');
-  const [instrucoesAdmin, setInstrucoesAdmin] = useState('Embalar as peças com as etiquetas originais afixadas e apresentar este código em qualquer agência dos Correios.');
+  const [instrucoesAdmin, setInstrucoesAdmin] = useState(TEXTO_PADRAO_INSTRUCOES);
+  const [arquivoDeclaracao, setArquivoDeclaracao] = useState(null);
   const [salvandoAprovacao, setSalvandoAprovacao] = useState(false);
 
   // Form de recusa
@@ -46,6 +55,35 @@ export default function DevolucoesList() {
     carregarDevolucoes();
   }, [filtroStatus]);
 
+  // Efeito rápido de foco e sombra temporária quando acessado a partir de um pedido específico
+  useEffect(() => {
+    if ((pedidoIdParam || devolucaoIdParam) && devolucoes.length > 0) {
+      const devAlvo = devolucoes.find(
+        (d) =>
+          (devolucaoIdParam && String(d.id) === String(devolucaoIdParam)) ||
+          (pedidoIdParam && String(d.pedido_id) === String(pedidoIdParam))
+      );
+
+      if (devAlvo) {
+        setDestaqueId(devAlvo.id);
+
+        // Rola até o pedido exato na tabela com suavidade
+        setTimeout(() => {
+          const el = document.getElementById(`devolucao-row-${devAlvo.id}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 150);
+
+        // Desativa a sombra temporária após 3 segundos
+        const timer = setTimeout(() => {
+          setDestaqueId(null);
+        }, 3000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [pedidoIdParam, devolucaoIdParam, devolucoes]);
+
   const handleBuscar = (e) => {
     e.preventDefault();
     carregarDevolucoes();
@@ -55,7 +93,8 @@ export default function DevolucoesList() {
     setDevolucaoSelecionada(dev);
     setCodigoPostagem(dev.codigo_postagem_reversa || '');
     setPrazoPostagem(dev.prazo_postagem || '7 dias corridos');
-    setInstrucoesAdmin(dev.instrucoes_admin || 'Embalar as peças com as etiquetas originais afixadas e apresentar este código em qualquer agência dos Correios.');
+    setInstrucoesAdmin(dev.instrucoes_admin || TEXTO_PADRAO_INSTRUCOES);
+    setArquivoDeclaracao(null);
     setMotivoRecusa('');
     setModoRecusa(false);
     setMensagemSucesso('');
@@ -70,14 +109,21 @@ export default function DevolucoesList() {
 
     setSalvandoAprovacao(true);
     try {
-      const { data } = await api.put(`/admin/devolucoes/${devolucaoSelecionada.id}/aprovar`, {
-        codigo_postagem_reversa: codigoPostagem,
-        prazo_postagem: prazoPostagem,
-        instrucoes_admin: instrucoesAdmin,
+      const formData = new FormData();
+      formData.append('codigo_postagem_reversa', codigoPostagem.trim());
+      formData.append('prazo_postagem', prazoPostagem.trim());
+      formData.append('instrucoes_admin', instrucoesAdmin.trim());
+      if (arquivoDeclaracao) {
+        formData.append('declaracao_conteudo', arquivoDeclaracao);
+      }
+
+      const { data } = await api.post(`/admin/devolucoes/${devolucaoSelecionada.id}/aprovar`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
       setDevolucaoSelecionada(data.devolucao);
-      setMensagemSucesso('✓ Devolução aprovada! E-mail com instruções enviado ao cliente.');
+      setMensagemSucesso('✓ Devolução aprovada! E-mail com instruções e declaração de conteúdo enviado ao cliente.');
       carregarDevolucoes();
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
     } catch (err) {
       setModalAlerta({ aberto: true, titulo: 'Erro', msg: err.response?.data?.message || 'Erro ao aprovar devolução.' });
     } finally {
@@ -101,6 +147,7 @@ export default function DevolucoesList() {
       setModoRecusa(false);
       setMensagemSucesso('Solicitação de devolução recusada.');
       carregarDevolucoes();
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
     } catch (err) {
       setModalAlerta({ aberto: true, titulo: 'Erro', msg: err.response?.data?.message || 'Erro ao recusar devolução.' });
     } finally {
@@ -116,6 +163,7 @@ export default function DevolucoesList() {
       setMensagemSucesso('✓ Devolução concluída! Cliente notificado com sucesso.');
       setModalConcluirConfirm(false);
       carregarDevolucoes();
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
     } catch (err) {
       setModalAlerta({ aberto: true, titulo: 'Erro', msg: err.response?.data?.message || 'Erro ao concluir devolução.' });
     } finally {
@@ -277,8 +325,23 @@ export default function DevolucoesList() {
                   if (d.status === 'Concluida') { badgeBg = '#dcfce7'; badgeColor = '#15803d'; }
                   if (d.status === 'Recusada') { badgeBg = '#fee2e2'; badgeColor = '#b91c1c'; }
 
+                  const isDestacado = destaqueId === d.id;
+
                   return (
-                    <tr key={d.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <tr
+                      key={d.id}
+                      id={`devolucao-row-${d.id}`}
+                      style={{
+                        borderBottom: '1px solid #f1f5f9',
+                        transition: 'all 0.4s ease',
+                        background: isDestacado ? '#eff6ff' : 'transparent',
+                        boxShadow: isDestacado
+                          ? '0 0 0 3px #3b82f6, 0 10px 28px rgba(59, 130, 246, 0.35)'
+                          : 'none',
+                        position: isDestacado ? 'relative' : 'static',
+                        zIndex: isDestacado ? 10 : 1,
+                      }}
+                    >
                       <td style={{ padding: '14px 20px' }}>
                         <strong style={{ color: '#111' }}>Pedido #{d.pedido_id}</strong>
                         <div style={{ fontSize: '11px', color: '#888' }}>
@@ -522,16 +585,64 @@ export default function DevolucoesList() {
                     />
                   </div>
 
-                  <div style={{ marginBottom: '16px' }}>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#333', marginBottom: '4px' }}>
-                      Orientações ao Cliente (Enviadas por e-mail)
+                  {/* ── Campo de Upload da Declaração de Conteúdo (DC-e) ── */}
+                  <div style={{ marginBottom: '16px', background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                      📄 Declaração de Conteúdo (PDF ou Imagem)
                     </label>
+                    <span style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '8px', lineHeight: 1.4 }}>
+                      Anexe o arquivo gerado no Melhor Envio ou Correios. O arquivo será anexado no e-mail de aprovação e disponibilizado para download na área do cliente.
+                    </span>
+
+                    {devolucaoSelecionada.declaracao_conteudo_url && (
+                      <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                        <span style={{ color: '#166534', fontWeight: 600 }}>✓ Arquivo atual:</span>
+                        <a
+                          href={devolucaoSelecionada.declaracao_conteudo_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: '#0284c7', textDecoration: 'underline', fontWeight: 600 }}
+                        >
+                          {devolucaoSelecionada.declaracao_conteudo_nome || 'Ver Declaração de Conteúdo'} ↗
+                        </a>
+                      </div>
+                    )}
+
+                    <input
+                      type="file"
+                      accept=".pdf,image/*"
+                      onChange={(e) => setArquivoDeclaracao(e.target.files?.[0] || null)}
+                      style={{ fontSize: '12px', color: '#475569' }}
+                    />
+                    {arquivoDeclaracao && (
+                      <span style={{ display: 'block', fontSize: '11px', color: '#0284c7', fontWeight: 600, marginTop: '5px' }}>
+                        Novo arquivo pronto para envio: {arquivoDeclaracao.name} ({(arquivoDeclaracao.size / 1024).toFixed(1)} KB)
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 700, color: '#333' }}>
+                        Orientações ao Cliente (Enviadas por e-mail)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setInstrucoesAdmin(TEXTO_PADRAO_INSTRUCOES)}
+                        style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        Restaurar texto padrão
+                      </button>
+                    </div>
                     <textarea
-                      rows={2}
+                      rows={4}
                       value={instrucoesAdmin}
                       onChange={(e) => setInstrucoesAdmin(e.target.value)}
                       style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '12px', outline: 'none', resize: 'vertical' }}
                     />
+                    <span style={{ fontSize: '11px', color: '#64748b', display: 'block', marginTop: '3px' }}>
+                      💬 Inclui link direto e botão de atendimento com o WhatsApp da loja: (48) 99620-5153.
+                    </span>
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -590,6 +701,22 @@ export default function DevolucoesList() {
                 <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#0c4a6e' }}>
                   Código de Postagem Reversa: <strong>{devolucaoSelecionada.codigo_postagem_reversa}</strong>
                 </p>
+
+                {devolucaoSelecionada.declaracao_conteudo_url && (
+                  <div style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '6px', border: '1.5px dashed #0284c7', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '12px', color: '#0369a1', fontWeight: 600 }}>
+                      📄 Declaração de Conteúdo: {devolucaoSelecionada.declaracao_conteudo_nome || 'Documento em PDF/Imagem'}
+                    </span>
+                    <a
+                      href={devolucaoSelecionada.declaracao_conteudo_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontSize: '12px', color: '#0284c7', fontWeight: 700, textDecoration: 'underline' }}
+                    >
+                      Visualizar Documento ↗
+                    </a>
+                  </div>
+                )}
 
                 <div style={{ background: '#fff', padding: '16px', borderRadius: '8px', border: '1px solid #bae6fd', marginBottom: '16px', fontSize: '13px' }}>
                   <p style={{ margin: '0 0 8px', fontWeight: 700, color: '#111' }}>

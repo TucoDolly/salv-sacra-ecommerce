@@ -67,6 +67,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('pedidos/{pedido}/devolucoes',         [\App\Http\Controllers\DevolucaoController::class, 'solicitar']);
     Route::delete('pedidos/{pedido}',                  [PedidoController::class, 'destroy']);
 
+    // Central de Notificações (Cliente)
+    Route::get('notificacoes',                       [\App\Http\Controllers\NotificacaoController::class, 'indexCliente']);
+    Route::patch('notificacoes/{notificacao}/lida',  [\App\Http\Controllers\NotificacaoController::class, 'marcarLidaCliente']);
+    Route::patch('notificacoes/marcar-todas-lidas',  [\App\Http\Controllers\NotificacaoController::class, 'marcarTodasLidasCliente']);
+    Route::delete('notificacoes/limpar-todas',       [\App\Http\Controllers\NotificacaoController::class, 'limparTodasCliente']);
+    Route::delete('notificacoes/{notificacao}',      [\App\Http\Controllers\NotificacaoController::class, 'destroyCliente']);
+
     // Avisos de Reposição de Estoque (cliente autenticado)
     Route::get('avisos-estoque',                 [\App\Http\Controllers\AvisoEstoqueController::class, 'index']);
     Route::post('avisos-estoque',                [\App\Http\Controllers\AvisoEstoqueController::class, 'toggle']);
@@ -126,8 +133,17 @@ Route::middleware('auth:sanctum')->group(function () {
         // ── Gestão de Devoluções & Trocas (Administração) ─────────────────
         Route::get('admin/devolucoes',                      [\App\Http\Controllers\DevolucaoController::class, 'adminIndex']);
         Route::put('admin/devolucoes/{devolucao}/aprovar',  [\App\Http\Controllers\DevolucaoController::class, 'adminAprovar']);
+        Route::post('admin/devolucoes/{devolucao}/aprovar', [\App\Http\Controllers\DevolucaoController::class, 'adminAprovar']); // Suporta FormData com arquivo
         Route::put('admin/devolucoes/{devolucao}/recusar',  [\App\Http\Controllers\DevolucaoController::class, 'adminRecusar']);
         Route::put('admin/devolucoes/{devolucao}/concluir', [\App\Http\Controllers\DevolucaoController::class, 'adminConcluir']);
+
+        // ── Central de Notificações (Administração) ────────────────────────
+        Route::get('admin/notificacoes',                      [\App\Http\Controllers\NotificacaoController::class, 'indexAdmin']);
+        Route::get('admin/contadores',                        [\App\Http\Controllers\NotificacaoController::class, 'contadoresAdmin']);
+        Route::patch('admin/notificacoes/{notificacao}/lida', [\App\Http\Controllers\NotificacaoController::class, 'marcarLidaAdmin']);
+        Route::patch('admin/notificacoes/marcar-todas-lidas', [\App\Http\Controllers\NotificacaoController::class, 'marcarTodasLidasAdmin']);
+        Route::delete('admin/notificacoes/limpar-todas',       [\App\Http\Controllers\NotificacaoController::class, 'limparTodasAdmin']);
+        Route::delete('admin/notificacoes/{notificacao}',     [\App\Http\Controllers\NotificacaoController::class, 'destroyAdmin']);
 
         // ── Cupons de desconto (Administração) ────────────────────────────
         Route::get('admin/cupons',            [\App\Http\Controllers\CupomController::class, 'index']);

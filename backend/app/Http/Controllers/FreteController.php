@@ -49,9 +49,13 @@ class FreteController extends Controller
         $uf     = strtoupper($dadosCep['uf'] ?? 'SC');
         $cidade = $dadosCep['localidade'] ?? '';
 
-        // 2. Busca configurações de frete da loja (CEP de origem e token)
-        $configs = Configuracao::whereIn('chave', ['cep_origem', 'melhor_envio_token'])
-            ->pluck('valor', 'chave');
+        // 2. Busca configurações de frete da loja (CEP de origem, ambiente e tokens)
+        $configs = Configuracao::whereIn('chave', [
+            'cep_origem',
+            'melhor_envio_token',
+            'melhor_envio_ambiente',
+            'melhor_envio_sandbox_token',
+        ])->pluck('valor', 'chave');
 
         $cepOrigem        = preg_replace('/\D/', '', $configs['cep_origem'] ?? env('FRETE_CEP_ORIGEM', '88702280'));
         $ambienteFrete    = $configs['melhor_envio_ambiente'] ?? env('MELHOR_ENVIO_ENV', 'production');

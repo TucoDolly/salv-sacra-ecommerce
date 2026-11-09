@@ -635,6 +635,24 @@ class PedidoController extends Controller
             }
         }
 
+        // Notificação para o Administrador e Cliente
+        \App\Services\NotificacaoService::notificarAdmin(
+            'pedido',
+            "Novo Pedido #{$pedido->id} Recebido!",
+            "Cliente {$request->user()->name} realizou uma compra no valor de R$ " . number_format($pedido->valor_total, 2, ',', '.') . " (" . strtoupper($pedido->metodo_pagamento ?? 'PIX') . "). Status: {$pedido->status}.",
+            "/admin/pedidos",
+            $pedido->id
+        );
+
+        \App\Services\NotificacaoService::notificarCliente(
+            $request->user()->id,
+            'pedido',
+            "Pedido #{$pedido->id} Realizado!",
+            "Seu pedido no valor de R$ " . number_format($pedido->valor_total, 2, ',', '.') . " foi registrado com sucesso. Acompanhe os detalhes e o envio.",
+            "/minha-conta?aba=pedidos&pedido={$pedido->id}",
+            $pedido->id
+        );
+
         return response()->json([
             'mensagem' => 'Pedido criado com sucesso!',
             'pedido'   => $pedido->load(['itens.variacao.produto']),
@@ -795,6 +813,17 @@ class PedidoController extends Controller
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de pagamento confirmado: ' . $e->getMessage());
             }
+
+            if ($pedido->user_id) {
+                \App\Services\NotificacaoService::notificarCliente(
+                    $pedido->user_id,
+                    'pedido',
+                    "Pagamento Confirmado! · Pedido #{$pedido->id}",
+                    "Seu pagamento no valor de R$ " . number_format($pedido->valor_total, 2, ',', '.') . " foi confirmado com sucesso! Suas peças já estão em preparação para envio.",
+                    "/minha-conta?aba=pedidos&pedido={$pedido->id}",
+                    $pedido->id
+                );
+            }
         }
 
         return response()->json([
@@ -819,7 +848,7 @@ class PedidoController extends Controller
     /**
      * Solicita o estorno integral (refund) do pagamento no Mercado Pago quando o pedido já estava Pago.
      */
-    private function estornarPagamentoMercadoPago(Pedido $pedido): array
+    public function estornarPagamentoMercadoPago(Pedido $pedido): array
     {
         if (empty($pedido->pagamento_id)) {
             return ['sucesso' => false, 'mensagem' => 'Pedido sem ID de pagamento externo.'];
@@ -992,7 +1021,7 @@ class PedidoController extends Controller
     {
         $this->cancelarPedidosPendentesExpirados();
 
-        $query = Pedido::with(['user', 'itens.variacao.produto'])->latest('data_pedido');
+        $query = Pedido::with(['user', 'itens.variacao.produto', 'devolucao'])->latest('data_pedido');
 
         if ($request->filled('status')) {
             $query->where('status', $request->query('status'));
@@ -1032,7 +1061,11 @@ class PedidoController extends Controller
         // Se o Admin alterar o status para Cancelado (e antes não estava Cancelado), devolve o estoque e estorna se já estava pago
         if ($novoStatus === 'Cancelado' && $statusAnterior !== 'Cancelado') {
             $this->restaurarEstoquePedido($pedido);
-            if (in_array($statusAnterior, ['Pago', 'Em separação', 'Em montagem', 'Enviado', 'Em transporte', 'Entregue'], true) || ! empty($pedido->pagamento_id)) {
+
+            // Se o pedido teve devolução concluída com CUPOM (vale-compras), NÃO estorna o pagamento no gateway
+            $temCupomTroca = $pedido->devolucoes()->where('tipo_solicitacao', 'cupom')->where('status', 'Concluida')->exists();
+
+            if (! $temCupomTroca && (in_array($statusAnterior, ['Pago', 'Em separação', 'Em montagem', 'Enviado', 'Em transporte', 'Entregue'], true) || ! empty($pedido->pagamento_id))) {
                 $this->estornarPagamentoMercadoPago($pedido);
             }
             try {
@@ -1047,7 +1080,7 @@ class PedidoController extends Controller
             'codigo_rastreio' => $codigoRastreio ?: null,
         ]);
 
-        // Notifica o cliente por e-mail quando o status muda ou quando um código de rastreio é salvo
+        // Notifica o cliente por e-mail e na loja quando o status muda ou quando um código de rastreio é salvo
         if ($novoStatus !== $statusAnterior || (in_array($novoStatus, ['Enviado', 'Em transporte'], true) && ! empty($validated['codigo_rastreio']))) {
             try {
                 $destinatario = $pedido->email_contato ?: $pedido->user?->email;
@@ -1056,6 +1089,28 @@ class PedidoController extends Controller
                 }
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de status do pedido: ' . $e->getMessage());
+            }
+
+            if ($pedido->user_id) {
+                $msgStatus = match ($novoStatus) {
+                    'Pago' => "Seu pagamento foi confirmado! Suas peças estão sendo preparadas com carinho.",
+                    'Em separação' => "Seu pedido entrou em separação e conferência no nosso ateliê.",
+                    'Em montagem' => "Suas camisetas estão em processo de montagem e embalagem.",
+                    'Enviado' => "Seu pedido foi postado e já está a caminho!" . ($codigoRastreio ? " Código de rastreio: {$codigoRastreio}." : ""),
+                    'Em transporte' => "Sua encomenda está em trânsito com os Correios. Acompanhe a entrega!",
+                    'Entregue' => "Seu pedido foi entregue com sucesso! Esperamos que ame suas peças.",
+                    'Cancelado' => "Seu pedido foi cancelado.",
+                    default => "O status do seu pedido mudou para: {$novoStatus}."
+                };
+
+                \App\Services\NotificacaoService::notificarCliente(
+                    $pedido->user_id,
+                    'pedido',
+                    "Atualização no Pedido #{$pedido->id}: {$novoStatus}",
+                    $msgStatus,
+                    "/minha-conta?aba=pedidos&pedido={$pedido->id}",
+                    $pedido->id
+                );
             }
         }
 
@@ -1081,23 +1136,28 @@ class PedidoController extends Controller
             ], 422);
         }
 
-        // Regra dos 7 dias para pedidos Entregues (prazo legal de arrependimento / devolução do CDC)
+        // Regra para pedidos Entregues (prazo legal de arrependimento / devolução do CDC)
         if ($pedido->status === 'Entregue') {
-            $dataBase = $pedido->updated_at ?? $pedido->data_pedido ?? $pedido->created_at;
-            $diasDesdeEntrega = Carbon::parse($dataBase)->diffInDays(now());
-            if ($diasDesdeEntrega < 7) {
-                $diasFaltando = 7 - $diasDesdeEntrega;
-                return response()->json([
-                    'message' => "Pedidos com status 'Entregue' só podem ser excluídos após o prazo legal de 7 dias para devolução/troca (faltam {$diasFaltando} dia(s)).",
-                ], 422);
-            }
+            $devolucaoConcluida = $pedido->devolucoes()->where('status', 'Concluida')->exists();
 
-            // Não exclui se houver devolução em andamento
-            $temDevolucaoAtiva = $pedido->devolucoes()->whereIn('status', ['Pendente', 'Aprovada'])->exists();
-            if ($temDevolucaoAtiva) {
-                return response()->json([
-                    'message' => "Este pedido possui uma solicitação de devolução/troca em andamento e não pode ser excluído.",
-                ], 422);
+            // Se a devolução já tiver sido concluída, a exclusão é liberada imediatamente para o administrador
+            if (! $devolucaoConcluida) {
+                // Não exclui se houver devolução em andamento
+                $temDevolucaoAtiva = $pedido->devolucoes()->whereIn('status', ['Pendente', 'Aprovada'])->exists();
+                if ($temDevolucaoAtiva) {
+                    return response()->json([
+                        'message' => "Este pedido possui uma solicitação de devolução/troca em andamento e não pode ser excluído.",
+                    ], 422);
+                }
+
+                $dataBase = $pedido->updated_at ?? $pedido->data_pedido ?? $pedido->created_at;
+                $diasDesdeEntrega = Carbon::parse($dataBase)->diffInDays(now());
+                if ($diasDesdeEntrega < 7) {
+                    $diasFaltando = 7 - $diasDesdeEntrega;
+                    return response()->json([
+                        'message' => "Pedidos com status 'Entregue' só podem ser excluídos após o prazo legal de 7 dias para devolução/troca (faltam {$diasFaltando} dia(s)).",
+                    ], 422);
+                }
             }
         }
 
@@ -1125,11 +1185,14 @@ class PedidoController extends Controller
         // 1. Pedidos cancelados
         $cancelados = Pedido::where('status', 'Cancelado')->get();
 
-        // 2. Pedidos entregues há mais de 7 dias e sem devolução ativa
+        // 2. Pedidos entregues há mais de 7 dias ou com devolução já concluída (e sem devoluções ativas)
         $entreguesElegiveis = Pedido::where('status', 'Entregue')
             ->where(function ($q) use ($limite7Dias) {
                 $q->where('updated_at', '<=', $limite7Dias)
-                  ->orWhere('data_pedido', '<=', $limite7Dias);
+                  ->orWhere('data_pedido', '<=', $limite7Dias)
+                  ->orWhereHas('devolucoes', function ($dq) {
+                      $dq->where('status', 'Concluida');
+                  });
             })
             ->whereDoesntHave('devolucoes', function ($dq) {
                 $dq->whereIn('status', ['Pendente', 'Aprovada']);

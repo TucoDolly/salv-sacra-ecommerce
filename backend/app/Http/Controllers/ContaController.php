@@ -24,6 +24,7 @@ class ContaController extends Controller
         app(PedidoController::class)->cancelarPedidosPendentesExpirados($user->id);
 
         $ultimoPedido = Pedido::where('user_id', $user->id)
+            ->with('devolucao')
             ->orderByDesc('data_pedido')
             ->first();
 

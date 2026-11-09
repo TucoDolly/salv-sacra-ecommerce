@@ -1,7 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Link, NavLink, Outlet, useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import api from '../services/api';
+import {
+  obterNotificacoesAdmin,
+  marcarNotificacaoLidaAdmin,
+  marcarTodasLidasAdmin,
+  removerNotificacaoAdmin,
+  limparTodasAdmin,
+} from '../services/notificacaoService';
 import logo from '../assets/logo.webp';
 import '../styles/admin-layout.css';
 
@@ -81,6 +87,13 @@ const IconSearch = () => (
   </svg>
 );
 
+const IconBell = () => (
+  <svg width="19" height="19" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+  </svg>
+);
+
 // ── Links de navegação ────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   { label: 'Início',                  to: '/admin',           icon: <IconHome />,     end: true  },
@@ -108,34 +121,102 @@ function getInitials(name = '') {
 export default function AdminLayout() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+
+  // Contadores
   const [novosPedidosCount, setNovosPedidosCount] = useState(0);
+  const [devolucoesPendentesCount, setDevolucoesPendentesCount] = useState(0);
+  const [estoqueBaixoCount, setEstoqueBaixoCount] = useState(0);
+
+  // Notificações do Admin
+  const [notificacoesAdmin, setNotificacoesAdmin] = useState([]);
+  const [totalNaoLidasAdmin, setTotalNaoLidasAdmin] = useState(0);
+  const [dropdownNotifAdminAberto, setDropdownNotifAdminAberto] = useState(false);
+  const notifAdminRef = useRef(null);
 
   // Proteção contra acesso por usuários que não são admin
   if (user && user.papel !== 'admin') {
     return <Navigate to="/login?admin=1" replace />;
   }
 
-  useEffect(() => {
-    const buscarNovos = () => {
-      api.get('/admin/pedidos')
-        .then(({ data }) => {
-          const lista = Array.isArray(data) ? data : (data.data || []);
-          // Pedidos novos aguardando início do processamento (Pendente ou Pago).
-          // Só deixam de contar como notificação quando forem movidos para 'Em separação' (ou posteriores).
-          const novos = lista.filter((p) => p.status === 'Pendente' || p.status === 'Pago').length;
-          setNovosPedidosCount(novos);
-        })
-        .catch(() => {});
-    };
+  const carregarDadosAdmin = () => {
+    obterNotificacoesAdmin()
+      .then(({ data }) => {
+        setNotificacoesAdmin(data.notificacoes || []);
+        setTotalNaoLidasAdmin(Number(data.total_nao_lidas || 0));
+        setEstoqueBaixoCount(Number(data.estoque_baixo_count || 0));
+        setDevolucoesPendentesCount(Number(data.devolucoes_pendentes_count || 0));
+        setNovosPedidosCount(Number(data.novos_pedidos_count || 0));
+      })
+      .catch(() => {});
+  };
 
-    buscarNovos();
-    const timer = setInterval(buscarNovos, 20000); // atualiza a cada 20 segundos
-    window.addEventListener('salv-pedidos-atualizados', buscarNovos);
+  useEffect(() => {
+    carregarDadosAdmin();
+    const timer = setInterval(carregarDadosAdmin, 15000); // atualiza a cada 15s
+    window.addEventListener('salv-pedidos-atualizados', carregarDadosAdmin);
     return () => {
       clearInterval(timer);
-      window.removeEventListener('salv-pedidos-atualizados', buscarNovos);
+      window.removeEventListener('salv-pedidos-atualizados', carregarDadosAdmin);
     };
   }, []);
+
+  // Fechar dropdown de notificações ao clicar fora
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (notifAdminRef.current && !notifAdminRef.current.contains(e.target)) {
+        setDropdownNotifAdminAberto(false);
+      }
+    };
+    if (dropdownNotifAdminAberto) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [dropdownNotifAdminAberto]);
+
+  const handleMarcarLida = async (n) => {
+    try {
+      if (!n.lida) {
+        const { data } = await marcarNotificacaoLidaAdmin(n.id);
+        setNotificacoesAdmin((prev) =>
+          prev.map((item) => (item.id === n.id ? { ...item, lida: true } : item))
+        );
+        setTotalNaoLidasAdmin(Number(data.total_nao_lidas || 0));
+        setEstoqueBaixoCount(Number(data.estoque_baixo_count || 0));
+      }
+      if (n.link) {
+        setDropdownNotifAdminAberto(false);
+        navigate(n.link);
+      }
+    } catch {}
+  };
+
+  const handleMarcarTodasLidas = async () => {
+    try {
+      const { data } = await marcarTodasLidasAdmin();
+      setNotificacoesAdmin((prev) => prev.map((item) => ({ ...item, lida: true })));
+      setTotalNaoLidasAdmin(0);
+      setEstoqueBaixoCount(Number(data.estoque_baixo_count || 0));
+    } catch {}
+  };
+
+  const handleLimparTodas = async () => {
+    try {
+      const { data } = await limparTodasAdmin();
+      setNotificacoesAdmin([]);
+      setTotalNaoLidasAdmin(0);
+      setEstoqueBaixoCount(0);
+    } catch {}
+  };
+
+  const handleRemoverNotificacao = async (e, id) => {
+    e.stopPropagation();
+    try {
+      const { data } = await removerNotificacaoAdmin(id);
+      setNotificacoesAdmin((prev) => prev.filter((item) => item.id !== id));
+      setTotalNaoLidasAdmin(Number(data.total_nao_lidas || 0));
+      setEstoqueBaixoCount(Number(data.estoque_baixo_count || 0));
+    } catch {}
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -159,6 +240,25 @@ export default function AdminLayout() {
           <div className="al-nav-section">
             {NAV_ITEMS.map(({ label, to, icon, end }) => {
               const isPedidos = to === '/admin/pedidos';
+              const isDevolucoes = to === '/admin/devolucoes';
+              const isEstoque = to === '/admin/estoque';
+
+              const badgeCount = isPedidos
+                ? novosPedidosCount
+                : isDevolucoes
+                ? devolucoesPendentesCount
+                : isEstoque
+                ? estoqueBaixoCount
+                : 0;
+
+              const badgeTitle = isPedidos
+                ? `${novosPedidosCount} novo(s) pedido(s)`
+                : isDevolucoes
+                ? `${devolucoesPendentesCount} solicitação(ões) de devolução pendente(s)`
+                : isEstoque
+                ? `${estoqueBaixoCount} item(ns) com alerta de estoque baixo`
+                : '';
+
               return (
                 <NavLink
                   key={to}
@@ -170,7 +270,7 @@ export default function AdminLayout() {
                 >
                   {icon}
                   <span style={{ flex: 1 }}>{label}</span>
-                  {isPedidos && novosPedidosCount > 0 && (
+                  {badgeCount > 0 && (
                     <span
                       style={{
                         background: '#dc2626',
@@ -183,9 +283,9 @@ export default function AdminLayout() {
                         boxShadow: '0 2px 5px rgba(220, 38, 38, 0.4)',
                         textTransform: 'uppercase',
                       }}
-                      title={`${novosPedidosCount} pedido(s) pendente(s)`}
+                      title={badgeTitle}
                     >
-                      {novosPedidosCount}
+                      {badgeCount}
                     </span>
                   )}
                 </NavLink>
@@ -225,14 +325,212 @@ export default function AdminLayout() {
             />
           </div>
 
-          {/* Perfil */}
-          <div className="al-user">
-            <div className="al-user-info">
-              <span className="al-user-name">{user?.name ?? 'Usuário'}</span>
-              <span className="al-user-email">{user?.email ?? ''}</span>
+          {/* Ações do Topo: Sino do Admin + Perfil (alinhados à direita) */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
+
+            {/* Sino de Notificações do Administrador (ao lado esquerdo do perfil) */}
+            <div ref={notifAdminRef} style={{ position: 'relative' }}>
+              <button
+                type="button"
+                onClick={() => setDropdownNotifAdminAberto((prev) => !prev)}
+                aria-label="Notificações do Administrador"
+                title={totalNaoLidasAdmin > 0 ? `${totalNaoLidasAdmin} nova(s) notificação(ões)` : 'Notificações'}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#d4ccc0',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '7px',
+                  borderRadius: '8px',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = '#ffffff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = '#d4ccc0'; e.currentTarget.style.background = 'none'; }}
+              >
+                <IconBell />
+                {totalNaoLidasAdmin > 0 && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '0px',
+                      right: '0px',
+                      background: '#dc2626',
+                      color: '#ffffff',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      padding: '2px 5px',
+                      borderRadius: '999px',
+                      lineHeight: 1,
+                      minWidth: '16px',
+                      textAlign: 'center',
+                      boxShadow: '0 2px 6px rgba(220,38,38,0.45)',
+                    }}
+                  >
+                    {totalNaoLidasAdmin}
+                  </span>
+                )}
+              </button>
+
+              {/* Dropdown de Notificações do Administrador */}
+              {dropdownNotifAdminAberto && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 12px)',
+                    right: 0,
+                    width: '380px',
+                    maxWidth: '92vw',
+                    background: '#ffffff',
+                    borderRadius: '10px',
+                    boxShadow: '0 12px 36px rgba(0,0,0,0.2)',
+                    border: '1px solid #e2e8f0',
+                    zIndex: 9999,
+                    overflow: 'hidden',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: '14px 18px',
+                      background: '#0f172a',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '16px' }}>🔔</span>
+                      <strong style={{ fontSize: '13px', letterSpacing: '0.3px' }}>Notificações da Loja</strong>
+                      {totalNaoLidasAdmin > 0 && (
+                        <span
+                          style={{
+                            background: '#dc2626',
+                            fontSize: '11px',
+                            padding: '1px 7px',
+                            borderRadius: '10px',
+                            fontWeight: 800,
+                          }}
+                        >
+                          {totalNaoLidasAdmin} nova(s)
+                        </span>
+                      )}
+                    </div>
+                    {notificacoesAdmin.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <button
+                          type="button"
+                          onClick={handleMarcarTodasLidas}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#94a3b8',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            padding: 0,
+                          }}
+                        >
+                          Marcar lidas
+                        </button>
+                        <span style={{ color: '#475569', fontSize: '11px' }}>•</span>
+                        <button
+                          type="button"
+                          onClick={handleLimparTodas}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#f87171',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            padding: 0,
+                          }}
+                        >
+                          Apagar todas
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
+                    {notificacoesAdmin.length === 0 ? (
+                      <div style={{ padding: '36px 20px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                        <span style={{ fontSize: '26px', display: 'block', marginBottom: '8px' }}>🔔</span>
+                        Nenhuma notificação no momento.
+                      </div>
+                    ) : (
+                      notificacoesAdmin.map((n) => (
+                        <div
+                          key={n.id}
+                          onClick={() => handleMarcarLida(n)}
+                          style={{
+                            padding: '12px 16px',
+                            borderBottom: '1px solid #f1f5f9',
+                            background: n.lida ? '#ffffff' : '#fefce8',
+                            cursor: 'pointer',
+                            transition: 'background 0.15s ease',
+                            display: 'flex',
+                            gap: '12px',
+                            alignItems: 'flex-start',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = n.lida ? '#ffffff' : '#fefce8'; }}
+                        >
+                          <span style={{ fontSize: '18px', lineHeight: 1, marginTop: '2px' }}>
+                            {n.categoria === 'devolucao' ? '🔄' : n.categoria === 'estoque' ? '⚠️' : '📦'}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <strong style={{ fontSize: '12.5px', color: '#0f172a' }}>{n.titulo}</strong>
+                              {!n.lida && (
+                                <span style={{ width: '8px', height: '8px', background: '#eab308', borderRadius: '50%', flexShrink: 0 }} />
+                              )}
+                            </div>
+                            <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#475569', lineHeight: 1.45 }}>
+                              {n.mensagem}
+                            </p>
+                            <span style={{ fontSize: '10.5px', color: '#94a3b8', marginTop: '4px', display: 'block' }}>
+                              {new Date(n.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => handleRemoverNotificacao(e, n.id)}
+                            title="Remover notificação"
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#94a3b8',
+                              fontSize: '16px',
+                              cursor: 'pointer',
+                              padding: '0 4px',
+                              lineHeight: 1,
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="al-avatar" aria-hidden="true">
-              {getInitials(user?.name ?? 'U')}
+
+            {/* Perfil */}
+            <div className="al-user">
+              <div className="al-user-info">
+                <span className="al-user-name">{user?.name ?? 'Usuário'}</span>
+                <span className="al-user-email">{user?.email ?? ''}</span>
+              </div>
+              <div className="al-avatar" aria-hidden="true">
+                {getInitials(user?.name ?? 'U')}
+              </div>
             </div>
           </div>
         </header>

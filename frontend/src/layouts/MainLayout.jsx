@@ -1,9 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useCart } from "../contexts/CartContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useWishlist } from "../contexts/WishlistContext";
 import { obterResumoConta } from "../services/contaService";
+import {
+  obterNotificacoesCliente,
+  marcarNotificacaoLidaCliente,
+  marcarTodasLidasCliente,
+  removerNotificacaoCliente,
+  limparTodasCliente,
+} from "../services/notificacaoService";
 import CarrinhoDrawer from "../components/CarrinhoDrawer";
 import logoImg from "../assets/logo.webp";
 import "./MainLayout.css";
@@ -12,6 +19,12 @@ import "./MainLayout.css";
 const IconSearch = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+);
+const IconBell = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
   </svg>
 );
 const IconUser = () => (
@@ -77,8 +90,101 @@ function SiteHeader({ configs }) {
   const [termoBusca, setTermoBusca] = useState('');
   const [modalFavoritosLogin, setModalFavoritosLogin] = useState(false);
   const [pedidosPendentesCount, setPedidosPendentesCount] = useState(0);
+  const [notificacoes, setNotificacoes] = useState([]);
+  const [totalNaoLidas, setTotalNaoLidas] = useState(0);
+  const [dropdownNotificacoesAberto, setDropdownNotificacoesAberto] = useState(false);
+  const notifRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setNotificacoes([]);
+      setTotalNaoLidas(0);
+      return;
+    }
+
+    const carregarNotificacoes = () => {
+      obterNotificacoesCliente()
+        .then(({ data }) => {
+          setNotificacoes(data.notificacoes || []);
+          setTotalNaoLidas(Number(data.total_nao_lidas || 0));
+        })
+        .catch(() => {});
+    };
+
+    carregarNotificacoes();
+    const interval = setInterval(carregarNotificacoes, 20000);
+    window.addEventListener('salv-pedidos-atualizados', carregarNotificacoes);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('salv-pedidos-atualizados', carregarNotificacoes);
+    };
+  }, [isAuthenticated, location.pathname]);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setDropdownNotificacoesAberto(false);
+      }
+    };
+    if (dropdownNotificacoesAberto) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [dropdownNotificacoesAberto]);
+
+  const handleToggleNotificacoes = () => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+    setDropdownNotificacoesAberto((prev) => !prev);
+  };
+
+  const handleMarcarLida = async (n) => {
+    try {
+      if (!n.lida) {
+        await marcarNotificacaoLidaCliente(n.id);
+        setNotificacoes((prev) =>
+          prev.map((item) => (item.id === n.id ? { ...item, lida: true } : item))
+        );
+        setTotalNaoLidas((prev) => Math.max(0, prev - 1));
+      }
+      if (n.link) {
+        setDropdownNotificacoesAberto(false);
+        navigate(n.link);
+      }
+    } catch {}
+  };
+
+  const handleMarcarTodasLidas = async () => {
+    try {
+      await marcarTodasLidasCliente();
+      setNotificacoes((prev) => prev.map((item) => ({ ...item, lida: true })));
+      setTotalNaoLidas(0);
+    } catch {}
+  };
+
+  const handleLimparTodas = async () => {
+    try {
+      await limparTodasCliente();
+      setNotificacoes([]);
+      setTotalNaoLidas(0);
+    } catch {}
+  };
+
+  const handleRemoverNotificacao = async (e, id) => {
+    e.stopPropagation();
+    try {
+      await removerNotificacaoCliente(id);
+      const eraNaoLida = notificacoes.find((n) => n.id === id && !n.lida);
+      setNotificacoes((prev) => prev.filter((item) => item.id !== id));
+      if (eraNaoLida) {
+        setTotalNaoLidas((prev) => Math.max(0, prev - 1));
+      }
+    } catch {}
+  };
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -149,6 +255,185 @@ function SiteHeader({ configs }) {
           </form>
 
           <nav className="header-actions">
+            {/* 1. Notificações */}
+            <div ref={notifRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={handleToggleNotificacoes}
+                className="header-action-item"
+                title={totalNaoLidas > 0 ? `${totalNaoLidas} nova(s) notificação(ões)` : 'Notificações'}
+                style={{ position: 'relative' }}
+              >
+                <IconBell /> Notificações
+                {totalNaoLidas > 0 && (
+                  <span
+                    style={{
+                      marginLeft: '6px',
+                      background: '#dc2626',
+                      color: '#ffffff',
+                      borderRadius: '999px',
+                      padding: '1px 6px',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      lineHeight: '14px',
+                      display: 'inline-block',
+                      boxShadow: '0 2px 6px rgba(220,38,38,0.5)',
+                    }}
+                  >
+                    {totalNaoLidas}
+                  </span>
+                )}
+              </button>
+
+              {/* Dropdown de Notificações do Cliente */}
+              {dropdownNotificacoesAberto && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 12px)',
+                    right: 0,
+                    width: '370px',
+                    maxWidth: '92vw',
+                    background: '#ffffff',
+                    borderRadius: '10px',
+                    boxShadow: '0 12px 36px rgba(0,0,0,0.22)',
+                    border: '1px solid #e2e8f0',
+                    zIndex: 9999,
+                    overflow: 'hidden',
+                    color: '#1a1a1a',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: '14px 18px',
+                      background: '#0f172a',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '16px' }}>🔔</span>
+                      <strong style={{ fontSize: '13px', letterSpacing: '0.3px' }}>Notificações</strong>
+                      {totalNaoLidas > 0 && (
+                        <span
+                          style={{
+                            background: '#dc2626',
+                            fontSize: '11px',
+                            padding: '1px 7px',
+                            borderRadius: '10px',
+                            fontWeight: 800,
+                          }}
+                        >
+                          {totalNaoLidas} nova(s)
+                        </span>
+                      )}
+                    </div>
+                    {notificacoes.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <button
+                          type="button"
+                          onClick={handleMarcarTodasLidas}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#94a3b8',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            padding: 0,
+                          }}
+                        >
+                          Marcar lidas
+                        </button>
+                        <span style={{ color: '#475569', fontSize: '11px' }}>•</span>
+                        <button
+                          type="button"
+                          onClick={handleLimparTodas}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#f87171',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            padding: 0,
+                          }}
+                        >
+                          Apagar todas
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
+                    {notificacoes.length === 0 ? (
+                      <div style={{ padding: '36px 20px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                        <span style={{ fontSize: '26px', display: 'block', marginBottom: '8px' }}>🔔</span>
+                        Nenhuma notificação no momento.
+                      </div>
+                    ) : (
+                      notificacoes.map((n) => (
+                        <div
+                          key={n.id}
+                          onClick={() => handleMarcarLida(n)}
+                          style={{
+                            padding: '12px 16px',
+                            borderBottom: '1px solid #f1f5f9',
+                            background: n.lida ? '#ffffff' : '#f0fdf4',
+                            cursor: 'pointer',
+                            transition: 'background 0.15s ease',
+                            display: 'flex',
+                            gap: '12px',
+                            alignItems: 'flex-start',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = n.lida ? '#ffffff' : '#f0fdf4'; }}
+                        >
+                          <span style={{ fontSize: '18px', lineHeight: 1, marginTop: '2px' }}>
+                            {n.categoria === 'devolucao' ? '🔄' : n.categoria === 'carrinho' ? '🛒' : '📦'}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <strong style={{ fontSize: '12.5px', color: '#0f172a' }}>{n.titulo}</strong>
+                              {!n.lida && (
+                                <span style={{ width: '8px', height: '8px', background: '#10b981', borderRadius: '50%', flexShrink: 0 }} />
+                              )}
+                            </div>
+                            <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#475569', lineHeight: 1.45 }}>
+                              {n.mensagem}
+                            </p>
+                            <span style={{ fontSize: '10.5px', color: '#94a3b8', marginTop: '4px', display: 'block' }}>
+                              {new Date(n.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => handleRemoverNotificacao(e, n.id)}
+                            title="Remover notificação"
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#94a3b8',
+                              fontSize: '16px',
+                              cursor: 'pointer',
+                              padding: '0 4px',
+                              lineHeight: 1,
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 2. Favoritos */}
             <button
               type="button"
               onClick={handleFavoritosClick}

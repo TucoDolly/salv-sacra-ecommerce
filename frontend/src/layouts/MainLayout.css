@@ -29,10 +29,10 @@
   max-width: 1400px;
   margin: 0 auto;
   padding: 18px 28px;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
-  gap: 24px;
+  justify-content: space-between;
+  gap: 28px;
 }
 
 /* --- Logo --- */
@@ -41,7 +41,6 @@
   text-decoration: none;
   display: flex;
   align-items: center;
-  justify-self: start;
 }
 
 .logo-img {
@@ -53,9 +52,8 @@
 
 /* --- Busca --- */
 .header-search {
-  width: 100%;
-  width: 520px;
-  max-width: 100%;
+  flex: 1;
+  max-width: 520px;
   position: relative;
   margin: 0 auto;
 }
@@ -99,15 +97,12 @@
   height: 17px;
 }
 
-/* --- Ações (Favoritos / Minha conta / Carrinho) --- */
+/* --- Ações (Notificações / Favoritos / Minha conta / Carrinho) --- */
 .header-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  justify-self: center;
-  gap: 26px;
+  gap: 24px;
   flex-shrink: 0;
-  margin-right: 24px;
 }
 
 .header-action-item {

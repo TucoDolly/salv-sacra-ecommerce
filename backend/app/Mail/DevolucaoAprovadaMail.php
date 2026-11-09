@@ -39,7 +39,15 @@ class DevolucaoAprovadaMail extends Mailable
 
     public function attachments(): array
     {
-        return [];
+        $attachments = [];
+        if (!empty($this->devolucao->declaracao_conteudo_path)) {
+            $fullPath = storage_path('app/public/' . $this->devolucao->declaracao_conteudo_path);
+            if (file_exists($fullPath)) {
+                $attachments[] = \Illuminate\Mail\Mailables\Attachment::fromPath($fullPath)
+                    ->as($this->devolucao->declaracao_conteudo_nome ?: 'declaracao_conteudo.pdf');
+            }
+        }
+        return $attachments;
     }
 }
 

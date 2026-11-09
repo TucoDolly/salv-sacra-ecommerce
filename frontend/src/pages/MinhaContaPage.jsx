@@ -132,9 +132,44 @@ function Resumo({ user, pedidos, enderecos, cartoes, totalFavoritos, resumo, irP
               <span> · {dataBR(ultimo.data_pedido)}</span>
             </div>
             <div>
-              <span className={`conta-status ${STATUS_CLASS[ultimo.status] ?? 'pendente'}`}>
-                {ultimo.status}
-              </span>
+              {ultimo.devolucao && ['Pendente', 'Aprovada', 'Concluida'].includes(ultimo.devolucao.status) ? (
+                <span
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '999px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    marginRight: '6px',
+                    background:
+                      ultimo.devolucao.status === 'Pendente'
+                        ? '#fef3c7'
+                        : ultimo.devolucao.status === 'Aprovada'
+                        ? '#e0f2fe'
+                        : '#dcfce7',
+                    color:
+                      ultimo.devolucao.status === 'Pendente'
+                        ? '#b45309'
+                        : ultimo.devolucao.status === 'Aprovada'
+                        ? '#0369a1'
+                        : '#15803d',
+                    border: `1px solid ${
+                      ultimo.devolucao.status === 'Pendente'
+                        ? '#fde68a'
+                        : ultimo.devolucao.status === 'Aprovada'
+                        ? '#7dd3fc'
+                        : '#86efac'
+                    }`,
+                  }}
+                >
+                  {ultimo.devolucao.status === 'Pendente' && 'Devolução Solicitada'}
+                  {ultimo.devolucao.status === 'Aprovada' && 'Em Devolução'}
+                  {ultimo.devolucao.status === 'Concluida' && 'Devolução Concluída'}
+                </span>
+              ) : (
+                <span className={`conta-status ${STATUS_CLASS[ultimo.status] ?? 'pendente'}`}>
+                  {ultimo.status}
+                </span>
+              )}
               <strong> {moeda(ultimo.valor_total)}</strong>
             </div>
           </div>
@@ -561,9 +596,44 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                 )}
               </div>
               <div className="conta-pedido-right">
-                <span className={`conta-status ${STATUS_CLASS[p.status] ?? 'pendente'}`}>
-                  {p.status}
-                </span>
+                {p.devolucao && ['Pendente', 'Aprovada', 'Concluida'].includes(p.devolucao.status) ? (
+                  <span
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '999px',
+                      fontSize: '11.5px',
+                      fontWeight: 800,
+                      letterSpacing: '0.3px',
+                      background:
+                        p.devolucao.status === 'Pendente'
+                          ? '#fef3c7'
+                          : p.devolucao.status === 'Aprovada'
+                          ? '#e0f2fe'
+                          : '#dcfce7',
+                      color:
+                        p.devolucao.status === 'Pendente'
+                          ? '#b45309'
+                          : p.devolucao.status === 'Aprovada'
+                          ? '#0369a1'
+                          : '#15803d',
+                      border: `1px solid ${
+                        p.devolucao.status === 'Pendente'
+                          ? '#fde68a'
+                          : p.devolucao.status === 'Aprovada'
+                          ? '#7dd3fc'
+                          : '#86efac'
+                      }`,
+                    }}
+                  >
+                    {p.devolucao.status === 'Pendente' && 'Devolução Solicitada'}
+                    {p.devolucao.status === 'Aprovada' && 'Em Devolução'}
+                    {p.devolucao.status === 'Concluida' && 'Devolução Concluída'}
+                  </span>
+                ) : (
+                  <span className={`conta-status ${STATUS_CLASS[p.status] ?? 'pendente'}`}>
+                    {p.status}
+                  </span>
+                )}
                 <strong>{moeda(p.valor_total)}</strong>
                 <span className="conta-chevron">{aberto === p.id ? '▲' : '▼'}</span>
               </div>
@@ -1011,11 +1081,11 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                         {p.devolucao.status === 'Aprovada' && (
                           <div>
                             <p style={{ margin: '0 0 10px', fontSize: '13px', color: '#0369a1', lineHeight: 1.5 }}>
-                              Leve as peças embaladas a qualquer agência dos Correios e apresente a autorização abaixo. <strong>A postagem é 100% gratuita para você</strong>:
+                              Sua devolução foi autorizada! Apresente o código abaixo em qualquer agência dos Correios. <strong>A postagem é 100% gratuita para você</strong>:
                             </p>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: '#fff', padding: '10px 14px', borderRadius: '6px', border: '1.5px dashed #0284c7', width: 'fit-content' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: '#fff', padding: '12px 16px', borderRadius: '8px', border: '1.5px dashed #0284c7', width: 'fit-content', marginBottom: '14px' }}>
                               <span style={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 700, color: '#64748b' }}>CÓDIGO CORREIOS:</span>
-                              <strong style={{ fontFamily: 'monospace', fontSize: '18px', color: '#0369a1', letterSpacing: '1px' }}>
+                              <strong style={{ fontFamily: 'monospace', fontSize: '20px', color: '#0369a1', letterSpacing: '1px' }}>
                                 {p.devolucao.codigo_postagem_reversa || 'CÓDIGO EM EMISSÃO'}
                               </strong>
                               {p.devolucao.codigo_postagem_reversa && (
@@ -1030,20 +1100,109 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                                       icon: '📦',
                                     });
                                   }}
-                                  style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                                  style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
                                 >
                                   Copiar
                                 </button>
                               )}
-                              <span style={{ fontSize: '11px', color: '#b45309', fontWeight: 600 }}>
-                                (Válido por {p.devolucao.prazo_postagem || '7 dias corridos'})
+                              <span style={{ fontSize: '11px', color: '#b45309', fontWeight: 700 }}>
+                                🚩 Validade: {p.devolucao.prazo_postagem || '7 dias corridos'}
                               </span>
                             </div>
+
+                            {/* ── Declaração de Conteúdo (Download / Impressão) ── */}
+                            {p.devolucao.declaracao_conteudo_url && (
+                              <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                                <div>
+                                  <strong style={{ display: 'block', fontSize: '13px', color: '#166534' }}>
+                                    📄 Declaração de Conteúdo Pronta para Impressão
+                                  </strong>
+                                  <span style={{ fontSize: '11.5px', color: '#15803d' }}>
+                                    Imprima o documento para fixar na embalagem ou entregar ao atendente da agência.
+                                  </span>
+                                </div>
+                                <a
+                                  href={p.devolucao.declaracao_conteudo_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  download={p.devolucao.declaracao_conteudo_nome || 'declaracao_conteudo.pdf'}
+                                  style={{
+                                    background: '#166534',
+                                    color: '#fff',
+                                    padding: '7px 15px',
+                                    borderRadius: '6px',
+                                    fontSize: '12px',
+                                    fontWeight: 700,
+                                    textDecoration: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    boxShadow: '0 2px 5px rgba(22,101,52,0.25)',
+                                  }}
+                                >
+                                  📥 Baixar Declaração de Conteúdo ↗
+                                </a>
+                              </div>
+                            )}
+
+                            {/* ── Instruções Passo a Passo Baseadas no Melhor Envio ── */}
+                            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '14px 18px', marginBottom: '14px' }}>
+                              <strong style={{ display: 'block', fontSize: '13px', color: '#0f172a', marginBottom: '8px' }}>
+                                👉 Passo a Passo para a Postagem:
+                              </strong>
+                              <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '12.5px', color: '#334155', lineHeight: 1.65 }}>
+                                <li style={{ marginBottom: '6px' }}>
+                                  <strong>Reembalar o pacote:</strong> Utilize preferencialmente a embalagem original ou um pacote com dimensões similares às informadas durante a geração da logística reversa. Com isso você evita alterações no valor do frete após a conferência métrica dos Correios.
+                                </li>
+                                <li style={{ marginBottom: '6px' }}>
+                                  <strong>Declaração de Conteúdo:</strong> Imprima a declaração de conteúdo (botão acima) e fixe-a na parte externa da embalagem ou entregue ao atendente.
+                                </li>
+                                <li style={{ marginBottom: '6px' }}>
+                                  <strong>Comparecer até a agência dos Correios:</strong> Vá até a agência com o pacote pronto para o envio e informe o <strong>Código de Postagem Reversa</strong> durante o atendimento (você não paga nada).
+                                </li>
+                                <li>
+                                  <strong>Envio e Liberação:</strong> O pacote seguirá para a Salv Sacra e, assim que verificado, liberaremos seu vale-compras ou estorno.
+                                </li>
+                              </ol>
+                              <div style={{ marginTop: '10px', fontSize: '12px', color: '#b45309', fontWeight: 600 }}>
+                                🚩 Atenção: O código de logística reversa tem validade de 7 dias, contados a partir da data em que foi gerado.
+                              </div>
+                            </div>
+
                             {p.devolucao.instrucoes_admin && (
-                              <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#555' }}>
-                                💡 <em>Instruções do lojista: {p.devolucao.instrucoes_admin}</em>
+                              <p style={{ margin: '8px 0 14px', fontSize: '12px', color: '#555', background: '#fff', padding: '8px 12px', borderRadius: '6px', border: '1px solid #eee' }}>
+                                💡 <em>Orientações adicionais do lojista: {p.devolucao.instrucoes_admin}</em>
                               </p>
                             )}
+
+                            {/* ── Suporte WhatsApp ── */}
+                            <div style={{ background: '#f0fdf4', border: '1px dashed #22c55e', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                              <span style={{ fontSize: '12.5px', color: '#166534', fontWeight: 600 }}>
+                                💬 Ficou com alguma dúvida sobre a postagem? Fale conosco:
+                              </span>
+                              <a
+                                href={`https://wa.me/5548996205153?text=${encodeURIComponent(
+                                  `Olá! Gostaria de tirar uma dúvida sobre a devolução do meu Pedido #${p.id}`
+                                )}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  background: '#25d366',
+                                  color: '#fff',
+                                  padding: '7px 16px',
+                                  borderRadius: '6px',
+                                  fontSize: '12px',
+                                  fontWeight: 800,
+                                  textDecoration: 'none',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  boxShadow: '0 2px 6px rgba(37,211,102,0.3)',
+                                }}
+                              >
+                                Fale no WhatsApp (48) 99620-5153 ↗
+                              </a>
+                            </div>
                           </div>
                         )}
 

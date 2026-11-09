@@ -8,6 +8,7 @@ use App\Mail\DevolucaoSolicitadaMail;
 use App\Models\Cupom;
 use App\Models\Devolucao;
 use App\Models\Pedido;
+use App\Services\NotificacaoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -122,6 +123,24 @@ class DevolucaoController extends Controller
             'valor_estorno'    => $valorTotalItens,
         ]);
 
+        // Notificações no sistema (Admin e Cliente)
+        NotificacaoService::notificarAdmin(
+            'devolucao',
+            "Nova Devolução Solicitada · Pedido #{$pedido->id}",
+            "O cliente {$user->name} solicitou devolução/troca no valor de R$ " . number_format($devolucao->valor_estorno, 2, ',', '.') . " (" . ($devolucao->tipo_solicitacao === 'cupom' ? 'Vale-Compras' : 'Estorno') . "). Motivo: {$devolucao->motivo}.",
+            "/admin/devolucoes",
+            $devolucao->id
+        );
+
+        NotificacaoService::notificarCliente(
+            $user->id,
+            'devolucao',
+            "Devolução Solicitada · Pedido #{$pedido->id}",
+            "Sua solicitação de devolução/troca foi enviada para análise da nossa equipe. Em breve você receberá as instruções e o código de postagem reversa dos Correios.",
+            "/minha-conta?aba=pedidos&pedido={$pedido->id}",
+            $devolucao->id
+        );
+
         // Envia e-mail de confirmação para o cliente
         try {
             $destinatario = $user->email ?: $pedido->email_contato;
@@ -174,15 +193,44 @@ class DevolucaoController extends Controller
             'codigo_postagem_reversa' => ['required', 'string', 'max:100'],
             'prazo_postagem'          => ['nullable', 'string', 'max:100'],
             'instrucoes_admin'        => ['nullable', 'string', 'max:2000'],
+            'declaracao_conteudo'     => ['nullable', 'file', 'max:10240'],
         ]);
 
-        $devolucao->update([
+        $dadosUpdate = [
             'status'                  => 'Aprovada',
             'codigo_postagem_reversa' => trim($validated['codigo_postagem_reversa']),
             'prazo_postagem'          => $validated['prazo_postagem'] ?: '7 dias corridos',
             'instrucoes_admin'        => $validated['instrucoes_admin'] ?? null,
             'data_aprovacao'          => now(),
-        ]);
+        ];
+
+        // Processa anexo da declaração de conteúdo se fornecido
+        if ($request->hasFile('declaracao_conteudo')) {
+            $file = $request->file('declaracao_conteudo');
+            if ($file && $file->isValid()) {
+                $ext = $file->getClientOriginalExtension() ?: 'pdf';
+                $nomeOriginal = $file->getClientOriginalName() ?: ("declaracao_conteudo_pedido_" . $devolucao->pedido_id . "." . $ext);
+                $nomeSalvo = 'dc_' . $devolucao->pedido_id . '_' . Str::random(12) . '.' . strtolower($ext);
+                $caminho = $file->storeAs('devolucoes_documentos', $nomeSalvo, 'public');
+                $dadosUpdate['declaracao_conteudo_path'] = $caminho;
+                $dadosUpdate['declaracao_conteudo_url']  = url('storage/' . $caminho);
+                $dadosUpdate['declaracao_conteudo_nome'] = $nomeOriginal;
+            }
+        }
+
+        $devolucao->update($dadosUpdate);
+        $devolucao->refresh();
+
+        // Notificação para o cliente no painel da loja
+        $temDc = !empty($devolucao->declaracao_conteudo_url);
+        NotificacaoService::notificarCliente(
+            $devolucao->user_id,
+            'devolucao',
+            "Devolução Aprovada! · Pedido #{$devolucao->pedido_id}",
+            "Seu código de postagem reversa dos Correios é {$devolucao->codigo_postagem_reversa} (Válido por {$devolucao->prazo_postagem})" . ($temDc ? " e a Declaração de Conteúdo está disponível para download." : "."),
+            "/minha-conta?aba=pedidos&pedido={$devolucao->pedido_id}",
+            $devolucao->id
+        );
 
         // Dispara e-mail com autorização de postagem reversa para o cliente
         try {
@@ -195,7 +243,7 @@ class DevolucaoController extends Controller
         }
 
         return response()->json([
-            'message'   => 'Devolução aprovada com sucesso! Código de postagem reversa enviado ao cliente.',
+            'message'   => 'Devolução aprovada com sucesso! Código de postagem reversa' . ($temDc ? ' e declaração de conteúdo' : '') . ' enviados ao cliente.',
             'devolucao' => $devolucao->fresh(),
         ]);
     }
@@ -240,6 +288,13 @@ class DevolucaoController extends Controller
                 'todos_produtos' => true,
                 'ativo'          => true,
             ]);
+        } elseif ($devolucao->tipo_solicitacao === 'reembolso' && $devolucao->pedido) {
+            // Se for reembolso financeiro, estorna o pagamento diretamente no gateway Mercado Pago
+            try {
+                app(PedidoController::class)->estornarPagamentoMercadoPago($devolucao->pedido);
+            } catch (\Throwable $e) {
+                Log::warning("Erro ao solicitar estorno MP na conclusão da devolução #{$devolucao->id}: " . $e->getMessage());
+            }
         }
 
         $devolucao->update([
@@ -247,6 +302,20 @@ class DevolucaoController extends Controller
             'cupom_gerado_codigo' => $cupomCodigo ?: $devolucao->cupom_gerado_codigo,
             'data_conclusao'      => now(),
         ]);
+
+        // Notificação para o cliente
+        $msgConclusao = $devolucao->tipo_solicitacao === 'cupom' && $cupomCodigo
+            ? "Sua devolução foi concluída com sucesso! Seu Vale-Compras no valor de R$ " . number_format($devolucao->valor_estorno, 2, ',', '.') . " foi gerado ({$cupomCodigo}). Resgate em sua próxima compra!"
+            : "Sua devolução foi concluída! O estorno de R$ " . number_format($devolucao->valor_estorno, 2, ',', '.') . " foi solicitado na sua forma de pagamento.";
+
+        NotificacaoService::notificarCliente(
+            $devolucao->user_id,
+            'devolucao',
+            "Devolução Concluída · Pedido #{$devolucao->pedido_id}",
+            $msgConclusao,
+            "/minha-conta?aba=pedidos&pedido={$devolucao->pedido_id}",
+            $devolucao->id
+        );
 
         // Dispara e-mail avisando conclusão (e entregando o cupom ou comprovando estorno)
         try {
