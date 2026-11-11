@@ -60,101 +60,6 @@ export default function RelatoriosPage() {
     setPeriodo(pId);
   };
 
-  // Exportação completa e executiva para planilha CSV (formato compatível com Excel pt-BR)
-  const exportarCSV = () => {
-    if (!dados) return;
-
-    const linhas = [];
-
-    // 1. Cabeçalho Executivo
-    linhas.push(['RELATÓRIO GERENCIAL DE VENDAS & FATURAMENTO - SALV SACRA']);
-    linhas.push([`Período Analisado: ${dados?.intervalo?.inicio || ''} até ${dados?.intervalo?.fim || ''} (${periodo})`]);
-    linhas.push([`Data de Emissão: ${new Date().toLocaleString('pt-BR')}`]);
-    linhas.push(['']);
-
-    // 2. Resumo de Indicadores Principais (KPIs)
-    linhas.push(['--- INDICADORES PRINCIPAIS (KPIS) ---']);
-    linhas.push(['Indicador', 'Valor']);
-    linhas.push(['Faturamento Bruto Total', `"R$ ${Number(kpis.faturamento_total || 0).toFixed(2).replace('.', ',')}"`]);
-    linhas.push(['Receita Líquida (Produtos)', `"R$ ${Number(kpis.faturamento_liquido || 0).toFixed(2).replace('.', ',')}"`]);
-    linhas.push(['Frete Repassado', `"R$ ${Number(kpis.faturamento_frete || 0).toFixed(2).replace('.', ',')}"`]);
-    linhas.push(['Total de Pedidos Realizados', kpis.pedidos_realizados || 0]);
-    linhas.push(['Pedidos Confirmados / Pagos', kpis.pedidos_validos || 0]);
-    linhas.push(['Pedidos Cancelados', kpis.pedidos_cancelados || 0]);
-    linhas.push(['Ticket Médio por Venda', `"R$ ${Number(kpis.ticket_medio || 0).toFixed(2).replace('.', ',')}"`]);
-    linhas.push(['Taxa de Aprovação / Sucesso', `"${(kpis.taxa_aprovacao ?? 0)}%"`]);
-    linhas.push(['']);
-
-    // 3. Distribuição por Canais de Pagamento
-    linhas.push(['--- CANAIS DE PAGAMENTO ---']);
-    linhas.push(['Forma de Pagamento', 'Qtd de Pedidos', 'Volume Total (R$)', '% Participação']);
-    if (pagamentos.length > 0) {
-      pagamentos.forEach((pg) => {
-        linhas.push([
-          `"${pg.metodo}"`,
-          pg.quantidade,
-          `"${Number(pg.total || 0).toFixed(2).replace('.', ',')}"`,
-          `"${pg.porcentagem}%"`,
-        ]);
-      });
-    } else {
-      linhas.push(['Nenhuma venda no período', 0, '0,00', '0%']);
-    }
-    linhas.push(['']);
-
-    // 4. Ranking de Produtos Mais Vendidos
-    linhas.push(['--- PRODUTOS MAIS VENDIDOS ---']);
-    linhas.push(['Ranking', 'Produto', 'Categoria', 'Quantidade Vendida', 'Total Faturado (R$)']);
-    if (topProdutos.length > 0) {
-      topProdutos.forEach((tp, i) => {
-        linhas.push([
-          `#${i + 1}`,
-          `"${(tp.nome || '').replace(/"/g, '""')}"`,
-          `"${tp.categoria || ''}"`,
-          tp.qtd_total,
-          `"${Number(tp.valor_total || 0).toFixed(2).replace('.', ',')}"`,
-        ]);
-      });
-    } else {
-      linhas.push(['-', 'Nenhum item vendido no período', '-', 0, '0,00']);
-    }
-    linhas.push(['']);
-
-    // 5. Detalhamento de Todos os Pedidos Registrados
-    linhas.push(['--- DETALHAMENTO DE PEDIDOS ---']);
-    linhas.push(['Pedido ID', 'Cliente', 'E-mail', 'Data / Hora', 'Status', 'Forma de Pagamento', 'Frete (R$)', 'Total (R$)']);
-    if (pedidos.length > 0) {
-      pedidos.forEach((p) => {
-        const nomeLimpo = (p.cliente || 'Cliente').replace(/\s*\(Conta Desativada\)/i, '').trim();
-        const emailLimpo = (p.email || '').replace(/^desativado_\d+_/, '');
-        linhas.push([
-          `Pedido #${p.id}`,
-          `"${nomeLimpo.replace(/"/g, '""')}"`,
-          `"${emailLimpo.replace(/"/g, '""')}"`,
-          `"${p.data || ''}"`,
-          `"${p.status || ''}"`,
-          `"${p.metodo_pagamento || ''}"`,
-          `"${Number(p.valor_frete || 0).toFixed(2).replace('.', ',')}"`,
-          `"${Number(p.valor_total || 0).toFixed(2).replace('.', ',')}"`,
-        ]);
-      });
-    } else {
-      linhas.push(['-', 'Nenhum pedido encontrado para o período selecionado', '-', '-', '-', '-', '0,00', '0,00']);
-    }
-
-    // Monta o conteúdo com delimitador ';' e BOM UTF-8 para compatibilidade perfeita com Excel no Brasil
-    const csvContent = '\uFEFF' + linhas.map((linha) => (Array.isArray(linha) ? linha.join(';') : linha)).join('\r\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `relatorio_vendas_${periodo}_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
   const kpis = dados?.kpis || {};
   const pagamentos = dados?.pagamentos || [];
   const topProdutos = dados?.top_produtos || [];
@@ -189,15 +94,6 @@ export default function RelatoriosPage() {
         </div>
 
         <div className="no-print" style={{ display: 'flex', gap: '10px' }}>
-          <button
-            type="button"
-            onClick={exportarCSV}
-            disabled={loading || !pedidos.length}
-            className="admin-btn admin-btn-secondary"
-            title="Exportar relatório completo em planilha CSV"
-          >
-            📊 Exportar CSV
-          </button>
           <button
             type="button"
             onClick={() => window.print()}

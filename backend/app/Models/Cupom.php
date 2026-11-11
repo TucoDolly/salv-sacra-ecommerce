@@ -38,19 +38,21 @@ class Cupom extends Model
             return 0.0;
         }
 
+        // Cupom de frete: aplica ao frete do pedido completo independente da quantidade de produtos
         if ($this->tipo === 'frete') {
-            $pct = min(100, max(0, $this->percentual)) / 100;
+            $pct = min(100, max(0, (float) $this->percentual)) / 100;
             return round($frete * $pct, 2);
         }
 
-        $base = $itensValidos->sum(fn ($i) => (float) $i['preco'] * (int) $i['quantidade']);
+        // Cupom de produto: válido para apenas UM produto no carrinho (o elegível de maior valor unitário)
+        $maiorPrecoItem = (float) $itensValidos->max(fn ($i) => (float) $i['preco']);
 
         // Se o cupom tiver valor fixo (ex: Vale-Compras de Troca/Devolução)
         if (!empty($this->valor_fixo) && (float) $this->valor_fixo > 0) {
-            return round(min($base, (float) $this->valor_fixo), 2);
+            return round(min($maiorPrecoItem, (float) $this->valor_fixo), 2);
         }
 
-        $pct = min(100, max(0, $this->percentual)) / 100;
-        return round($base * $pct, 2);
+        $pct = min(100, max(0, (float) $this->percentual)) / 100;
+        return round($maiorPrecoItem * $pct, 2);
     }
 }

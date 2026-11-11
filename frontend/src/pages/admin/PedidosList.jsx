@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   getPedidosAdmin,
   updateStatusPedidoAdmin,
@@ -138,6 +138,8 @@ function diasRestantesDevolucao(p) {
 }
 
 export default function PedidosList() {
+  const [searchParams] = useSearchParams();
+  const buscaUrl = searchParams.get('busca') || searchParams.get('pedido') || '';
   const [pedidos, setPedidos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -145,7 +147,13 @@ export default function PedidosList() {
 
   // Filtros
   const [statusFiltro, setStatusFiltro] = useState('');
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useState(buscaUrl);
+
+  useEffect(() => {
+    if (buscaUrl !== undefined) {
+      setBusca(buscaUrl);
+    }
+  }, [buscaUrl]);
 
   // Paginação
   const [itensPorPagina, setItensPorPagina] = useState(10);

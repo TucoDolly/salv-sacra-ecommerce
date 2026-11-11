@@ -21,6 +21,8 @@
    HEADER PRINCIPAL
    ============================================================ */
 .site-header {
+  position: relative;
+  z-index: 500;
   background-color: #2c2c2c;
   border-bottom: none;
 }
@@ -55,6 +57,7 @@
   flex: 1;
   max-width: 520px;
   position: relative;
+  z-index: 501;
   margin: 0 auto;
 }
 
@@ -77,7 +80,7 @@
   border-color: #e5dfd5;
 }
 
-.header-search button {
+.header-search form button {
   position: absolute;
   right: 0;
   top: 0;
@@ -92,7 +95,7 @@
   color: #d4ccc0;
 }
 
-.header-search button svg {
+.header-search form button svg {
   width: 17px;
   height: 17px;
 }

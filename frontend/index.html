@@ -5,6 +5,21 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>frontend</title>
+    <script>
+      window.addEventListener('error', function(e) {
+        var el = document.getElementById('debug-error-overlay');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'debug-error-overlay';
+          el.style = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#fff0f0;color:#900;padding:24px;z-index:999999;font-family:monospace;font-size:14px;overflow:auto;white-space:pre-wrap;';
+          document.body ? document.body.appendChild(el) : document.documentElement.appendChild(el);
+        }
+        el.innerHTML = '<h2 style="color:#b91c1c">Erro de Script: ' + (e.message || 'Desconhecido') + '</h2><p>Arquivo: ' + (e.filename || '') + ':' + (e.lineno || '') + '</p><pre>' + (e.error ? e.error.stack : '') + '</pre>';
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        console.error('Unhandled Rejection:', e.reason);
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

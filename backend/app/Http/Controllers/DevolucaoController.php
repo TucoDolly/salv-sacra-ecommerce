@@ -70,13 +70,16 @@ class DevolucaoController extends Controller
 
         $itensDevolvidos = [];
         $valorTotalItens = 0.0;
+        $ehTrocaCupom = $validated['tipo_solicitacao'] === 'cupom';
 
         foreach ($validated['itens'] as $itemSol) {
             $itemDb = $pedido->itens->firstWhere('id', (int) $itemSol['item_id']);
             if (!$itemDb) continue;
 
             $qtd = min((int) $itemSol['quantidade'], (int) $itemDb->quantidade);
-            $precoUnitario = (float) $itemDb->preco_unitario;
+            // Em caso de troca com cupom, calcula pelo preço cheio/tabela do produto para não penalizar o cliente que usou descontos anteriores
+            $precoTabela = (float) ($itemDb->variacao?->produto?->preco_base ?: $itemDb->preco_unitario);
+            $precoUnitario = $ehTrocaCupom ? $precoTabela : (float) $itemDb->preco_unitario;
             $subtotalItem = round($qtd * $precoUnitario, 2);
             $valorTotalItens += $subtotalItem;
 
@@ -92,6 +95,11 @@ class DevolucaoController extends Controller
                 'preco_unitario' => $precoUnitario,
                 'subtotal'       => $subtotalItem,
             ];
+        }
+
+        // Se for troca com cupom e o cliente estiver devolvendo o pedido por completo, inclui o frete para ele recomprar sem custos
+        if ($ehTrocaCupom && count($itensDevolvidos) === $pedido->itens->count() && (float) $pedido->valor_frete > 0) {
+            $valorTotalItens += (float) $pedido->valor_frete;
         }
 
         if (empty($itensDevolvidos)) {
@@ -227,7 +235,7 @@ class DevolucaoController extends Controller
             $devolucao->user_id,
             'devolucao',
             "Devolução Aprovada! · Pedido #{$devolucao->pedido_id}",
-            "Seu código de postagem reversa dos Correios é {$devolucao->codigo_postagem_reversa} (Válido por {$devolucao->prazo_postagem})" . ($temDc ? " e a Declaração de Conteúdo está disponível para download." : "."),
+            "Seu código de postagem reversa (rastreio) dos Correios é {$devolucao->codigo_postagem_reversa} (Válido por {$devolucao->prazo_postagem})" . ($temDc ? " e a Declaração de Conteúdo está disponível para download." : "."),
             "/minha-conta?aba=pedidos&pedido={$devolucao->pedido_id}",
             $devolucao->id
         );
@@ -294,6 +302,24 @@ class DevolucaoController extends Controller
                 app(PedidoController::class)->estornarPagamentoMercadoPago($devolucao->pedido);
             } catch (\Throwable $e) {
                 Log::warning("Erro ao solicitar estorno MP na conclusão da devolução #{$devolucao->id}: " . $e->getMessage());
+            }
+        }
+
+        // Restaura os itens devolvidos ao estoque
+        if (!empty($devolucao->itens_devolvidos)) {
+            foreach ($devolucao->itens_devolvidos as $itemDev) {
+                if (!empty($itemDev['item_pedido_id'])) {
+                    $itemPedido = \App\Models\ItemPedido::find($itemDev['item_pedido_id']);
+                    if ($itemPedido && $itemPedido->variacao) {
+                        $qtd = (int) ($itemDev['quantidade'] ?? 1);
+                        $itemPedido->variacao->increment('estoque', $qtd);
+                    }
+                }
+            }
+            try {
+                NotificacaoService::sincronizarEstoqueBaixo();
+            } catch (\Throwable $e) {
+                // ignorar
             }
         }
 

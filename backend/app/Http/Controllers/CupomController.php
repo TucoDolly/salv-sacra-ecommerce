@@ -24,6 +24,7 @@ class CupomController extends Controller
                 'codigo'         => $c->codigo,
                 'descricao'      => $c->descricao,
                 'percentual'     => $c->percentual,
+                'valor_fixo'     => $c->valor_fixo,
                 'tipo'           => $c->tipo,
                 'todos_produtos' => $c->todos_produtos,
                 'produto_ids'    => $c->produtos->pluck('id')->all(),

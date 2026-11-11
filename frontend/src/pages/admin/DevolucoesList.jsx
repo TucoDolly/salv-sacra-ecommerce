@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import '../../styles/admin.css';
 
-const TEXTO_PADRAO_INSTRUCOES = `Reembalar o produto (preferencialmente na embalagem original ou pacote com dimensões similares). Imprimir a declaração de conteúdo anexa e fixar na parte externa da embalagem ou entregar ao atendente da agência dos Correios. Informar o código de postagem reversa no atendimento (envio gratuito). Atenção: validade de 7 dias corridos a partir da data de emissão. Dúvidas: WhatsApp (48) 99620-5153.`;
+const TEXTO_PADRAO_INSTRUCOES = `Reembalar o produto (preferencialmente na embalagem original ou pacote com dimensões similares). Retirar etiqueta antiga e imprimir a declaração de conteúdo anexa e fixar na parte externa da embalagem ou entregar ao atendente da agência dos Correios. Informar o código de postagem reversa no atendimento (envio gratuito). Atenção: validade de 7 dias corridos a partir da data de emissão. Dúvidas: WhatsApp (48) 99620-5153.`;
 
 export default function DevolucoesList() {
   const [searchParams] = useSearchParams();
@@ -698,9 +698,30 @@ export default function DevolucoesList() {
                 <h4 style={{ fontSize: '15px', fontWeight: 800, color: '#0369a1', margin: '0 0 10px' }}>
                   2. Pacote em Logística Reversa (Correios)
                 </h4>
-                <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#0c4a6e' }}>
-                  Código de Postagem Reversa: <strong>{devolucaoSelecionada.codigo_postagem_reversa}</strong>
-                </p>
+                <div style={{ margin: '0 0 14px', fontSize: '13px', color: '#0c4a6e', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <span>Código de Postagem Reversa: <strong>{devolucaoSelecionada.codigo_postagem_reversa}</strong></span>
+                  {devolucaoSelecionada.codigo_postagem_reversa && (
+                    <a
+                      href={`https://rastreamento.correios.com.br/app/index.php?codigo=${encodeURIComponent(devolucaoSelecionada.codigo_postagem_reversa)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        background: '#0284c7',
+                        color: '#fff',
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      Acompanhar Rastreio ↗
+                    </a>
+                  )}
+                </div>
 
                 {devolucaoSelecionada.declaracao_conteudo_url && (
                   <div style={{ background: '#ffffff', padding: '10px 14px', borderRadius: '6px', border: '1.5px dashed #0284c7', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

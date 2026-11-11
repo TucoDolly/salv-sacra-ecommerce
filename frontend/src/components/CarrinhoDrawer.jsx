@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -72,6 +72,10 @@ export default function CarrinhoDrawer() {
   const [cepInput, setCepInput] = useState(cep);
   const [verificandoPendente, setVerificandoPendente] = useState(false);
   const [modalPedidoPendente, setModalPedidoPendente] = useState(null);
+
+  useEffect(() => {
+    setCepInput(cep || '');
+  }, [cep]);
 
   const handleIniciarCompra = async () => {
     if (!isAuthenticated) {
@@ -205,6 +209,12 @@ export default function CarrinhoDrawer() {
                             <button
                               type="button"
                               className="cart-qty-btn"
+                              disabled={item.estoque !== undefined && item.quantidade >= item.estoque}
+                              style={{
+                                opacity: (item.estoque !== undefined && item.quantidade >= item.estoque) ? 0.35 : 1,
+                                cursor: (item.estoque !== undefined && item.quantidade >= item.estoque) ? 'not-allowed' : 'pointer'
+                              }}
+                              title={item.estoque !== undefined && item.quantidade >= item.estoque ? `Limite de estoque (${item.estoque} un)` : 'Aumentar quantidade'}
                               onClick={() => updateQuantity(index, 1)}
                             >
                               +

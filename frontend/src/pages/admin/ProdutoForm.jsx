@@ -8,7 +8,7 @@ import {
   updateProduto,
 } from '../../services/produtoService';
 import { uploadArquivoImagem } from '../../services/uploadService';
-import { CORES_PADRAO } from '../../constants/cores';
+import { CORES_PADRAO, getHexCor } from '../../constants/cores';
 import '../../styles/admin.css';
 
 // ── Ícones ─────────────────────────────────────────────────────────────────
@@ -54,10 +54,12 @@ export default function ProdutoForm() {
 
   // ── Estado ─────────────────────────────────────────────────────────────────
   const [form, setForm]                       = useState(EMPTY_FORM);
-  const [abaFotos, setAbaFotos]               = useState('galeria'); // 'galeria' | 'vitrine'
-  const [imagens, setImagens]                 = useState(['']);
-  const [imagensVitrine, setImagensVitrine]   = useState(['']);
+  const [abaFotos, setAbaFotos]               = useState('vitrine'); // 'vitrine' (Aba 1) | 'galeria' (Aba 2)
+  const [imagens, setImagens]                 = useState([{ url: '', cor: '' }]);
+  const [coresConfig, setCoresConfig]         = useState([{ cor: 'Preta', imagem_url: '' }]);
   const [variacoes, setVariacoes]             = useState([]);
+  const imagensVitrine = coresConfig.map((c) => c.imagem_url || '');
+  const coresDisponiveis = Array.from(new Set(coresConfig.map((c) => c.cor?.trim()).filter(Boolean)));
   const [uploading, setUploading]             = useState(null); // { tipo: 'galeria'|'vitrine', idx: number }
   const [errors, setErrors]       = useState({});
   const [apiError, setApiError]   = useState('');
@@ -85,29 +87,39 @@ export default function ProdutoForm() {
         devocao_id:   data.devocao_id   ?? '',
       });
 
-      // Carrega lista de imagens da galeria lateral (Aba 1)
+      // Carrega lista de imagens da galeria lateral (Aba 2)
       let listaImgs = [];
       if (Array.isArray(data.imagens) && data.imagens.length > 0) {
-        listaImgs = data.imagens;
+        listaImgs = data.imagens.map((item) => {
+          if (typeof item === 'object' && item !== null) {
+            return { url: item.url || '', cor: item.cor || '' };
+          }
+          return { url: item || '', cor: '' };
+        });
       } else if (data.imagem_url) {
-        listaImgs = [data.imagem_url];
+        listaImgs = [{ url: data.imagem_url, cor: '' }];
       } else {
-        listaImgs = [''];
+        listaImgs = [{ url: '', cor: '' }];
       }
       setImagens(listaImgs);
 
-      // Carrega lista de imagens da vitrine e das opções de cores (Aba 2)
-      let listaVitrine = [];
-      if (Array.isArray(data.imagens_vitrine) && data.imagens_vitrine.length > 0) {
-        listaVitrine = data.imagens_vitrine;
-      } else if (Array.isArray(data.imagens) && data.imagens.length > 0) {
-        listaVitrine = data.imagens;
-      } else if (data.imagem_url) {
-        listaVitrine = [data.imagem_url];
+      // Carrega fotos e cores da vitrine (Aba 2)
+      let initialCoresConfig = [];
+      if (Array.isArray(data.cores_config) && data.cores_config.length > 0) {
+        initialCoresConfig = data.cores_config.map((c) => ({
+          cor: c.cor || '',
+          imagem_url: c.imagem_url || '',
+        }));
+      } else if (Array.isArray(data.imagens_vitrine) && data.imagens_vitrine.length > 0) {
+        const coresVars = Array.from(new Set((data.variacoes ?? []).map((v) => v.cor).filter(Boolean)));
+        initialCoresConfig = data.imagens_vitrine.map((url, idx) => ({
+          cor: coresVars[idx] || (idx === 0 ? 'Preta' : idx === 1 ? 'Bege' : ''),
+          imagem_url: url || '',
+        }));
       } else {
-        listaVitrine = [''];
+        initialCoresConfig = [{ cor: 'Preta', imagem_url: '' }];
       }
-      setImagensVitrine(listaVitrine);
+      setCoresConfig(initialCoresConfig);
 
       setVariacoes(
         (data.variacoes ?? []).map(({ modelo, tamanho, cor, estoque }) => ({
@@ -158,42 +170,84 @@ export default function ProdutoForm() {
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
-  // ── Handlers de imagens da galeria (Aba 1: miniaturas laterais) ─────────────
+  // ── Handlers de imagens da galeria (Aba 2: miniaturas laterais com opção de cor) ─
   const handleImagemChange = (index, value) => {
-    setImagens((prev) => prev.map((img, i) => (i === index ? value : img)));
+    setImagens((prev) =>
+      prev.map((img, i) =>
+        i === index
+          ? typeof img === 'object' && img !== null
+            ? { ...img, url: value }
+            : { url: value, cor: '' }
+          : img
+      )
+    );
     if (errors[`imagem_${index}`]) {
       setErrors((prev) => ({ ...prev, [`imagem_${index}`]: '' }));
     }
   };
 
+  const handleImagemCorChange = (index, novaCor) => {
+    setImagens((prev) =>
+      prev.map((img, i) =>
+        i === index
+          ? typeof img === 'object' && img !== null
+            ? { ...img, cor: novaCor }
+            : { url: img || '', cor: novaCor }
+          : img
+      )
+    );
+  };
+
   const addImagem = () => {
-    setImagens((prev) => [...prev, '']);
+    setImagens((prev) => [...prev, { url: '', cor: '' }]);
   };
 
   const removeImagem = (index) => {
     setImagens((prev) => {
       const novaLista = prev.filter((_, i) => i !== index);
-      return novaLista.length > 0 ? novaLista : [''];
+      return novaLista.length > 0 ? novaLista : [{ url: '', cor: '' }];
     });
   };
 
-  // ── Handlers de imagens da vitrine & cores (Aba 2: capa, hover e cores) ────
-  const handleImagemVitrineChange = (index, value) => {
-    setImagensVitrine((prev) => prev.map((img, i) => (i === index ? value : img)));
+  // ── Handlers de fotos da vitrine & opções de cores (Aba 2) ──────────────────
+  const addFotoCor = () => {
+    const jaUsadas = new Set(coresConfig.map((c) => c.cor?.trim().toLowerCase()));
+    const proximaCor = CORES_PADRAO.find((c) => !jaUsadas.has(c.nome.toLowerCase()))?.nome || CORES_PADRAO[0].nome;
+    setCoresConfig((prev) => [...prev, { cor: proximaCor, imagem_url: '' }]);
+  };
+
+  const removeFotoCor = (index) => {
+    setCoresConfig((prev) => {
+      const nova = prev.filter((_, i) => i !== index);
+      return nova.length > 0 ? nova : [{ cor: 'Preta', imagem_url: '' }];
+    });
+  };
+
+  const moverFotoCor = (index, direcao) => {
+    setCoresConfig((prev) => {
+      const novo = [...prev];
+      const targetIdx = index + direcao;
+      if (targetIdx < 0 || targetIdx >= novo.length) return prev;
+      const temp = novo[index];
+      novo[index] = novo[targetIdx];
+      novo[targetIdx] = temp;
+      return novo;
+    });
+  };
+
+  const handleCorChange = (index, novaCor) => {
+    setCoresConfig((prev) =>
+      prev.map((c, i) => (i === index ? { ...c, cor: novaCor } : c))
+    );
+  };
+
+  const handleImagemVitrineChange = (index, novaUrl) => {
+    setCoresConfig((prev) =>
+      prev.map((c, i) => (i === index ? { ...c, imagem_url: novaUrl } : c))
+    );
     if (errors[`imagem_vitrine_${index}`]) {
       setErrors((prev) => ({ ...prev, [`imagem_vitrine_${index}`]: '' }));
     }
-  };
-
-  const addImagemVitrine = () => {
-    setImagensVitrine((prev) => [...prev, '']);
-  };
-
-  const removeImagemVitrine = (index) => {
-    setImagensVitrine((prev) => {
-      const novaLista = prev.filter((_, i) => i !== index);
-      return novaLista.length > 0 ? novaLista : [''];
-    });
   };
 
   const handleFileUpload = async (file, index, tipo) => {
@@ -226,7 +280,16 @@ export default function ProdutoForm() {
     } else if (form.modelo === 'Oversized') {
       modeloPadrao = 'Oversized';
     }
-    setVariacoes((prev) => [...prev, { ...EMPTY_VARIACAO, modelo: modeloPadrao }]);
+    const corPadrao = coresDisponiveis[0] || 'Preta';
+    setVariacoes((prev) => [
+      ...prev,
+      {
+        modelo: modeloPadrao,
+        tamanho: 'M',
+        cor: corPadrao,
+        estoque: 0,
+      },
+    ]);
   };
 
   const removeVariacao = (index) =>
@@ -313,28 +376,30 @@ export default function ProdutoForm() {
   // ── Validação client-side ────────────────────────────────────────────────────
   const validate = () => {
     const errs = {};
-    if (!form.nome.trim())              errs.nome       = 'O nome é obrigatório.';
+    if (!form.nome || !form.nome.trim()) errs.nome = 'O nome é obrigatório.';
     if (!form.preco_base && form.preco_base !== 0)
                                          errs.preco_base = 'O preço é obrigatório.';
     if (Number(form.preco_base) < 0)    errs.preco_base = 'O preço não pode ser negativo.';
 
-    // Valida cada URL/caminho de imagem preenchida
-    imagens.forEach((imgUrl, i) => {
-      if (imgUrl && !/^(https?:\/\/|\/storage\/|\/assets\/)/i.test(imgUrl.trim())) {
+    // Valida cada URL/caminho de imagem preenchida (suporta string ou objeto { url, cor })
+    imagens.forEach((item, i) => {
+      const urlStr = typeof item === 'object' && item !== null ? item.url : item;
+      if (urlStr && typeof urlStr === 'string' && urlStr.trim() && !/^(https?:\/\/|\/storage\/|\/assets\/)/i.test(urlStr.trim())) {
         errs[`imagem_${i}`] = 'Informe um arquivo ou URL válida.';
       }
     });
 
-    imagensVitrine.forEach((imgUrl, i) => {
-      if (imgUrl && !/^(https?:\/\/|\/storage\/|\/assets\/)/i.test(imgUrl.trim())) {
+    coresConfig.forEach((item, i) => {
+      const urlStr = item?.imagem_url;
+      if (urlStr && typeof urlStr === 'string' && urlStr.trim() && !/^(https?:\/\/|\/storage\/|\/assets\/)/i.test(urlStr.trim())) {
         errs[`imagem_vitrine_${i}`] = 'Informe um arquivo ou URL válida.';
       }
     });
 
     variacoes.forEach((v, i) => {
       if (!v.modelo?.trim())  errs[`variacao_${i}_modelo`]  = 'Modelo obrigatório.';
-      if (!v.tamanho.trim()) errs[`variacao_${i}_tamanho`] = 'Tamanho obrigatório.';
-      if (!v.cor.trim())     errs[`variacao_${i}_cor`]     = 'Cor obrigatória.';
+      if (!v.tamanho?.trim()) errs[`variacao_${i}_tamanho`] = 'Tamanho obrigatório.';
+      if (!v.cor?.trim())     errs[`variacao_${i}_cor`]     = 'Cor obrigatória.';
       if (v.estoque === '' || isNaN(Number(v.estoque)))
                              errs[`variacao_${i}_estoque`] = 'Estoque inválido.';
     });
@@ -347,16 +412,39 @@ export default function ProdutoForm() {
     e.preventDefault();
     setApiError('');
     const errs = validate();
-    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      const listaErros = Object.values(errs);
+      const msgErro = listaErros[0];
+      setApiError(`Não foi possível salvar: ${msgErro}`);
+      alert(`Por favor, verifique os campos com pendência:\n- ${listaErros.slice(0, 3).join('\n- ')}`);
+      return;
+    }
 
-    const imagensValidas = imagens.map((u) => u.trim()).filter(Boolean);
-    const vitrineValidas = imagensVitrine.map((u) => u.trim()).filter(Boolean);
+    const imagensValidas = imagens
+      .map((item) => {
+        const url = (typeof item === 'object' && item !== null ? item.url : item || '').trim();
+        const cor = (typeof item === 'object' && item !== null ? item.cor : '' || '').trim();
+        return url ? { url, cor } : null;
+      })
+      .filter(Boolean);
+    const coresConfigValidas = coresConfig
+      .filter((c) => c.cor && c.cor.trim())
+      .map((c, idx) => ({
+        cor: c.cor.trim(),
+        ordem: idx + 1,
+        imagem_url: c.imagem_url ? c.imagem_url.trim() : null,
+      }));
+    const vitrineValidas = coresConfigValidas.map((c) => c.imagem_url).filter(Boolean);
+
+    const primeiraFoto = vitrineValidas[0] || (imagensValidas[0]?.url || '') || '';
 
     const payload = {
       ...form,
-      imagem_url:      vitrineValidas[0] || imagensValidas[0] || '',
+      imagem_url:      primeiraFoto,
       imagens:         imagensValidas,
       imagens_vitrine: vitrineValidas,
+      cores_config:    coresConfigValidas,
       preco_base:      form.preco_base   !== '' ? Number(form.preco_base)   : '',
       categoria_id:    form.categoria_id !== '' ? Number(form.categoria_id) : null,
       devocao_id:      form.devocao_id   !== '' ? Number(form.devocao_id)   : null,
@@ -380,6 +468,7 @@ export default function ProdutoForm() {
       }
       navigate('/admin/produtos');
     } catch (err) {
+      console.error('Erro ao salvar produto:', err);
       // Erros de validação 422 do Laravel
       const laravelErrors = err.response?.data?.errors;
       if (laravelErrors) {
@@ -389,10 +478,9 @@ export default function ProdutoForm() {
         });
         setErrors(mapped);
       }
-      setApiError(
-        err.response?.data?.message ||
-        'Erro ao salvar o produto. Verifique os dados e tente novamente.'
-      );
+      const msg = err.response?.data?.message || 'Erro ao salvar o produto. Verifique os dados e tente novamente.';
+      setApiError(msg);
+      alert(`Erro ao salvar produto:\n${msg}`);
     } finally {
       setLoading(false);
     }
@@ -496,23 +584,6 @@ export default function ProdutoForm() {
             <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #e2e8f0', marginBottom: '16px' }}>
               <button
                 type="button"
-                onClick={() => setAbaFotos('galeria')}
-                style={{
-                  padding: '10px 16px',
-                  border: 'none',
-                  background: abaFotos === 'galeria' ? '#1e1e1e' : '#f1f5f9',
-                  color: abaFotos === 'galeria' ? '#fff' : '#475569',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  borderRadius: '6px 6px 0 0',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                }}
-              >
-                1. Galeria Lateral do Produto ({imagens.filter(Boolean).length})
-              </button>
-              <button
-                type="button"
                 onClick={() => setAbaFotos('vitrine')}
                 style={{
                   padding: '10px 16px',
@@ -526,16 +597,293 @@ export default function ProdutoForm() {
                   transition: 'all 0.2s',
                 }}
               >
-                2. Vitrine (Hover) & Opções de Cores ({imagensVitrine.filter(Boolean).length})
+                1. Vitrine (Hover) & Opções de Cores ({coresConfig.filter((c) => c.imagem_url).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAbaFotos('galeria')}
+                style={{
+                  padding: '10px 16px',
+                  border: 'none',
+                  background: abaFotos === 'galeria' ? '#1e1e1e' : '#f1f5f9',
+                  color: abaFotos === 'galeria' ? '#fff' : '#475569',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  borderRadius: '6px 6px 0 0',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                2. Galeria Lateral do Produto ({imagens.filter((i) => (typeof i === 'object' ? i?.url : i)).length})
               </button>
             </div>
 
-            {/* ABA 1: Galeria Lateral (Miniaturas à esquerda da foto grande na tela do produto) */}
+            {/* ABA 1: Vitrine (Hover) & Opções de Cores */}
+            {abaFotos === 'vitrine' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                  <p style={{ fontSize: '12px', color: '#555', margin: 0, flex: 1, minWidth: '260px' }}>
+                    A <strong>1ª foto</strong> é a capa e a <strong>2ª foto</strong> aparece ao passar o mouse na vitrine. Cada item define uma <strong>cor e sua foto</strong> oficial. As variações abaixo só poderão escolher estas cores.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={addFotoCor}
+                    className="admin-btn admin-btn-secondary admin-btn-sm"
+                    style={{ flexShrink: 0, padding: '8px 14px' }}
+                  >
+                    <IconPlus /> Adicionar Foto e Cor
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
+                  {coresConfig.map((item, idx) => {
+                    const isUploadingThis = uploading?.tipo === 'vitrine' && uploading?.index === idx;
+                    const rotuloOrdem =
+                      idx === 0
+                        ? '1ª (Capa / Primária)'
+                        : idx === 1
+                        ? '2ª (Hover / Secundária)'
+                        : `${idx + 1}ª Cor`;
+
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '14px',
+                          background: '#fdfbf7',
+                          padding: '14px 16px',
+                          borderRadius: '8px',
+                          border: '1px solid #e5dec9',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        {/* Reordenar + Rótulo da Posição */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '190px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => moverFotoCor(idx, -1)}
+                              title="Mover para cima"
+                              style={{
+                                background: idx === 0 ? '#f1f5f9' : '#e2e8f0',
+                                color: idx === 0 ? '#94a3b8' : '#1e293b',
+                                border: 'none',
+                                borderRadius: '4px',
+                                width: '22px',
+                                height: '20px',
+                                cursor: idx === 0 ? 'not-allowed' : 'pointer',
+                                fontSize: '10px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: 0,
+                              }}
+                            >
+                              ▲
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === coresConfig.length - 1}
+                              onClick={() => moverFotoCor(idx, 1)}
+                              title="Mover para baixo"
+                              style={{
+                                background: idx === coresConfig.length - 1 ? '#f1f5f9' : '#e2e8f0',
+                                color: idx === coresConfig.length - 1 ? '#94a3b8' : '#1e293b',
+                                border: 'none',
+                                borderRadius: '4px',
+                                width: '22px',
+                                height: '20px',
+                                cursor: idx === coresConfig.length - 1 ? 'not-allowed' : 'pointer',
+                                fontSize: '10px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: 0,
+                              }}
+                            >
+                              ▼
+                            </button>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: idx === 0 ? '#c4953a' : idx === 1 ? '#0284c7' : '#475569' }}>
+                              {rotuloOrdem}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Seletor da Cor via Bolinhas com Tooltip (hover com nome da cor) */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '220px', flex: '1 1 240px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                              Cor: <span style={{ color: '#0f172a' }}>{item.cor || 'Selecione'}</span>
+                            </span>
+                            <span
+                              style={{
+                                width: '14px',
+                                height: '14px',
+                                borderRadius: '50%',
+                                backgroundColor: getHexCor(item.cor),
+                                border: '1px solid #cbd5e1',
+                                display: 'inline-block',
+                              }}
+                            />
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            {CORES_PADRAO.map((c) => {
+                              const isSelected = (item.cor || '').trim().toLowerCase() === c.nome.toLowerCase();
+                              return (
+                                <button
+                                  key={c.nome}
+                                  type="button"
+                                  onClick={() => handleCorChange(idx, c.nome)}
+                                  title={c.nome}
+                                  aria-label={c.nome}
+                                  style={{
+                                    width: '24px',
+                                    height: '24px',
+                                    borderRadius: '50%',
+                                    backgroundColor: c.hex,
+                                    border: isSelected ? '2px solid #111' : `1.5px solid ${c.borda || '#cbd5e1'}`,
+                                    boxShadow: isSelected
+                                      ? '0 0 0 2px #fff, 0 0 0 4px #c4953a'
+                                      : '0 1px 2px rgba(0,0,0,0.06)',
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    display: 'inline-block',
+                                    transition: 'all 0.15s ease',
+                                    transform: isSelected ? 'scale(1.15)' : 'scale(1)',
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Preview da Imagem */}
+                        <div style={{
+                          width: '54px',
+                          height: '54px',
+                          borderRadius: '6px',
+                          border: '1.5px solid #cbd5e1',
+                          background: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                          flexShrink: 0,
+                        }}>
+                          {item.imagem_url ? (
+                            <img
+                              src={item.imagem_url}
+                              alt={`Foto ${item.cor}`}
+                              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: '10px', color: '#94a3b8', textAlign: 'center', padding: '2px' }}>Sem foto</span>
+                          )}
+                        </div>
+
+                        {/* Ações de Seleção de Arquivo e URL */}
+                        <div style={{ flex: 1, minWidth: '220px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <label
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '7px 14px',
+                                borderRadius: '6px',
+                                background: isUploadingThis ? '#64748b' : '#c4953a',
+                                color: '#fff',
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                cursor: isUploadingThis ? 'wait' : 'pointer',
+                                transition: 'all 0.2s',
+                              }}
+                            >
+                              📁 {isUploadingThis ? 'Enviando foto...' : (item.imagem_url ? 'Trocar Arquivo' : 'Escolher Arquivo')}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                disabled={isUploadingThis}
+                                onChange={(e) => {
+                                  if (e.target.files?.[0]) {
+                                    handleFileUpload(e.target.files[0], idx, 'vitrine');
+                                  }
+                                }}
+                                style={{ display: 'none' }}
+                              />
+                            </label>
+
+                            {item.imagem_url && (
+                              <span style={{ fontSize: '11px', color: '#64748b', wordBreak: 'break-all' }}>
+                                Arquivo atual: <strong>{item.imagem_url.split('/').pop()}</strong>
+                              </span>
+                            )}
+                          </div>
+
+                          <input
+                            type="text"
+                            value={item.imagem_url}
+                            onChange={(e) => handleImagemVitrineChange(idx, e.target.value)}
+                            placeholder="Ou cole a URL direta da imagem aqui..."
+                            style={{
+                              width: '100%',
+                              padding: '6px 10px',
+                              borderRadius: '4px',
+                              border: errors[`imagem_vitrine_${idx}`] ? '1px solid #ef4444' : '1px solid #cbd5e1',
+                              fontSize: '11px',
+                              color: '#555',
+                              background: '#fff',
+                            }}
+                          />
+
+                          {errors[`imagem_vitrine_${idx}`] && (
+                            <span className="admin-field-error" style={{ fontSize: '11px' }}>
+                              {errors[`imagem_vitrine_${idx}`]}
+                            </span>
+                          )}
+                        </div>
+
+                        {coresConfig.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeFotoCor(idx)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#ef4444',
+                              cursor: 'pointer',
+                              padding: '6px',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                            title="Remover esta cor/foto"
+                          >
+                            <IconTrash />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ABA 2: Galeria Lateral do Produto (com opção de vinculação de cor) */}
             {abaFotos === 'galeria' && (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
                   <p style={{ fontSize: '12px', color: '#555', margin: 0, flex: 1 }}>
-                    Estas fotos aparecem nas <strong>miniaturas menores ao lado esquerdo</strong> da foto grande na tela de detalhes do produto.
+                    Estas fotos aparecem nas <strong>miniaturas menores ao lado esquerdo</strong> da foto grande na tela de detalhes do produto. Você pode selecionar qual cor cada foto representa para sincronizar com as cores do cliente.
                   </p>
                   <button
                     type="button"
@@ -548,8 +896,11 @@ export default function ProdutoForm() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
-                  {imagens.map((imgUrl, idx) => {
+                  {imagens.map((item, idx) => {
+                    const imgUrl = typeof item === 'object' && item !== null ? item.url : item || '';
+                    const imgCor = typeof item === 'object' && item !== null ? item.cor : '';
                     const isUploadingThis = uploading?.tipo === 'galeria' && uploading?.index === idx;
+
                     return (
                       <div
                         key={idx}
@@ -591,6 +942,34 @@ export default function ProdutoForm() {
                           ) : (
                             <span style={{ fontSize: '11px', color: '#94a3b8' }}>Sem foto</span>
                           )}
+                        </div>
+
+                        {/* Seletor de cor vinculada a esta foto da galeria */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '220px' }}>
+                          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                            Cor desta foto:
+                          </label>
+                          <select
+                            value={imgCor}
+                            onChange={(e) => handleImagemCorChange(idx, e.target.value)}
+                            style={{
+                              padding: '6px 10px',
+                              borderRadius: '6px',
+                              border: '1.5px solid #cbd5e1',
+                              fontSize: '12px',
+                              background: '#fff',
+                              color: '#1e293b',
+                              fontWeight: 600,
+                              outline: 'none',
+                            }}
+                          >
+                            <option value="">— Foto Geral (Todas as cores) —</option>
+                            {coresConfig.filter((c) => c.cor?.trim()).map((c) => (
+                              <option key={c.cor} value={c.cor}>
+                                {c.cor}
+                              </option>
+                            ))}
+                          </select>
                         </div>
 
                         {/* Ações de Seleção de Arquivo e URL */}
@@ -679,168 +1058,6 @@ export default function ProdutoForm() {
                     );
                   })}
                 </div>
-              </div>
-            )}
-
-            {/* ABA 2: Vitrine (Hover) & Opções de Cores */}
-            {abaFotos === 'vitrine' && (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
-                  <p style={{ fontSize: '12px', color: '#555', margin: 0, flex: 1 }}>
-                    A <strong>1ª e 2ª fotos</strong> aparecem nos cards da vitrine (trocando ao passar o mouse) e cada foto representa a <strong>1ª cor, 2ª cor, etc.</strong> nas opções de cores do produto.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={addImagemVitrine}
-                    className="admin-btn admin-btn-secondary admin-btn-sm"
-                    style={{ flexShrink: 0, padding: '8px 14px' }}
-                  >
-                    <IconPlus /> Adicionar Foto
-                  </button>
-                </div>
-
-                {(() => {
-                  const coresUnicas = Array.from(new Set(variacoes.map((v) => v.cor).filter(Boolean)));
-                  return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
-                      {imagensVitrine.map((imgUrl, idx) => {
-                        const corRef = coresUnicas[idx];
-                        const isUploadingThis = uploading?.tipo === 'vitrine' && uploading?.index === idx;
-                        return (
-                          <div
-                            key={idx}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '14px',
-                              background: '#fdfbf7',
-                              padding: '12px 16px',
-                              borderRadius: '8px',
-                              border: '1px solid #e5dec9',
-                              flexWrap: 'wrap',
-                            }}
-                          >
-                            <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569', minWidth: '130px' }}>
-                              {idx === 0
-                                ? `1ª (Capa${corRef ? ` / ${corRef}` : ''}):`
-                                : idx === 1
-                                ? `2ª (Hover${corRef ? ` / ${corRef}` : ''}):`
-                                : `${idx + 1}ª Cor${corRef ? ` (${corRef})` : ''}:`}
-                            </span>
-
-                            {/* Preview da Imagem */}
-                            <div style={{
-                              width: '54px',
-                              height: '54px',
-                              borderRadius: '6px',
-                              border: '1.5px solid #cbd5e1',
-                              background: '#fff',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              overflow: 'hidden',
-                              flexShrink: 0,
-                            }}>
-                              {imgUrl ? (
-                                <img
-                                  src={imgUrl}
-                                  alt={`Preview Vitrine ${idx + 1}`}
-                                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                                  onError={(e) => { e.target.style.display = 'none'; }}
-                                />
-                              ) : (
-                                <span style={{ fontSize: '11px', color: '#94a3b8' }}>Sem foto</span>
-                              )}
-                            </div>
-
-                            {/* Ações de Seleção de Arquivo e URL */}
-                            <div style={{ flex: 1, minWidth: '220px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                                <label
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    padding: '7px 14px',
-                                    borderRadius: '6px',
-                                    background: isUploadingThis ? '#64748b' : '#c4953a',
-                                    color: '#fff',
-                                    fontSize: '12px',
-                                    fontWeight: 700,
-                                    cursor: isUploadingThis ? 'wait' : 'pointer',
-                                    transition: 'all 0.2s',
-                                  }}
-                                >
-                                  📁 {isUploadingThis ? 'Enviando foto...' : (imgUrl ? 'Trocar Arquivo' : 'Escolher Arquivo de Imagem')}
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    disabled={isUploadingThis}
-                                    onChange={(e) => {
-                                      if (e.target.files?.[0]) {
-                                        handleFileUpload(e.target.files[0], idx, 'vitrine');
-                                      }
-                                    }}
-                                    style={{ display: 'none' }}
-                                  />
-                                </label>
-
-                                {imgUrl && (
-                                  <span style={{ fontSize: '11px', color: '#64748b', wordBreak: 'break-all' }}>
-                                    Arquivo atual: <strong>{imgUrl.split('/').pop()}</strong>
-                                  </span>
-                                )}
-                              </div>
-
-                              <input
-                                type="text"
-                                value={imgUrl}
-                                onChange={(e) => handleImagemVitrineChange(idx, e.target.value)}
-                                placeholder="Ou cole a URL direta da imagem aqui..."
-                                style={{
-                                  width: '100%',
-                                  padding: '6px 10px',
-                                  borderRadius: '4px',
-                                  border: errors[`imagem_vitrine_${idx}`] ? '1px solid #ef4444' : '1px solid #cbd5e1',
-                                  fontSize: '11px',
-                                  color: '#555',
-                                  background: '#fff',
-                                }}
-                              />
-
-                              {errors[`imagem_vitrine_${idx}`] && (
-                                <span className="admin-field-error" style={{ fontSize: '11px' }}>
-                                  {errors[`imagem_vitrine_${idx}`]}
-                                </span>
-                              )}
-                            </div>
-
-                            {imagensVitrine.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => removeImagemVitrine(idx)}
-                                style={{
-                                  background: 'transparent',
-                                  border: 'none',
-                                  color: '#ef4444',
-                                  cursor: 'pointer',
-                                  padding: '6px',
-                                  borderRadius: '4px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                }}
-                                title="Remover esta foto"
-                              >
-                                <IconTrash />
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
               </div>
             )}
           </div>
@@ -933,6 +1150,8 @@ export default function ProdutoForm() {
             })()}
           </div>
         </div>
+
+
 
         {/* ════════════════════════════════════════════════════
             CARD 3 — Variações
@@ -1089,7 +1308,7 @@ export default function ProdutoForm() {
                     }}
                   >
                     <option value="">Todas</option>
-                    {(coresCadastradas.length > 0 ? coresCadastradas : CORES_PADRAO.map(c => c.nome)).map((c) => (
+                    {(coresDisponiveis.length > 0 ? coresDisponiveis : coresCadastradas).map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
@@ -1207,7 +1426,7 @@ export default function ProdutoForm() {
                       )}
                     </div>
 
-                    {/* Cor com Paleta de Bolinhas */}
+                    {/* Cor: Selecionável somente a partir das cores configuradas em Vitrine & Cores */}
                     <div className="admin-field" style={{ margin: 0 }}>
                       <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <span>Cor</span>
@@ -1217,44 +1436,65 @@ export default function ProdutoForm() {
                           </span>
                         )}
                       </label>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        flexWrap: 'wrap',
-                        padding: '6px 8px',
-                        background: '#fff',
-                        border: errors[`variacao_${index}_cor`] ? '1px solid #c0392b' : '1px solid #d0d0d0',
-                        borderRadius: '6px',
-                        minHeight: '38px',
-                      }}>
-                        {CORES_PADRAO.map((c) => {
-                          const selecionada = variacao.cor?.toLowerCase() === c.nome.toLowerCase();
-                          return (
-                            <button
-                              key={c.nome}
-                              type="button"
-                              onClick={() => {
-                                const eFake = { target: { name: 'cor', value: c.nome } };
-                                handleVariacaoChange(index, eFake);
-                              }}
-                              title={c.nome}
-                              style={{
-                                width: '20px',
-                                height: '20px',
-                                borderRadius: '50%',
-                                backgroundColor: c.hex,
-                                border: selecionada ? '2.5px solid #1e1e1e' : `1.5px solid ${c.borda}`,
-                                transform: selecionada ? 'scale(1.2)' : 'scale(1)',
-                                cursor: 'pointer',
-                                padding: 0,
-                                boxShadow: selecionada ? '0 0 0 2px #d4ac0d' : 'none',
-                                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                              }}
-                            />
-                          );
-                        })}
-                      </div>
+                      {coresDisponiveis.length === 0 ? (
+                        <div style={{ padding: '6px 8px', fontSize: '11px', color: '#dc2626' }}>
+                          Adicione cores na aba &quot;2. Vitrine &amp; Cores&quot; acima.
+                        </div>
+                      ) : (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          flexWrap: 'wrap',
+                          padding: '6px 8px',
+                          background: '#fff',
+                          border: errors[`variacao_${index}_cor`] ? '1px solid #c0392b' : '1px solid #d0d0d0',
+                          borderRadius: '6px',
+                          minHeight: '38px',
+                        }}>
+                          {coresDisponiveis.map((corNome) => {
+                            const selecionada = (variacao.cor || '').toLowerCase() === corNome.toLowerCase();
+                            const hex = getHexCor(corNome);
+                            return (
+                              <button
+                                key={corNome}
+                                type="button"
+                                onClick={() => {
+                                  const eFake = { target: { name: 'cor', value: corNome } };
+                                  handleVariacaoChange(index, eFake);
+                                }}
+                                title={corNome}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  padding: '3px 8px',
+                                  borderRadius: '12px',
+                                  border: selecionada ? '2px solid #1e1e1e' : '1px solid #cbd5e1',
+                                  background: selecionada ? '#f1f5f9' : '#ffffff',
+                                  cursor: 'pointer',
+                                  fontWeight: selecionada ? 700 : 500,
+                                  fontSize: '11px',
+                                  color: '#1e293b',
+                                  boxShadow: selecionada ? '0 0 0 2px #d4ac0d' : 'none',
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    width: '12px',
+                                    height: '12px',
+                                    borderRadius: '50%',
+                                    backgroundColor: hex,
+                                    border: '1px solid rgba(0,0,0,0.2)',
+                                    display: 'inline-block',
+                                  }}
+                                />
+                                {corNome}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                       {errors[`variacao_${index}_cor`] && (
                         <span className="admin-field-error">{errors[`variacao_${index}_cor`]}</span>
                       )}
@@ -1304,20 +1544,27 @@ export default function ProdutoForm() {
         </div>
 
         {/* ── Footer de ações ── */}
-        <div className="admin-form-footer">
-          <Link to="/admin/produtos" className="admin-btn admin-btn-secondary">
-            Cancelar
-          </Link>
-          <button
-            type="submit"
-            className="admin-btn admin-btn-primary"
-            disabled={loading}
-          >
-            {loading
-              ? isEditing ? 'Salvando…' : 'Criando…'
-              : isEditing ? 'Salvar Alterações' : 'Criar Produto'
-            }
-          </button>
+        <div className="admin-form-footer" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+          {apiError && (
+            <div style={{ color: '#ef4444', fontSize: '13px', fontWeight: 600 }}>
+              ⚠️ {apiError}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <Link to="/admin/produtos" className="admin-btn admin-btn-secondary">
+              Cancelar
+            </Link>
+            <button
+              type="submit"
+              className="admin-btn admin-btn-primary"
+              disabled={loading}
+            >
+              {loading
+                ? isEditing ? 'Salvando…' : 'Criando…'
+                : isEditing ? 'Salvar Alterações' : 'Criar Produto'
+              }
+            </button>
+          </div>
         </div>
       </form>
     </div>

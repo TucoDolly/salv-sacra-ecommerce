@@ -1,6 +1,7 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { Link, NavLink, Outlet, useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import api from '../services/api';
 import {
   obterNotificacoesAdmin,
   marcarNotificacaoLidaAdmin,
@@ -132,6 +133,157 @@ export default function AdminLayout() {
   const [totalNaoLidasAdmin, setTotalNaoLidasAdmin] = useState(0);
   const [dropdownNotifAdminAberto, setDropdownNotifAdminAberto] = useState(false);
   const notifAdminRef = useRef(null);
+
+  // Busca Universal do Admin com Autocomplete em Tempo Real
+  const [termoBuscaAdmin, setTermoBuscaAdmin] = useState('');
+  const [sugestoesAdminAbertas, setSugestoesAdminAbertas] = useState(false);
+  const [produtosAdminList, setProdutosAdminList] = useState([]);
+  const searchAdminRef = useRef(null);
+
+  useEffect(() => {
+    api.get('/produtos')
+      .then((res) => {
+        setProdutosAdminList(Array.isArray(res.data) ? res.data : (res.data?.data || []));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (searchAdminRef.current && !searchAdminRef.current.contains(e.target)) {
+        setSugestoesAdminAbertas(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  const sugestoesAdmin = useMemo(() => {
+    const q = (termoBuscaAdmin || '').trim().toLowerCase();
+    if (!q) return [];
+
+    const resultados = [];
+
+    // 1. Abas de Configurações
+    const abasConfig = [
+      { id: 'loja', titulo: 'Configurações: Identidade da Loja', sub: 'Nome da loja e slogan', rota: '/admin/config?aba=loja', termos: ['loja', 'nome', 'slogan', 'identidade', 'configuracao', 'config'] },
+      { id: 'carrossel', titulo: 'Configurações: Carrossel da Vitrine', sub: 'Banners rotativos e destaques', rota: '/admin/config?aba=carrossel', termos: ['carrossel', 'banner', 'slides', 'vitrine', 'destaque'] },
+      { id: 'frete', titulo: 'Configurações: Frete & Banner de Topo', sub: 'CEP de origem, frete grátis e Melhor Envio', rota: '/admin/config?aba=frete', termos: ['frete', 'melhor envio', 'cep', 'envio', 'banner topo', 'aviso', 'gratis'] },
+      { id: 'pagamento', titulo: 'Configurações: Pagamentos & PIX', sub: 'Mercado Pago, chaves PIX e parcelamento', rota: '/admin/config?aba=pagamento', termos: ['pagamento', 'pix', 'cartao', 'mercado pago', 'chave pix', 'parcelas', 'juros'] },
+      { id: 'cupons', titulo: 'Configurações: Cupons de Desconto', sub: 'Criar e gerenciar cupons promocionais', rota: '/admin/config?aba=cupons', termos: ['cupom', 'cupons', 'desconto', 'promocao'] },
+      { id: 'contato', titulo: 'Configurações: Atendimento & Contato', sub: 'WhatsApp, telefone, e-mail e redes', rota: '/admin/config?aba=contato', termos: ['contato', 'whatsapp', 'email', 'telefone', 'endereco', 'instagram', 'atendimento', 'suporte'] },
+    ];
+
+    abasConfig.forEach((aba) => {
+      if (
+        aba.titulo.toLowerCase().includes(q) ||
+        aba.sub.toLowerCase().includes(q) ||
+        aba.termos.some((t) => t.includes(q) || q.includes(t))
+      ) {
+        resultados.push({
+          tipo: 'Configurações',
+          titulo: aba.titulo,
+          sub: aba.sub,
+          rota: aba.rota,
+          icone: '⚙️',
+        });
+      }
+    });
+
+    // 2. Módulos do Painel Admin
+    const secoesAdmin = [
+      { titulo: 'Pedidos, Pagamentos e Entregas', sub: 'Gerenciar vendas, rastreamento e etiquetas', rota: '/admin/pedidos', termos: ['pedido', 'pedidos', 'vendas', 'pagamento', 'rastreio', 'correios', 'etiqueta', 'entrega'] },
+      { titulo: 'Devoluções e Trocas', sub: 'Gerenciar solicitações de devolução e reembolsos', rota: '/admin/devolucoes', termos: ['devolucao', 'devolução', 'devolucoes', 'devoluções', 'troca', 'trocas', 'reembolso', 'estorno'] },
+      { titulo: 'Catálogo de Produtos', sub: 'Listagem e edição de todos os produtos', rota: '/admin/produtos', termos: ['produto', 'produtos', 'catalogo', 'catálogo', 'itens'] },
+      { titulo: 'Cadastrar Novo Produto', sub: 'Adicionar nova camiseta ao catálogo', rota: '/admin/produtos/novo', termos: ['novo produto', 'cadastrar produto', 'adicionar produto', 'criar produto'] },
+      { titulo: 'Categorias e Devoções', sub: 'Gerenciar categorias e santos', rota: '/admin/categorias', termos: ['categoria', 'categorias', 'devocao', 'devoção', 'devocoes', 'santos'] },
+      { titulo: 'Gestão de Estoque', sub: 'Grade de tamanhos e controle de unidades', rota: '/admin/estoque', termos: ['estoque', 'grade', 'unidades', 'quantidade', 'reposicao'] },
+      { titulo: 'Avaliações de Clientes', sub: 'Moderar avaliações e comentários recebidos', rota: '/admin/avaliacoes', termos: ['avaliacao', 'avaliações', 'avaliacoes', 'reviews', 'comentarios', 'estrelas'] },
+      { titulo: 'Relatórios & Faturamento', sub: 'Faturamento, métricas e ranking de vendas', rota: '/admin/relatorios', termos: ['relatorio', 'relatórios', 'faturamento', 'metricas', 'graficos', 'vendas'] },
+      { titulo: 'Início / Dashboard', sub: 'Visão geral da loja', rota: '/admin', termos: ['inicio', 'dashboard', 'painel'] },
+    ];
+
+    secoesAdmin.forEach((sec) => {
+      if (
+        sec.titulo.toLowerCase().includes(q) ||
+        sec.sub.toLowerCase().includes(q) ||
+        sec.termos.some((t) => t.includes(q) || q.includes(t))
+      ) {
+        resultados.push({
+          tipo: 'Painel Admin',
+          titulo: sec.titulo,
+          sub: sec.sub,
+          rota: sec.rota,
+          icone: '📁',
+        });
+      }
+    });
+
+    // 3. ID de Pedido
+    const matchId = q.match(/^#?(\d+)$/);
+    if (matchId) {
+      resultados.unshift({
+        tipo: 'Pedido Específico',
+        titulo: `Ver Pedido #${matchId[1]}`,
+        sub: `Acessar detalhes e entrega do pedido #${matchId[1]}`,
+        rota: `/admin/pedidos?busca=${matchId[1]}`,
+        icone: '📦',
+      });
+    }
+
+    // 4. Produtos do catálogo
+    produtosAdminList.forEach((prod) => {
+      if (prod.nome?.toLowerCase().includes(q)) {
+        resultados.push({
+          tipo: 'Produto',
+          titulo: prod.nome,
+          sub: `Editar produto · ${Number(prod.preco_base || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
+          rota: `/admin/produtos/editar/${prod.id}`,
+          icone: '👕',
+          imagem: prod.imagem_url,
+        });
+      }
+    });
+
+    // 5. Fallbacks úteis de busca
+    if (!resultados.some((r) => r.rota.startsWith('/admin/pedidos'))) {
+      resultados.push({
+        tipo: 'Buscar em Pedidos',
+        titulo: `Buscar "${termoBuscaAdmin}" em Pedidos`,
+        sub: 'Filtrar pedidos por cliente, e-mail ou código',
+        rota: `/admin/pedidos?busca=${encodeURIComponent(termoBuscaAdmin)}`,
+        icone: '🔍',
+      });
+    }
+    if (!resultados.some((r) => r.rota.startsWith('/admin/produtos'))) {
+      resultados.push({
+        tipo: 'Buscar em Produtos',
+        titulo: `Buscar "${termoBuscaAdmin}" no Catálogo`,
+        sub: 'Pesquisar produtos com este termo',
+        rota: `/admin/produtos?busca=${encodeURIComponent(termoBuscaAdmin)}`,
+        icone: '🔍',
+      });
+    }
+
+    return resultados.slice(0, 8);
+  }, [termoBuscaAdmin, produtosAdminList]);
+
+  const handleExecutarNavegacaoAdmin = (rota) => {
+    setSugestoesAdminAbertas(false);
+    setTermoBuscaAdmin('');
+    navigate(rota);
+  };
+
+  const handleBuscarAdmin = (e) => {
+    e.preventDefault();
+    if (sugestoesAdmin.length > 0) {
+      handleExecutarNavegacaoAdmin(sugestoesAdmin[0].rota);
+      return;
+    }
+    const termo = (termoBuscaAdmin || '').trim();
+    if (!termo) return;
+    navigate(`/admin/pedidos?busca=${encodeURIComponent(termo)}`);
+  };
 
   // Proteção contra acesso por usuários que não são admin
   if (user && user.papel !== 'admin') {
@@ -315,14 +467,105 @@ export default function AdminLayout() {
         {/* TOP BAR */}
         <header className="al-topbar">
 
-          {/* Busca */}
-          <div className="al-search">
-            <IconSearch />
-            <input
-              type="search"
-              placeholder="Buscar produtos, pedidos, clientes..."
-              aria-label="Buscar"
-            />
+          {/* Busca Universal */}
+          <div ref={searchAdminRef} className="al-search" style={{ position: 'relative' }}>
+            <form onSubmit={handleBuscarAdmin} style={{ display: 'flex', width: '100%', position: 'relative' }}>
+              <IconSearch />
+              <input
+                type="search"
+                placeholder="Buscar produtos, pedidos, configurações..."
+                aria-label="Buscar"
+                value={termoBuscaAdmin}
+                onFocus={() => { if (termoBuscaAdmin.trim()) setSugestoesAdminAbertas(true); }}
+                onChange={(e) => {
+                  setTermoBuscaAdmin(e.target.value);
+                  setSugestoesAdminAbertas(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setSugestoesAdminAbertas(false);
+                }}
+              />
+            </form>
+
+            {/* Dropdown de Sugestões em Tempo Real */}
+            {sugestoesAdminAbertas && sugestoesAdmin.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  width: '100%',
+                  background: '#1e1e1e',
+                  borderRadius: '8px',
+                  boxShadow: '0 12px 30px rgba(0, 0, 0, 0.45)',
+                  border: '1px solid #333333',
+                  overflow: 'hidden',
+                  zIndex: 1000,
+                  maxHeight: '380px',
+                  overflowY: 'auto',
+                }}
+              >
+                <div style={{ padding: '8px 12px', background: '#252525', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#c5a880', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Sugestões (Enter para navegar à 1ª opção)
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#888' }}>
+                    {sugestoesAdmin.length} resultado(s)
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {sugestoesAdmin.map((sug, idx) => (
+                    <button
+                      key={`${sug.rota}-${idx}`}
+                      type="button"
+                      onClick={() => handleExecutarNavegacaoAdmin(sug.rota)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '10px 14px',
+                        background: idx === 0 ? 'rgba(197, 168, 128, 0.1)' : 'transparent',
+                        border: 'none',
+                        borderBottom: idx < sugestoesAdmin.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
+                        color: '#f3f4f6',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#2c2c2c'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = idx === 0 ? 'rgba(197, 168, 128, 0.1)' : 'transparent'; }}
+                    >
+                      {sug.imagem ? (
+                        <img
+                          src={sug.imagem}
+                          alt=""
+                          style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'cover', flexShrink: 0 }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: '18px', width: '28px', textAlign: 'center', flexShrink: 0 }}>
+                          {sug.icone}
+                        </span>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {sug.titulo}
+                          </span>
+                          <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: '#333', color: '#c5a880', fontWeight: 700, flexShrink: 0 }}>
+                            {sug.tipo}
+                          </span>
+                        </div>
+                        {sug.sub && (
+                          <div style={{ fontSize: '11.5px', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
+                            {sug.sub}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Ações do Topo: Sino do Admin + Perfil (alinhados à direita) */}

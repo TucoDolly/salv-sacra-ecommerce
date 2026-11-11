@@ -32,11 +32,18 @@
                             <!-- Código de Postagem Reversa -->
                             <div style="background-color: #f8fafc; border: 2px dashed #0284c7; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 22px;">
                                 <span style="display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; font-weight: 700; margin-bottom: 6px;">
-                                    CÓDIGO DE AUTORIZAÇÃO DE POSTAGEM REVERSA (CORREIOS):
+                                    CÓDIGO DE AUTORIZAÇÃO DE POSTAGEM REVERSA (RASTREIO) (CORREIOS):
                                 </span>
                                 <span style="font-family: monospace; font-size: 24px; font-weight: 800; letter-spacing: 2px; color: #0369a1; background: #e0f2fe; padding: 6px 16px; border-radius: 6px; display: inline-block;">
                                     {{ $devolucao->codigo_postagem_reversa ?: 'DISPONÍVEL NA ÁREA DO CLIENTE' }}
                                 </span>
+                                @if(!empty($devolucao->codigo_postagem_reversa))
+                                    <div style="margin-top: 14px;">
+                                        <a href="https://rastreamento.correios.com.br/app/index.php?codigo={{ urlencode($devolucao->codigo_postagem_reversa) }}" target="_blank" style="background-color: #0284c7; color: #ffffff; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none; display: inline-block;">
+                                            Acompanhar Rastreio nos Correios &rarr;
+                                        </a>
+                                    </div>
+                                @endif
                                 <p style="margin: 10px 0 0; font-size: 12px; color: #b45309; font-weight: 700;">
                                     🚩 Atenção: Este código de logística reversa tem validade de {{ $devolucao->prazo_postagem ?: '7 dias corridos' }} a partir da data de emissão.
                                 </p>
@@ -73,16 +80,16 @@
                                 </h3>
                                 <ol style="margin: 0; padding-left: 20px; font-size: 13px; color: #374151; line-height: 1.7;">
                                     <li style="margin-bottom: 8px;">
-                                        <strong>Reembalar o pacote:</strong> Utilize preferencialmente a embalagem original ou um pacote com dimensões similares às informadas na logística reversa. Com isso, evita-se divergência no frete após a conferência métrica da agência.
+                                        <strong>Reembalar o pacote:</strong> Utilize preferencialmente a embalagem original ou um pacote com dimensões similares às informadas na logística reversa. <strong>Atenção:</strong> retire ou cubra totalmente a etiqueta antiga de envio para não causar confusão ou erro de leitura nos Correios.
                                     </li>
                                     <li style="margin-bottom: 8px;">
                                         <strong>Declaração de Conteúdo:</strong> Imprima a declaração de conteúdo (em anexo neste e-mail) e fixe-a na parte externa da embalagem ou entregue diretamente ao atendente da agência.
                                     </li>
                                     <li style="margin-bottom: 8px;">
-                                        <strong>Comparecer à agência dos Correios:</strong> Leve o pacote pronto para envio até qualquer agência dos Correios e informe o <strong>Código de Postagem Reversa</strong> durante o atendimento. <em>O envio é 100% gratuito para você!</em>
+                                        <strong>Comparecer à agência dos Correios:</strong> Leve o pacote pronto para envio até qualquer agência dos Correios e informe o <strong>Código de Postagem Reversa (rastreio)</strong> durante o atendimento. <em>O envio é 100% gratuito para você!</em>
                                     </li>
                                     <li>
-                                        <strong>Acompanhamento e Liberação:</strong> O pacote seguirá o fluxo normal de postagem e será enviado para a Salv Sacra. Assim que recebido e verificado, liberaremos o seu <strong>{{ $devolucao->tipo_solicitacao === 'cupom' ? 'Vale-Compras para nova compra' : 'Estorno / Reembolso integral' }}</strong>.
+                                        <strong>Acompanhamento e Liberação:</strong> O pacote seguirá o fluxo normal de postagem e seguirá para o nosso endereço. Assim que recebido e verificado, liberaremos o seu <strong>{{ $devolucao->tipo_solicitacao === 'cupom' ? 'Vale-Compras para nova compra' : 'Estorno / Reembolso integral' }}</strong>.
                                     </li>
                                 </ol>
                             </div>

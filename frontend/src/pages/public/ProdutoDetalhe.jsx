@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../../contexts/CartContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useWishlist } from '../../contexts/WishlistContext';
 import api from '../../services/api';
 import { getHexCor } from '../../constants/cores';
+import IconPix from '../../components/IconPix';
 import '../../styles/produto-detalhe.css';
 
 // Ícones SVG inline baseados no Figma
@@ -77,6 +78,7 @@ export default function ProdutoDetalhe() {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
   const { isFavorite, toggleFavorite } = useWishlist();
+  const { addItem, cep: globalCep, setCep: setGlobalCep, calcularFretePorCep } = useCart();
   const [produto, setProduto] = useState(null);
   const [produtosSimilares, setProdutosSimilares] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -112,7 +114,7 @@ export default function ProdutoDetalhe() {
   const [fotoPrincipal, setFotoPrincipal] = useState('');
 
   // Frete
-  const [cep, setCep] = useState('');
+  const [cep, setCep] = useState(globalCep || '');
   const [calculandoFrete, setCalculandoFrete] = useState(false);
   const [freteResultado, setFreteResultado] = useState(null);
 
@@ -126,6 +128,100 @@ export default function ProdutoDetalhe() {
   const [avisosAtivos, setAvisosAtivos] = useState([]);
   const [enviandoAviso, setEnviandoAviso] = useState(false);
 
+  // Configuração pública de parcelamento sem juros
+  const [maxParcelasSemJuros, setMaxParcelasSemJuros] = useState(6);
+
+  useEffect(() => {
+    api.get('/configuracoes/publicas')
+      .then((res) => {
+        if (res.data?.cartao_parcelas_max) {
+          const max = parseInt(res.data.cartao_parcelas_max, 10);
+          if (max >= 1 && max <= 12) setMaxParcelasSemJuros(max);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Ref do carrossel similar
+  const similarTrackRef = useRef(null);
+
+  // Lista de tamanhos padrão: PP, P, M, G, GG, G1, G2
+  const TAMANHOS_PADRAO = ['PP', 'P', 'M', 'G', 'GG', 'G1', 'G2'];
+
+  const variacoes = produto?.variacoes || [];
+  const coresConfig = Array.isArray(produto?.cores_config) ? produto.cores_config : [];
+
+  // Obtém lista ordenada de cores: respeita cores_config se existir, senão usa variações (deduplicada)
+  const coresExibicao = (() => {
+    const coresVar = Array.from(new Set(variacoes.map((v) => v.cor?.trim()))).filter(Boolean);
+    if (coresConfig.length > 0) {
+      const ordenadas = Array.from(new Set(
+        [...coresConfig]
+          .sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
+          .map((c) => c.cor?.trim())
+          .filter(Boolean)
+      )).filter((c) => coresVar.length === 0 || coresVar.includes(c));
+      coresVar.forEach((cor) => {
+        if (!ordenadas.includes(cor)) ordenadas.push(cor);
+      });
+      return ordenadas.length > 0 ? ordenadas : (coresVar.length > 0 ? coresVar : ['Preto']);
+    }
+    return coresVar.length > 0 ? coresVar : ['Preto'];
+  })();
+
+  // Galeria de fotos menores do lado esquerdo da foto grande (com suporte a vínculo de cor)
+  const galeriaFotos = (() => {
+    if (!produto) return [];
+    if (Array.isArray(produto.imagens) && produto.imagens.length > 0) {
+      return produto.imagens
+        .map((img) => {
+          if (typeof img === 'object' && img !== null) {
+            return { url: img.url || '', cor: img.cor || '' };
+          }
+          return { url: img || '', cor: '' };
+        })
+        .filter((item) => Boolean(item.url));
+    }
+    if (produto.imagem_url) {
+      return [{ url: produto.imagem_url, cor: '' }];
+    }
+    return [];
+  })();
+
+  // Fotos da vitrine e das opções de cores
+  const fotosCores = (() => {
+    if (!produto) return [];
+    if (Array.isArray(produto.imagens_vitrine) && produto.imagens_vitrine.filter(Boolean).length > 0) {
+      return produto.imagens_vitrine.filter(Boolean);
+    }
+    return galeriaFotos.map((g) => g.url);
+  })();
+
+  const imagemExibida = fotoPrincipal || galeriaFotos[0]?.url || fotosCores[0] || produto?.imagem_url || '';
+
+  const aplicarDadosFrete = useCallback((data, cepFormatado) => {
+    if (!data) return;
+    if (cepFormatado) {
+      setCep(cepFormatado);
+      setGlobalCep(cepFormatado);
+    }
+    const partesLocal = [];
+    if (data.logradouro) partesLocal.push(data.logradouro);
+    if (data.bairro) partesLocal.push(data.bairro);
+    if (data.cidade) partesLocal.push(`${data.cidade}/${data.uf}`);
+    else if (data.uf) partesLocal.push(data.uf);
+
+    setFreteResultado({
+      local: partesLocal.join(', ') || (data.cidade ? `${data.cidade}/${data.uf}` : ''),
+      opcoes: (data.opcoes || []).map((o) => ({
+        tipo: o.nome,
+        prazo: o.prazo,
+        valor: o.preco === 0 ? 'GRÁTIS' : o.preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+        gratis: o.preco === 0,
+      })),
+    });
+  }, [setGlobalCep]);
+
   useEffect(() => {
     if (!isAuthenticated) {
       setAvisosAtivos([]);
@@ -135,12 +231,6 @@ export default function ProdutoDetalhe() {
       .then((res) => setAvisosAtivos(res.data?.avisos || []))
       .catch(() => {});
   }, [isAuthenticated, id]);
-
-  // Ref do carrossel similar
-  const similarTrackRef = useRef(null);
-
-  // Lista de tamanhos padrão: PP, P, M, G, GG, G1, G2
-  const TAMANHOS_PADRAO = ['PP', 'P', 'M', 'G', 'GG', 'G1', 'G2'];
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -152,8 +242,18 @@ export default function ProdutoDetalhe() {
       .then((res) => {
         const prod = res.data;
         setProduto(prod);
-        const variacoes = prod.variacoes || [];
+        const vars = prod.variacoes || [];
 
+        const configsOrdenadas = Array.isArray(prod.cores_config)
+          ? [...prod.cores_config].sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
+          : [];
+
+        // Cor primária: definida pela 1ª cor das configurações de cores/vitrine, ou pela 1ª variação cadastrada
+        const corPrimaria = (configsOrdenadas.length > 0 && configsOrdenadas[0]?.cor?.trim())
+          || (vars[0]?.cor?.trim())
+          || 'Preto';
+
+        const cfgPrimaria = configsOrdenadas.find((c) => (c.cor || '').trim().toLowerCase() === corPrimaria.toLowerCase());
         const galeriaInicial = Array.isArray(prod.imagens) && prod.imagens.filter(Boolean).length > 0
           ? prod.imagens.filter(Boolean)
           : [];
@@ -161,18 +261,30 @@ export default function ProdutoDetalhe() {
           ? prod.imagens_vitrine.filter(Boolean)
           : galeriaInicial;
 
-        setFotoPrincipal(galeriaInicial[0] || vitrineInicial[0] || prod.imagem_url || '');
+        // Foto primária correspondente à cor primária
+        const fotoPrimaria = cfgPrimaria?.imagem_url
+          || galeriaInicial[0]
+          || vitrineInicial[0]
+          || prod.imagem_url
+          || '';
 
-        if (variacoes.length > 0) {
-          const varComEstoque = variacoes.find((v) => Number(v.estoque) > 0) || variacoes[0];
-          const modInicial = varComEstoque.modelo || (prod.modelo === 'Oversized' ? 'Oversized' : 'Regular Fit');
+        setFotoPrincipal(fotoPrimaria);
+        setCorSelecionada(corPrimaria);
+
+        // Variação inicial: busca uma variação que corresponda à COR PRIMÁRIA (priorizando com estoque > 0)
+        const varsDaCor = vars.filter((v) => (v.cor || '').trim().toLowerCase() === corPrimaria.toLowerCase());
+        const varInicial = varsDaCor.find((v) => Number(v.estoque) > 0)
+          || varsDaCor[0]
+          || vars.find((v) => Number(v.estoque) > 0)
+          || vars[0];
+
+        if (varInicial) {
+          const modInicial = varInicial.modelo || (prod.modelo === 'Oversized' ? 'Oversized' : 'Regular Fit');
           setModeloSelecionado(modInicial);
-          setTamanhoSelecionado(varComEstoque.tamanho || 'M');
-          setCorSelecionada(varComEstoque.cor || 'Preto');
+          setTamanhoSelecionado(varInicial.tamanho || 'M');
         } else {
           setModeloSelecionado(prod.modelo === 'Oversized' ? 'Oversized' : 'Regular Fit');
           setTamanhoSelecionado('M');
-          setCorSelecionada('Preto');
         }
       })
       .catch((err) => {
@@ -193,67 +305,37 @@ export default function ProdutoDetalhe() {
     carregarAvaliacoes(id);
   }, [id]);
 
+  // Sincroniza CEP com endereço do cliente / carrinho e calcula o frete automaticamente
+  useEffect(() => {
+    const cepAlvo = cep || globalCep;
+    if (globalCep && !cep) {
+      setCep(globalCep);
+    }
+    const limpo = String(cepAlvo || '').replace(/\D/g, '');
+    if (limpo.length === 8 && produto && !freteResultado && !calculandoFrete) {
+      const precoItem = Number(produto.preco_base || produto.preco || 79.9);
+      setCalculandoFrete(true);
+      calcularFretePorCep(limpo, precoItem * quantidade, quantidade)
+        .then((data) => {
+          if (data) {
+            const formatado = `${limpo.slice(0, 5)}-${limpo.slice(5)}`;
+            aplicarDadosFrete(data, formatado);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setCalculandoFrete(false));
+    }
+  }, [cep, globalCep, produto, quantidade, freteResultado, calculandoFrete, calcularFretePorCep, aplicarDadosFrete]);
+
   const scrollSimilares = (dir) => {
     if (similarTrackRef.current) {
       similarTrackRef.current.scrollBy({ left: dir * 260 * 2, behavior: 'smooth' });
     }
   };
 
-  if (loading) {
-    return (
-      <div className="pdp-wrapper">
-        <div className="pdp-container">
-          <p style={{ textAlign: 'center', padding: '60px 0', color: '#666' }}>Carregando produto...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (erro || !produto) {
-    return (
-      <div className="pdp-wrapper">
-        <div className="pdp-container" style={{ textAlign: 'center', padding: '80px 20px' }}>
-          <h2>Produto não encontrado</h2>
-          <p style={{ color: '#666', marginTop: '8px' }}>{erro || 'O item solicitado não está disponível.'}</p>
-          <Link to="/" style={{ display: 'inline-block', marginTop: '20px', color: '#c4953a', fontWeight: 'bold' }}>
-            ← Voltar para a página inicial
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  // Preços e cálculos
-  const precoBase = Number(produto.preco_base || 79.9);
-  const parcela12x = (precoBase / 12 * 1.23).toFixed(2); // Simulação de parcelamento no cartão
-
-  // Aba 1: Galeria de fotos menores do lado esquerdo da foto grande
-  const galeriaFotos = (() => {
-    if (Array.isArray(produto.imagens) && produto.imagens.filter(Boolean).length > 0) {
-      return produto.imagens.filter(Boolean);
-    }
-    if (produto.imagem_url) {
-      return [produto.imagem_url];
-    }
-    return [];
-  })();
-
-  // Aba 2: Fotos da vitrine e das opções de cores
-  const fotosCores = (() => {
-    if (Array.isArray(produto.imagens_vitrine) && produto.imagens_vitrine.filter(Boolean).length > 0) {
-      return produto.imagens_vitrine.filter(Boolean);
-    }
-    return galeriaFotos;
-  })();
-
-  const imagemExibida = fotoPrincipal || galeriaFotos[0] || fotosCores[0] || produto.imagem_url || '';
-
-  const variacoes = produto.variacoes || [];
-  const cores = Array.from(new Set(variacoes.map((v) => v.cor))).filter(Boolean);
-  const coresExibicao = cores.length > 0 ? cores : ['Preto', 'Marrom'];
-
   // Opções de modelo disponíveis para a peça
   const modelosDisponiveis = (() => {
+    if (!produto) return ['Regular Fit'];
     if (produto.modelo === 'Ambos') {
       return ['Regular Fit', 'Oversized'];
     }
@@ -295,18 +377,41 @@ export default function ProdutoDetalhe() {
     }
   };
 
-  // Ao clicar em uma cor, muda corSelecionada e alterna a foto principal usando a Aba 2 (fotosCores)
+  // Ao clicar em uma cor, muda corSelecionada e alterna a foto principal (procura na galeria vinculada ou vitrine)
   const handleSelecionarCor = (cor, idx) => {
     setCorSelecionada(cor);
-    if (fotosCores.length > 0) {
-      const fotoCor = fotosCores[idx < fotosCores.length ? idx : 0] || fotosCores[0];
+
+    // 1. Procura foto da galeria lateral vinculada a esta cor
+    const fotoGaleriaDaCor = galeriaFotos.find(
+      (item) => item.cor && item.cor.trim().toLowerCase() === cor.trim().toLowerCase()
+    );
+    if (fotoGaleriaDaCor?.url) {
+      setFotoPrincipal(fotoGaleriaDaCor.url);
+      return;
+    }
+
+    // 2. Procura nas configurações de cores (Aba 1)
+    const cfg = coresConfig.find((c) => c.cor?.toLowerCase() === cor?.toLowerCase());
+    if (cfg?.imagem_url) {
+      setFotoPrincipal(cfg.imagem_url);
+    } else {
+      const vitrineImgs = Array.isArray(produto?.imagens_vitrine) && produto.imagens_vitrine.filter(Boolean).length > 0
+        ? produto.imagens_vitrine.filter(Boolean)
+        : galeriaFotos.map((g) => g.url);
+      const fotoCor = vitrineImgs[idx < vitrineImgs.length ? idx : 0] || vitrineImgs[0];
       if (fotoCor) {
         setFotoPrincipal(fotoCor);
       }
     }
   };
 
-  const { addItem, setCep: setGlobalCep, calcularFretePorCep } = useCart();
+  // Garante que a quantidade nunca ultrapasse o estoque disponível para a variação selecionada
+  useEffect(() => {
+    const est = getEstoqueTamanho(tamanhoSelecionado);
+    if (est > 0 && quantidade > est) {
+      setQuantidade(est);
+    }
+  }, [tamanhoSelecionado, corSelecionada, modeloSelecionado]);
 
   // ── Aviso de reposição de estoque ──
   const tamanhoEsgotado = variacoes.length > 0 && getEstoqueTamanho(tamanhoSelecionado) <= 0;
@@ -373,6 +478,12 @@ export default function ProdutoDetalhe() {
       return;
     }
 
+    if (quantidade > estoqueDisponivel) {
+      alert(`Você selecionou ${quantidade} unidades, mas restam apenas ${estoqueDisponivel} un no estoque. Ajustamos a quantidade para o limite disponível.`);
+      setQuantidade(estoqueDisponivel);
+      return;
+    }
+
     const variacaoEncontrada = variacoes.find(
       (v) =>
         v.tamanho?.toUpperCase() === tamanhoSelecionado.toUpperCase() &&
@@ -393,11 +504,12 @@ export default function ProdutoDetalhe() {
       tamanho: tamanhoSelecionado,
       cor: corSelecionada,
       quantidade: quantidade,
+      estoque: estoqueDisponivel,
     });
   };
 
   const handleSimularFrete = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     const limpo = (cep || '').replace(/\D/g, '');
     if (limpo.length !== 8) {
       alert('Digite um CEP válido com 8 dígitos.');
@@ -418,25 +530,7 @@ export default function ProdutoDetalhe() {
       }
 
       const formatado = `${limpo.slice(0, 5)}-${limpo.slice(5)}`;
-      setCep(formatado);
-      setGlobalCep(formatado); // Sincroniza com o carrinho e checkout
-
-      // Monta localização detalhada com Rua, Bairro e Cidade/UF
-      const partesLocal = [];
-      if (data.logradouro) partesLocal.push(data.logradouro);
-      if (data.bairro) partesLocal.push(data.bairro);
-      if (data.cidade) partesLocal.push(`${data.cidade}/${data.uf}`);
-      else if (data.uf) partesLocal.push(data.uf);
-
-      setFreteResultado({
-        local: partesLocal.join(', ') || (data.cidade ? `${data.cidade}/${data.uf}` : ''),
-        opcoes: (data.opcoes || []).map((o) => ({
-          tipo: o.nome,
-          prazo: o.prazo,
-          valor: o.preco === 0 ? 'GRÁTIS' : o.preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-          gratis: o.preco === 0,
-        })),
-      });
+      aplicarDadosFrete(data, formatado);
     } catch (err) {
       alert(err.response?.data?.message || 'Não foi possível calcular o frete para este CEP.');
     } finally {
@@ -504,6 +598,41 @@ export default function ProdutoDetalhe() {
     ));
   };
 
+  if (loading) {
+    return (
+      <div className="pdp-wrapper">
+        <div className="pdp-container">
+          <p style={{ textAlign: 'center', padding: '60px 0', color: '#666' }}>Carregando produto...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (erro || !produto) {
+    return (
+      <div className="pdp-wrapper">
+        <div className="pdp-container" style={{ textAlign: 'center', padding: '80px 20px' }}>
+          <h2>Produto não encontrado</h2>
+          <p style={{ color: '#666', marginTop: '8px' }}>{erro || 'O item solicitado não está disponível.'}</p>
+          <Link to="/" style={{ display: 'inline-block', marginTop: '20px', color: '#c4953a', fontWeight: 'bold' }}>
+            ← Voltar para a página inicial
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Preços e cálculos
+  const precoBase = Number(produto.preco_base || 79.9);
+  const textoParcelamento = (() => {
+    const maxSemJuros = Math.min(maxParcelasSemJuros, Math.max(1, Math.floor(precoBase / 50)));
+    const valorParcela = (precoBase / maxSemJuros).toFixed(2).replace('.', ',');
+    if (maxSemJuros === 1) {
+      return `1x de R$ ${Number(precoBase).toFixed(2).replace('.', ',')} sem juros`;
+    }
+    return `em até ${maxSemJuros}x de R$ ${valorParcela} sem juros`;
+  })();
+
   return (
     <div className="pdp-wrapper">
       <div className="pdp-container">
@@ -513,16 +642,26 @@ export default function ProdutoDetalhe() {
           {/* Coluna 1: Miniaturas + Foto Grande com Selo 11% OFF */}
           <div className="pdp-visual-col">
             <div className="pdp-thumbs-list">
-              {galeriaFotos.map((img, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  className={`pdp-thumb-item ${imagemExibida === img ? 'active' : ''}`}
-                  onClick={() => setFotoPrincipal(img)}
-                >
-                  <img src={img} alt={`Ângulo ${idx + 1}`} />
-                </button>
-              ))}
+              {galeriaFotos.map((item, idx) => {
+                const url = typeof item === 'object' && item !== null ? item.url : item;
+                const cor = typeof item === 'object' && item !== null ? item.cor : '';
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={`pdp-thumb-item ${imagemExibida === url ? 'active' : ''}`}
+                    onClick={() => {
+                      setFotoPrincipal(url);
+                      if (cor) {
+                        setCorSelecionada(cor);
+                      }
+                    }}
+                    title={cor ? `Ver foto da cor ${cor}` : `Ângulo ${idx + 1}`}
+                  >
+                    <img src={url} alt={`Ângulo ${idx + 1}`} />
+                  </button>
+                );
+              })}
             </div>
 
             <div className="pdp-main-image-container">
@@ -582,7 +721,12 @@ export default function ProdutoDetalhe() {
             <div className="pdp-conditions-list">
               <div className="pdp-condition-item">
                 <IconCard />
-                <span>12 x de R$ {parcela12x}</span>
+                <span>{textoParcelamento}</span>
+              </div>
+              <div className="pdp-condition-item" style={{ marginTop: '2px' }}>
+                <span>ou</span>
+                <IconPix size={15} />
+                <span>Pix</span>
               </div>
             </div>
 
@@ -634,8 +778,8 @@ export default function ProdutoDetalhe() {
               </div>
               <div className="pdp-color-thumbnails">
                 {coresExibicao.map((cor, idx) => {
-                  // A 1ª cor mostra a foto 1 da aba Vitrine/Cores (idx 0), a 2ª cor mostra a foto 2 (idx 1), etc.
-                  const imgMin = fotosCores[idx < fotosCores.length ? idx : 0] || fotosCores[0];
+                  const cfg = coresConfig.find((c) => c.cor?.toLowerCase() === cor.toLowerCase());
+                  const imgMin = cfg?.imagem_url || fotosCores[idx < fotosCores.length ? idx : 0] || fotosCores[0];
 
                   return (
                     <button
@@ -682,13 +826,51 @@ export default function ProdutoDetalhe() {
               </div>
               <div className="pdp-size-guide-row">
                 <span>↔</span>
-                <button
-                  type="button"
-                  onClick={() => alert('Guia de Medidas Salv Sacra:\nPP: 68x48cm\nP: 70x50cm\nM: 72x52cm\nG: 75x55cm\nGG: 78x58cm\nG1: 80x60cm\nG2: 82x62cm')}
+                <Link
+                  to="/guia-de-medidas"
+                  style={{
+                    color: 'inherit',
+                    textDecoration: 'underline',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
                 >
                   Guia de medidas
-                </button>
+                </Link>
               </div>
+
+              {/* Aviso de estoque baixo (últimas 5 unidades) */}
+              {(() => {
+                const estoqueAtual = getEstoqueTamanho(tamanhoSelecionado);
+                if (estoqueAtual > 0 && estoqueAtual <= 5) {
+                  return (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '9px 14px',
+                        borderRadius: '8px',
+                        background: '#fef3c7',
+                        border: '1px solid #fde68a',
+                        color: '#92400e',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        marginTop: '12px',
+                      }}
+                    >
+                      <span style={{ fontSize: '15px' }}>⚡</span>
+                      <span>
+                        {estoqueAtual === 1
+                          ? 'Resta apenas 1 unidade disponível! Garanta a sua antes que esgote.'
+                          : `Restam apenas as últimas ${estoqueAtual} unidades deste tamanho/cor!`}
+                      </span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
 
             {/* Seletor de Quantidade + Botão COMPRAR */}
@@ -706,7 +888,9 @@ export default function ProdutoDetalhe() {
                 <button
                   type="button"
                   className="pdp-qty-action-btn"
-                  onClick={() => setQuantidade((q) => q + 1)}
+                  disabled={getEstoqueTamanho(tamanhoSelecionado) <= 0 || quantidade >= getEstoqueTamanho(tamanhoSelecionado)}
+                  onClick={() => setQuantidade((q) => Math.min(getEstoqueTamanho(tamanhoSelecionado), q + 1))}
+                  title={quantidade >= getEstoqueTamanho(tamanhoSelecionado) ? `Limite de estoque (${getEstoqueTamanho(tamanhoSelecionado)} un)` : 'Aumentar quantidade'}
                 >
                   +
                 </button>
@@ -727,8 +911,10 @@ export default function ProdutoDetalhe() {
                   type="button"
                   className="pdp-cta-buy"
                   onClick={handleComprar}
+                  disabled={getEstoqueTamanho(tamanhoSelecionado) <= 0 || quantidade > getEstoqueTamanho(tamanhoSelecionado)}
+                  style={getEstoqueTamanho(tamanhoSelecionado) <= 0 || quantidade > getEstoqueTamanho(tamanhoSelecionado) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                 >
-                  ADICIONAR AO CARRINHO
+                  {quantidade > getEstoqueTamanho(tamanhoSelecionado) ? 'ESTOQUE INSUFICIENTE' : 'ADICIONAR AO CARRINHO'}
                 </button>
               )}
 

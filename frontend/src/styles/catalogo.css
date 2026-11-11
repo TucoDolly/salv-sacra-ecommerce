@@ -425,3 +425,43 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* ── Setas de navegação entre fotos na vitrine/card ── */
+.card-nav-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1e1e1e;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 6;
+  transition: all 0.18s ease;
+  user-select: none;
+  line-height: 1;
+  padding: 0;
+}
+
+.card-nav-arrow:hover {
+  background: #ffffff;
+  color: #c4953a;
+  transform: translateY(-50%) scale(1.15);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.card-nav-arrow-left {
+  left: 8px;
+}
+
+.card-nav-arrow-right {
+  right: 8px;
+}

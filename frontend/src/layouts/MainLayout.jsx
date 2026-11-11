@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useCart } from "../contexts/CartContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useWishlist } from "../contexts/WishlistContext";
 import { obterResumoConta } from "../services/contaService";
+import api from "../services/api";
 import {
   obterNotificacoesCliente,
   marcarNotificacaoLidaCliente,
@@ -12,6 +13,7 @@ import {
   limparTodasCliente,
 } from "../services/notificacaoService";
 import CarrinhoDrawer from "../components/CarrinhoDrawer";
+import { LISTA_BANDEIRAS_RODAPE } from "../components/CardBrandIcon";
 import logoImg from "../assets/logo.webp";
 import "./MainLayout.css";
 
@@ -88,6 +90,9 @@ function SiteHeader({ configs }) {
   const { isAuthenticated, user } = useAuth();
   const { totalFavoritos } = useWishlist();
   const [termoBusca, setTermoBusca] = useState('');
+  const [sugestoesClienteAbertas, setSugestoesClienteAbertas] = useState(false);
+  const [produtosClienteList, setProdutosClienteList] = useState([]);
+  const searchClienteRef = useRef(null);
   const [modalFavoritosLogin, setModalFavoritosLogin] = useState(false);
   const [pedidosPendentesCount, setPedidosPendentesCount] = useState(0);
   const [notificacoes, setNotificacoes] = useState([]);
@@ -96,6 +101,136 @@ function SiteHeader({ configs }) {
   const notifRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    api.get('/produtos')
+      .then((res) => {
+        setProdutosClienteList(Array.isArray(res.data) ? res.data : (res.data?.data || []));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (searchClienteRef.current && !searchClienteRef.current.contains(e.target)) {
+        setSugestoesClienteAbertas(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  const sugestoesCliente = useMemo(() => {
+    const q = (termoBusca || '').trim().toLowerCase();
+    if (!q) return [];
+
+    const resultados = [];
+
+    // 1. Minha Conta & Páginas Pessoais
+    const secoesConta = [
+      { titulo: 'Formas de Pagamento (Cartões Salvos)', sub: 'Gerenciar cartões de crédito salvos', rota: '/minha-conta?aba=pagamentos', termos: ['pagamento', 'pagamentos', 'forma de pagamento', 'formas de pagamento', 'cartao', 'cartão', 'cartoes', 'cartões', 'pix'] },
+      { titulo: 'Alterar Senha & Segurança', sub: 'Redefinir senha de acesso da sua conta', rota: '/minha-conta?aba=senha', termos: ['senha', 'alterar senha', 'mudar senha', 'trocar senha', 'seguranca', 'segurança', 'redefinir senha'] },
+      { titulo: 'Meus Dados Pessoais', sub: 'Nome, CPF, e-mail e telefone cadastrados', rota: '/minha-conta?aba=dados', termos: ['dados', 'dados pessoais', 'perfil', 'cadastro', 'meu perfil', 'nome', 'cpf', 'email', 'telefone'] },
+      { titulo: 'Meus Endereços de Entrega', sub: 'Cadastrar ou editar CEP e endereços de envio', rota: '/minha-conta?aba=enderecos', termos: ['endereco', 'endereço', 'enderecos', 'endereços', 'cep', 'local de entrega', 'entrega'] },
+      { titulo: 'Meus Pedidos & Rastreamento', sub: 'Acompanhar pedidos e entregas dos Correios', rota: '/minha-conta?aba=pedidos', termos: ['pedido', 'pedidos', 'minhas compras', 'compras', 'rastreio', 'rastreamento', 'status'] },
+      { titulo: 'Devoluções, Trocas & Reembolso', sub: 'Solicitar devolução ou troca de produtos', rota: '/minha-conta?aba=pedidos', termos: ['devolucao', 'devolução', 'devolucoes', 'devoluções', 'troca', 'trocas', 'reembolso', 'estorno', 'devolver'] },
+      { titulo: 'Lista de Favoritos', sub: 'Peças salvas na sua lista de desejos', rota: '/minha-conta?aba=favoritos', termos: ['favorito', 'favoritos', 'desejo', 'desejos', 'salvos', 'curtidos'] },
+    ];
+
+    secoesConta.forEach((sec) => {
+      if (
+        sec.titulo.toLowerCase().includes(q) ||
+        sec.sub.toLowerCase().includes(q) ||
+        sec.termos.some((t) => t.includes(q) || q.includes(t))
+      ) {
+        resultados.push({
+          tipo: 'Minha Conta',
+          titulo: sec.titulo,
+          sub: sec.sub,
+          rota: sec.rota,
+          icone: '👤',
+        });
+      }
+    });
+
+    // 2. Loja & Institucional
+    const secoesLoja = [
+      { titulo: 'Meu Carrinho de Compras', sub: 'Ver itens adicionados e finalizar compra', rota: '/carrinho', termos: ['carrinho', 'sacola', 'cesta', 'itens'] },
+      { titulo: 'Guia de Medidas & Tamanhos', sub: 'Tabela de tamanhos PP ao G2 (Regular e Oversized)', rota: '/guia-de-medidas', termos: ['guia de medidas', 'medida', 'medidas', 'tamanho', 'tamanhos', 'tabela de medidas', 'proporcoes', 'cm'] },
+      { titulo: 'Atendimento ao Cliente & WhatsApp', sub: 'Fale conosco pelo WhatsApp oficial', rota: '/contato', termos: ['contato', 'whatsapp', 'fale conosco', 'suporte', 'ajuda', 'sac', 'atendimento', 'telefone', 'email'] },
+      { titulo: 'Quem Somos & Propósito', sub: 'Conheça a história e a missão da Salv Sacra', rota: '/quem-somos', termos: ['quem somos', 'sobre', 'sobre nós', 'historia', 'proposito', 'missao'] },
+      { titulo: 'Termos e Condições de Uso', sub: 'Direitos, fretes e condições da loja', rota: '/termos', termos: ['termos', 'condicoes', 'condições', 'politica', 'contrato'] },
+      { titulo: 'Política de Privacidade & LGPD', sub: 'Segurança e tratamento dos seus dados', rota: '/privacidade', termos: ['privacidade', 'lgpd', 'dados protegidos', 'segurança dos dados'] },
+      { titulo: 'Catálogo de Camisetas', sub: 'Todas as coleções e modelos disponíveis', rota: '/produtos?categoria=camisetas', termos: ['camiseta', 'camisetas', 'roupas', 'tshirt', 't-shirt', 'camisa'] },
+      { titulo: 'Camisetas Regular Fit', sub: 'Modelagem clássica e elegante', rota: '/produtos?colecao=regular-fit', termos: ['regular fit', 'regular', 'tradicional'] },
+      { titulo: 'Camisetas Oversized', sub: 'Modelagem moderna e ampla', rota: '/produtos?colecao=oversized', termos: ['oversized', 'over', 'larga'] },
+    ];
+
+    secoesLoja.forEach((sec) => {
+      if (
+        sec.titulo.toLowerCase().includes(q) ||
+        sec.sub.toLowerCase().includes(q) ||
+        sec.termos.some((t) => t.includes(q) || q.includes(t))
+      ) {
+        resultados.push({
+          tipo: 'Loja',
+          titulo: sec.titulo,
+          sub: sec.sub,
+          rota: sec.rota,
+          icone: '✦',
+        });
+      }
+    });
+
+    // 3. ID de Pedido
+    const matchId = q.match(/^#?(\d+)$/);
+    if (matchId) {
+      resultados.unshift({
+        tipo: 'Pedido Específico',
+        titulo: `Ver Pedido #${matchId[1]}`,
+        sub: `Acompanhar status e rastreio do pedido #${matchId[1]}`,
+        rota: `/minha-conta?aba=pedidos&pedido=${matchId[1]}`,
+        icone: '📦',
+      });
+    }
+
+    // 4. Produtos do catálogo
+    produtosClienteList.forEach((prod) => {
+      if (prod.nome?.toLowerCase().includes(q)) {
+        resultados.push({
+          tipo: 'Produto',
+          titulo: prod.nome,
+          sub: `${Number(prod.preco_base || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} · Ver detalhes`,
+          rota: `/produto/${prod.id}`,
+          icone: '👕',
+          imagem: prod.imagem_url,
+        });
+      }
+    });
+
+    // 5. Fallback de busca no catálogo
+    if (!resultados.some((r) => r.rota.startsWith('/produtos?busca='))) {
+      resultados.push({
+        tipo: 'Pesquisa no Catálogo',
+        titulo: `Buscar "${termoBusca}" no catálogo`,
+        sub: 'Ver todos os produtos correspondentes',
+        rota: `/produtos?busca=${encodeURIComponent(termoBusca)}`,
+        icone: '🔍',
+      });
+    }
+
+    return resultados.slice(0, 8);
+  }, [termoBusca, produtosClienteList]);
+
+  const handleExecutarNavegacaoCliente = (rota) => {
+    setSugestoesClienteAbertas(false);
+    setTermoBusca('');
+    if (rota === '/carrinho') {
+      openCart();
+    } else {
+      navigate(rota);
+    }
+  };
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -209,9 +344,13 @@ function SiteHeader({ configs }) {
 
   const handleBuscar = (e) => {
     e.preventDefault();
-    if (termoBusca.trim()) {
-      navigate(`/produtos?busca=${encodeURIComponent(termoBusca.trim())}`);
+    if (sugestoesCliente.length > 0) {
+      handleExecutarNavegacaoCliente(sugestoesCliente[0].rota);
+      return;
     }
+    const termo = (termoBusca || '').trim();
+    if (!termo) return;
+    navigate(`/produtos?busca=${encodeURIComponent(termo)}`);
   };
 
   const handleFavoritosClick = (e) => {
@@ -242,17 +381,106 @@ function SiteHeader({ configs }) {
             <img src={logoImg} alt={configs.nome_loja || "Salv Sacra"} className="logo-img" />
           </Link>
 
-          <form onSubmit={handleBuscar} className="header-search">
-            <input
-              type="search"
-              placeholder="O que você está buscando?"
-              value={termoBusca}
-              onChange={(e) => setTermoBusca(e.target.value)}
-            />
-            <button type="submit" aria-label="Buscar">
-              <IconSearch />
-            </button>
-          </form>
+          <div ref={searchClienteRef} className="header-search">
+            <form onSubmit={handleBuscar} style={{ display: 'flex', width: '100%', position: 'relative' }}>
+              <input
+                type="search"
+                placeholder="O que você está buscando?"
+                value={termoBusca}
+                onFocus={() => { if (termoBusca.trim()) setSugestoesClienteAbertas(true); }}
+                onChange={(e) => {
+                  setTermoBusca(e.target.value);
+                  setSugestoesClienteAbertas(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setSugestoesClienteAbertas(false);
+                }}
+              />
+              <button type="submit" aria-label="Buscar">
+                <IconSearch />
+              </button>
+            </form>
+
+            {/* Dropdown de sugestões para o cliente */}
+            {sugestoesClienteAbertas && sugestoesCliente.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  left: 0,
+                  width: '100%',
+                  background: '#1a1a1a',
+                  borderRadius: '8px',
+                  boxShadow: '0 12px 32px rgba(0, 0, 0, 0.55)',
+                  border: '1px solid #333333',
+                  overflow: 'hidden',
+                  zIndex: 1000,
+                  maxHeight: '380px',
+                  overflowY: 'auto',
+                }}
+              >
+                <div style={{ padding: '8px 14px', background: '#222', borderBottom: '1px solid #2e2e2e', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#c5a880', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Sugestões (Enter para a 1ª opção)
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#888' }}>
+                    {sugestoesCliente.length} resultado(s)
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {sugestoesCliente.map((sug, idx) => (
+                    <button
+                      key={`${sug.rota}-${idx}`}
+                      type="button"
+                      onClick={() => handleExecutarNavegacaoCliente(sug.rota)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '10px 14px',
+                        background: idx === 0 ? 'rgba(197, 168, 128, 0.1)' : 'transparent',
+                        border: 'none',
+                        borderBottom: idx < sugestoesCliente.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
+                        color: '#f3f4f6',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#282828'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = idx === 0 ? 'rgba(197, 168, 128, 0.1)' : 'transparent'; }}
+                    >
+                      {sug.imagem ? (
+                        <img
+                          src={sug.imagem}
+                          alt=""
+                          style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'cover', flexShrink: 0 }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: '16px', width: '28px', textAlign: 'center', flexShrink: 0, color: '#c5a880' }}>
+                          {sug.icone}
+                        </span>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {sug.titulo}
+                          </span>
+                          <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: '#2c2c2c', color: '#c5a880', fontWeight: 700, flexShrink: 0 }}>
+                            {sug.tipo}
+                          </span>
+                        </div>
+                        {sug.sub && (
+                          <div style={{ fontSize: '11.5px', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
+                            {sug.sub}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           <nav className="header-actions">
             {/* 1. Notificações */}
@@ -708,14 +936,36 @@ function SiteFooter({ configs }) {
       {/* Meios de pagamento */}
       <div className="footer-payment">
         <span className="footer-payment-label">Meios de pagamento</span>
-        <div className="payment-icons">
-          {PAYMENT_METHODS.map((m) => (
-            <span key={m} className="payment-badge">{m}</span>
+        <div className="payment-icons" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {LISTA_BANDEIRAS_RODAPE.map((b) => (
+            <span
+              key={b.id}
+              className="payment-badge-img"
+              title={b.name}
+              style={{
+                background: '#ffffff',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '32px',
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
+              }}
+            >
+              <img
+                src={b.src}
+                alt={b.name}
+                style={{
+                  height: '18px',
+                  width: 'auto',
+                  maxWidth: '54px',
+                  objectFit: 'contain',
+                  display: 'block',
+                }}
+              />
+            </span>
           ))}
-        </div>
-        <div className="safe-badge">
-          🛡️<br />Google<br />Safe Browsing<br />
-          <small>SITE 100% SEGURO</small>
         </div>
       </div>
 

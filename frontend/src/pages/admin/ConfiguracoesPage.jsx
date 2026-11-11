@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { getConfiguracoesAdmin, updateConfiguracoesAdmin } from '../../services/configuracaoService';
 import { uploadArquivoImagem } from '../../services/uploadService';
 import api from '../../services/api';
@@ -81,7 +82,25 @@ export default function ConfiguracoesPage() {
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [feedback, setFeedback] = useState({ tipo: '', texto: '' });
-  const [abaAtiva, setAbaAtiva] = useState('loja'); // 'loja' | 'carrossel' | 'frete' | 'pagamento' | 'cupons' | 'contato'
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const abasValidas = ['loja', 'carrossel', 'frete', 'pagamento', 'cupons', 'contato'];
+  const [abaAtiva, setAbaAtiva] = useState(() => {
+    const p = new URLSearchParams(window.location.search).get('aba');
+    return p && abasValidas.includes(p) ? p : 'loja';
+  });
+
+  useEffect(() => {
+    const p = searchParams.get('aba');
+    if (p && abasValidas.includes(p) && p !== abaAtiva) {
+      setAbaAtiva(p);
+    }
+  }, [searchParams]);
+
+  const handleMudarAba = (novaAba) => {
+    setAbaAtiva(novaAba);
+    setSearchParams({ aba: novaAba });
+  };
 
   useEffect(() => {
     carregarConfiguracoes();
@@ -227,7 +246,7 @@ export default function ConfiguracoesPage() {
           <button
             key={tab.id}
             type="button"
-            onClick={() => setAbaAtiva(tab.id)}
+            onClick={() => handleMudarAba(tab.id)}
             style={{
               padding: '12px 20px',
               border: 'none',

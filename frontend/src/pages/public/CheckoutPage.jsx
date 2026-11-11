@@ -7,6 +7,8 @@ import logoImg from '../../assets/logo.webp';
 import '../../styles/checkout.css';
 import '../../styles/cupom.css';
 import CupomSelector from '../../components/CupomSelector';
+import IconPix from '../../components/IconPix';
+import CardBrandIcon, { detectarBandeira } from '../../components/CardBrandIcon';
 
 import { listarEnderecos, listarCartoes, obterUltimoEndereco } from '../../services/contaService';
 
@@ -61,12 +63,6 @@ const IconCreditCard = () => (
   </svg>
 );
 
-const IconPix = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2L4 12l8 10 8-10-8-10z" />
-    <path d="M12 6L7 12l5 6 5-6-5-6z" />
-  </svg>
-);
 
 const IconBarcode = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -475,8 +471,8 @@ export default function CheckoutPage() {
   const totalFinal = Math.max(0, (subtotal || 79.9) + freteValor - (descontoCupom || 0));
   const totalBase = totalFinal;
 
-  // Calcula o número máximo de parcelas permitidas (parcela mínima de R$ 5,00 no Mercado Pago)
-  const maxParcelasDisponiveis = Math.max(1, Math.min(Number(maxParcelas) || 6, Math.floor(totalFinal / 5.00)));
+  // Calcula o número máximo de parcelas permitidas (parcela mínima de R$ 50,00, máximo 12x)
+  const maxParcelasDisponiveis = Math.max(1, Math.min(12, Math.floor(totalFinal / 50.00)));
 
   useEffect(() => {
     if (parcelasCartao > maxParcelasDisponiveis) {
@@ -662,8 +658,8 @@ export default function CheckoutPage() {
         updateUser(res.data.user);
       }
 
-      // Se o pedido já foi pago e aprovado (Cartão), limpa o carrinho imediatamente
-      if (res.data.pedido?.status === 'Pago') {
+      // Limpa o carrinho e cupons pois o pedido já foi criado no sistema (mesmo se pendente de pagamento PIX)
+      if (res.data.pedido) {
         clearCart();
         removerCupom();
       }
@@ -1376,9 +1372,16 @@ export default function CheckoutPage() {
                       <div className="checkout-payment-left">
                         <IconCreditCard />
                         <div>
-                          <span style={{ fontWeight: 700, display: 'block', fontSize: '14px', color: '#111' }}>
-                            Cartão de Crédito
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 700, display: 'block', fontSize: '14px', color: '#111' }}>
+                              Cartão de Crédito
+                            </span>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#fff', padding: '1px 5px', borderRadius: '4px', border: '1px solid #e5e7eb' }}>
+                              {['visa', 'mastercard', 'elo', 'amex', 'hipercard'].map((b) => (
+                                <CardBrandIcon key={b} brand={b} height={13} />
+                              ))}
+                            </div>
+                          </div>
                           <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500, display: 'block', marginTop: '2px' }}>
                             À vista ou em até {maxParcelas}x sem juros (aceita cartões de crédito e múltiplos)
                           </span>
@@ -1422,9 +1425,7 @@ export default function CheckoutPage() {
                                         </div>
                                       </div>
                                     </div>
-                                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#333' }}>
-                                      {c.bandeira || 'Cartão'}
-                                    </span>
+                                    <CardBrandIcon brand={c.bandeira || detectarBandeira(c.numero)} height={22} withBackground />
                                   </div>
                                 );
                               })}
@@ -1452,10 +1453,8 @@ export default function CheckoutPage() {
                               <div className="checkout-input-group">
                                 <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <span>Número do Cartão *</span>
-                                  {detectarBandeiraCartao(cartao.numero) && (
-                                    <span style={{ fontSize: '11px', background: '#1e1e1e', color: '#fff', padding: '1px 8px', borderRadius: '4px' }}>
-                                      {detectarBandeiraCartao(cartao.numero)}
-                                    </span>
+                                  {detectarBandeira(cartao.numero) && (
+                                    <CardBrandIcon brand={detectarBandeira(cartao.numero)} height={22} withBackground />
                                   )}
                                 </label>
                                 <input
@@ -1550,7 +1549,12 @@ export default function CheckoutPage() {
 
                           {/* Parcelamento (Crédito) */}
                           <div className="checkout-input-group" style={{ marginTop: '8px' }}>
-                            <label>Opções de Parcelamento</label>
+                            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                              <span>Opções de Parcelamento</span>
+                              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500, textTransform: 'none' }}>
+                                (mínimo de R$ 50,00 por parcela a partir de 2x)
+                              </span>
+                            </label>
                             <select
                               value={parcelasCartao}
                               onChange={(e) => setParcelasCartao(Number(e.target.value))}
@@ -1558,10 +1562,21 @@ export default function CheckoutPage() {
                               style={{ cursor: 'pointer', background: '#fff' }}
                             >
                               {Array.from({ length: maxParcelasDisponiveis }, (_, i) => i + 1).map((n) => {
-                                const valorParcela = (totalFinal / n).toFixed(2).replace('.', ',');
+                                if (n <= maxParcelas) {
+                                  const valorParcela = (totalFinal / n).toFixed(2).replace('.', ',');
+                                  return (
+                                    <option key={n} value={n}>
+                                      {n}x de R$ {valorParcela} sem juros {n === 1 ? '(À vista)' : ''}
+                                    </option>
+                                  );
+                                }
+                                const taxaJuros = 0.025 + (n - maxParcelas) * 0.015;
+                                const totalComJuros = totalFinal * (1 + taxaJuros);
+                                const valorParcela = (totalComJuros / n).toFixed(2).replace('.', ',');
+                                const totalFmt = totalComJuros.toFixed(2).replace('.', ',');
                                 return (
                                   <option key={n} value={n}>
-                                    {n}x de R$ {valorParcela} sem juros {n === 1 ? '(À vista)' : ''}
+                                    {n}x de R$ {valorParcela} com juros (Total: R$ {totalFmt})
                                   </option>
                                 );
                               })}
@@ -1623,10 +1638,6 @@ export default function CheckoutPage() {
                     <span>🔒 Compra Segura</span>
                   </div>
                 </div>
-
-                <p style={{ fontSize: '11px', color: '#777', textAlign: 'center' }}>
-                  Nas próximas compras enviaremos um código para: <strong>{telefone}</strong> · <button type="button" onClick={() => setEtapa('entrega')} style={{ background: 'none', border: 'none', color: '#1e1e1e', textDecoration: 'underline', cursor: 'pointer' }}>Alterar</button>
-                </p>
 
                 {/* Botão FAZER PEDIDO */}
                 <button

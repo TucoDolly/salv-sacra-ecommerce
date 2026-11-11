@@ -15,6 +15,7 @@ class Produto extends Model
         'imagem_url',
         'imagens',
         'imagens_vitrine',
+        'cores_config',
         'disponivel',
         'colecao',
         'modelo',
@@ -27,6 +28,7 @@ class Produto extends Model
         'disponivel'      => 'boolean',
         'imagens'         => 'array',
         'imagens_vitrine' => 'array',
+        'cores_config'    => 'array',
     ];
 
     // ─── Relações ────────────────────────────────────────────────────────────
@@ -34,6 +36,11 @@ class Produto extends Model
     public function variacoes(): HasMany
     {
         return $this->hasMany(Variacao::class);
+    }
+
+    public function itemPedidos(): \Illuminate\Database\Eloquent\Relations\HasManyThrough
+    {
+        return $this->hasManyThrough(ItemPedido::class, Variacao::class, 'produto_id', 'variacao_produto_id');
     }
 
     public function categoria(): BelongsTo

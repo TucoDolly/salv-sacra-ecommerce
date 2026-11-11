@@ -526,18 +526,37 @@ class PedidoController extends Controller
                         ]);
                     }
                     $variacaoId = $variacao->id;
+                } else {
+                    $variacao = Variacao::with('produto')->lockForUpdate()->find($variacaoId);
                 }
+
+                if (!$variacao) {
+                    abort(422, "A variação selecionada para o produto #{$item['produto_id']} não foi encontrada.");
+                }
+
+                $qtdSolicitada = (int) $item['quantidade'];
+                if ($variacao->estoque < $qtdSolicitada) {
+                    $prodNome = $variacao->produto?->nome ?? 'Produto';
+                    $detalhes = trim(($variacao->tamanho ?? '') . ' / ' . ($variacao->cor ?? ''), ' /');
+                    abort(422, "Estoque insuficiente para \"{$prodNome}\" ({$detalhes}). Restam apenas {$variacao->estoque} unidade(s) disponível(is). Por favor, ajuste a quantidade no seu carrinho.");
+                }
+
+                // Dá baixa automática imediata no estoque do produto
+                $variacao->decrement('estoque', $qtdSolicitada);
 
                 ItemPedido::create([
                     'pedido_id'            => $pedido->id,
                     'variacao_produto_id'  => $variacaoId,
-                    'quantidade'           => $item['quantidade'],
+                    'quantidade'           => $qtdSolicitada,
                     'preco_unitario'       => $item['preco'],
                 ]);
             }
 
             return $pedido;
         });
+
+        // Sincroniza notificações de estoque baixo para o admin caso algum item tenha ficado crítico (<= 3)
+        \App\Services\NotificacaoService::sincronizarEstoqueBaixo();
 
         // Se o pagamento for PIX, gera cobrança via Mercado Pago (ou BRCode oficial EMVCo)
         if ($pedido->metodo_pagamento === 'pix') {
@@ -548,6 +567,7 @@ class PedidoController extends Controller
             if (is_array($dadosCartao) && ! empty($dadosCartao)) {
                 $resultadoCartao = $this->processarPagamentoCartao($pedido, $dadosCartao, $request->user());
                 if (empty($resultadoCartao['aprovado'])) {
+                    $this->restaurarEstoquePedido($pedido);
                     $pedido->delete();
                     return response()->json([
                         'message' => $resultadoCartao['mensagem'] ?? 'Pagamento recusado pela operadora do cartão.',

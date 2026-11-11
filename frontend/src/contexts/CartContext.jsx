@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import api from '../services/api';
+import { listarEnderecos, obterUltimoEndereco } from '../services/contaService';
 
 const CartContext = createContext({});
 
@@ -19,13 +20,7 @@ export function CartProvider({ children }) {
   const [selectedShipping, setSelectedShipping] = useState(null);
   const [cep, setCep] = useState(() => {
     try {
-      const salvo = localStorage.getItem('@SalvSacra:cep');
-      // Limpa qualquer resíduo legado do CEP fixo de testes
-      if (!salvo || salvo === '88701-260') {
-        localStorage.removeItem('@SalvSacra:cep');
-        return '';
-      }
-      return salvo;
+      return localStorage.getItem('@SalvSacra:cep') || '';
     } catch {
       return '';
     }
@@ -34,6 +29,38 @@ export function CartProvider({ children }) {
   const [ufDestino, setUfDestino] = useState('');
   const [loadingFrete, setLoadingFrete] = useState(false);
   const reqIdRef = useRef(0);
+
+  // Busca endereço cadastrado ou do último pedido caso o CEP ainda não esteja preenchido
+  useEffect(() => {
+    if (!cep) {
+      const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
+      if (token) {
+        listarEnderecos()
+          .then(({ data }) => {
+            if (Array.isArray(data) && data.length > 0 && data[0]?.cep) {
+              const limpo = String(data[0].cep).replace(/\D/g, '');
+              if (limpo.length === 8) {
+                const formatado = `${limpo.slice(0, 5)}-${limpo.slice(5)}`;
+                setCep(formatado);
+                localStorage.setItem('@SalvSacra:cep', formatado);
+                return;
+              }
+            }
+            return obterUltimoEndereco().then((res) => {
+              if (res?.data?.cep) {
+                const limpo = String(res.data.cep).replace(/\D/g, '');
+                if (limpo.length === 8) {
+                  const formatado = `${limpo.slice(0, 5)}-${limpo.slice(5)}`;
+                  setCep(formatado);
+                  localStorage.setItem('@SalvSacra:cep', formatado);
+                }
+              }
+            });
+          })
+          .catch(() => {});
+      }
+    }
+  }, [cep]);
 
   // Salvar no localStorage sempre que items mudar
   const salvarCarrinho = (novosItens) => {
@@ -139,8 +166,13 @@ export function CartProvider({ children }) {
         (i.modelo || 'Regular Fit') === modItem
     );
 
+    const estoqueMax = item.estoque !== undefined ? Number(item.estoque) : 999;
+
     if (index >= 0) {
-      novos[index].quantidade += item.quantidade || 1;
+      const estoqueLimite = novos[index].estoque !== undefined ? Number(novos[index].estoque) : estoqueMax;
+      const novaQtd = (novos[index].quantidade || 0) + (item.quantidade || 1);
+      novos[index].quantidade = Math.min(estoqueLimite, novaQtd);
+      if (item.estoque !== undefined) novos[index].estoque = Number(item.estoque);
     } else {
       novos.push({
         produtoId: item.produtoId,
@@ -151,7 +183,8 @@ export function CartProvider({ children }) {
         modelo: modItem,
         tamanho: item.tamanho || 'M',
         cor: item.cor || 'Preto',
-        quantidade: item.quantidade || 1,
+        quantidade: Math.min(estoqueMax, item.quantidade || 1),
+        estoque: item.estoque !== undefined ? Number(item.estoque) : undefined,
       });
     }
 
@@ -163,8 +196,17 @@ export function CartProvider({ children }) {
     const novos = [...items];
     if (!novos[index]) return;
 
-    novos[index].quantidade += delta;
-    if (novos[index].quantidade <= 0) {
+    const item = novos[index];
+    const estoqueMax = item.estoque !== undefined ? Number(item.estoque) : 999;
+    const novaQtd = item.quantidade + delta;
+
+    // Se estiver tentando aumentar além do estoque disponível, bloqueia a operação
+    if (delta > 0 && novaQtd > estoqueMax) {
+      return;
+    }
+
+    item.quantidade = novaQtd;
+    if (item.quantidade <= 0) {
       novos.splice(index, 1);
     }
     salvarCarrinho(novos);
@@ -203,10 +245,21 @@ export function CartProvider({ children }) {
     const ids = (c.produto_ids || []).map(Number);
     const validos = c.todos_produtos ? items : items.filter((i) => ids.includes(Number(i.produtoId)));
     if (validos.length === 0) return 0;
-    const pct = Math.min(100, Math.max(0, Number(c.percentual))) / 100;
-    if (c.tipo === 'frete') return Math.round(fretePreco * pct * 100) / 100;
-    const base = validos.reduce((acc, i) => acc + Number(i.preco) * Number(i.quantidade), 0);
-    return Math.round(base * pct * 100) / 100;
+
+    // Cupom de frete: aplica ao valor do frete do carrinho inteiro
+    if (c.tipo === 'frete') {
+      const pctFrete = Math.min(100, Math.max(0, Number(c.percentual || 100))) / 100;
+      return Math.round(fretePreco * pctFrete * 100) / 100;
+    }
+
+    // Cupom de produto: válido para apenas 1 produto (o item válido de maior valor)
+    const maiorPreco = Math.max(...validos.map((i) => Number(i.preco || 0)));
+    if (c.valor_fixo && Number(c.valor_fixo) > 0) {
+      return Math.round(Math.min(maiorPreco, Number(c.valor_fixo)) * 100) / 100;
+    }
+
+    const pct = Math.min(100, Math.max(0, Number(c.percentual || 0))) / 100;
+    return Math.round(maiorPreco * pct * 100) / 100;
   };
 
   const descontoCupom = calcularDescontoCupom(cupom);

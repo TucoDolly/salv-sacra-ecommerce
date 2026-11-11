@@ -18,6 +18,7 @@ const IconSort = () => (
 // Subcomponente de Card do Produto padronizado com a vitrine Home
 function CatalogoItemCard({ prod }) {
   const [hovered, setHovered] = useState(false);
+  const [fotoIdx, setFotoIdx] = useState(0);
   const { isAuthenticated } = useAuth();
   const { isFavorite, toggleFavorite } = useWishlist();
   const navigate = useNavigate();
@@ -28,16 +29,67 @@ function CatalogoItemCard({ prod }) {
     : null;
 
   const vitrine = Array.isArray(prod.imagens_vitrine) && prod.imagens_vitrine.length > 0
-    ? prod.imagens_vitrine
+    ? prod.imagens_vitrine.filter(Boolean)
     : Array.isArray(prod.imagens) && prod.imagens.length > 0
-    ? prod.imagens
+    ? prod.imagens.filter(Boolean)
     : [];
 
-  const foto1 = vitrine[0] || prod.imagem_url;
-  const foto2 = vitrine[1] || null;
-  const fotoExibida = hovered && foto2 ? foto2 : foto1;
+  const coresConfig = Array.isArray(prod.cores_config) ? prod.cores_config : [];
 
-  const coresVariacoes = Array.from(new Set((prod.variacoes || []).map((v) => v.cor))).filter(Boolean);
+  // Lista unificada de todas as fotos de vitrine / cores
+  const listaFotos = (() => {
+    if (coresConfig.length > 0) {
+      const fotosDeCores = coresConfig
+        .map((c) => c.imagem_url)
+        .filter(Boolean);
+      if (fotosDeCores.length > 0) return fotosDeCores;
+    }
+    if (vitrine.length > 0) return vitrine;
+    return prod.imagem_url ? [prod.imagem_url] : [];
+  })();
+
+  const fotoExibida = listaFotos[fotoIdx] || listaFotos[0] || prod.imagem_url || '';
+
+  const handleMouseEnter = () => {
+    setHovered(true);
+    if (listaFotos.length > 1) {
+      setFotoIdx(1);
+    } else {
+      setFotoIdx(0);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setHovered(false);
+    setFotoIdx(0);
+  };
+
+  const handlePrevFoto = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (listaFotos.length > 1) {
+      setFotoIdx((prev) => (prev - 1 + listaFotos.length) % listaFotos.length);
+    }
+  };
+
+  const handleNextFoto = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (listaFotos.length > 1) {
+      setFotoIdx((prev) => (prev + 1) % listaFotos.length);
+    }
+  };
+
+  const coresVariacoesRaw = Array.from(new Set((prod.variacoes || []).map((v) => v.cor?.trim()))).filter(Boolean);
+  const coresVariacoesDeduplicadas = coresConfig.length > 0
+    ? Array.from(new Set(
+        [...coresConfig]
+          .sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
+          .map((c) => c.cor?.trim())
+          .filter(Boolean)
+      )).filter((c) => coresVariacoesRaw.length === 0 || coresVariacoesRaw.includes(c))
+    : coresVariacoesRaw;
+  const coresVariacoes = coresVariacoesDeduplicadas.length > 0 ? coresVariacoesDeduplicadas : coresVariacoesRaw;
   const temAvaliacao = Number(prod.avaliacoes_count) > 0;
   const qtdEstrelas = Math.max(1, Math.min(5, Math.round(Number(prod.avaliacoes_avg_nota || 0))));
 
@@ -56,8 +108,8 @@ function CatalogoItemCard({ prod }) {
       to={`/produto/${prod.id}`}
       className="catalogo-product-card"
       aria-label={prod.nome}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       <div className="catalogo-product-img-wrap">
         <button
@@ -71,6 +123,30 @@ function CatalogoItemCard({ prod }) {
             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
           </svg>
         </button>
+
+        {/* Setas para navegar nas cores/fotos quando há mais de 2 fotos/cores */}
+        {hovered && listaFotos.length > 2 && (
+          <>
+            <button
+              type="button"
+              onClick={handlePrevFoto}
+              className="card-nav-arrow card-nav-arrow-left"
+              title="Foto/Cor anterior"
+              aria-label="Foto/Cor anterior"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={handleNextFoto}
+              className="card-nav-arrow card-nav-arrow-right"
+              title="Próxima foto/cor"
+              aria-label="Próxima foto/cor"
+            >
+              ›
+            </button>
+          </>
+        )}
 
         {fotoExibida ? (
           <img src={fotoExibida} alt={prod.nome} loading="lazy" />
@@ -200,7 +276,7 @@ export default function CatalogoPage({ modoFixo = null }) {
 
     api.get('/produtos', { params })
       .then((res) => {
-        setProdutos(res.data || []);
+        setProdutos(Array.isArray(res.data) ? res.data : (res.data?.data || []));
       })
       .catch((err) => {
         console.error('Erro ao buscar produtos no catálogo:', err);
@@ -329,7 +405,6 @@ export default function CatalogoPage({ modoFixo = null }) {
     'Mais novo ao mais antigo',
     'Mais antigo ao mais novo',
     'Mais vendidos',
-    'Destaque',
   ];
 
   // Alternar checkbox
@@ -405,12 +480,28 @@ export default function CatalogoPage({ modoFixo = null }) {
         return Number(b.preco_base) - Number(a.preco_base);
       }
       if (ordenacao === 'A - Z') {
-        return a.nome.localeCompare(b.nome);
+        return (a.nome || '').localeCompare(b.nome || '');
       }
       if (ordenacao === 'Z - A') {
-        return b.nome.localeCompare(a.nome);
+        return (b.nome || '').localeCompare(a.nome || '');
       }
-      return 0; // Mais vendidos ou Destaque mantém padrão da API
+      if (ordenacao === 'Mais novo ao mais antigo') {
+        const dateA = new Date(a.created_at || 0).getTime();
+        const dateB = new Date(b.created_at || 0).getTime();
+        return (dateB - dateA) || ((b.id || 0) - (a.id || 0));
+      }
+      if (ordenacao === 'Mais antigo ao mais novo') {
+        const dateA = new Date(a.created_at || 0).getTime();
+        const dateB = new Date(b.created_at || 0).getTime();
+        return (dateA - dateB) || ((a.id || 0) - (b.id || 0));
+      }
+      if (ordenacao === 'Mais vendidos') {
+        const vA = Number(a.vendas_count ?? a.total_vendas ?? 0);
+        const vB = Number(b.vendas_count ?? b.total_vendas ?? 0);
+        if (vB !== vA) return vB - vA;
+        return (b.id || 0) - (a.id || 0);
+      }
+      return 0;
     });
 
   return (

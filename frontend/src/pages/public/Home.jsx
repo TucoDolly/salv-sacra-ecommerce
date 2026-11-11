@@ -91,6 +91,7 @@ const BENEFITS = [
 // ── Componente de card de produto ──────────────────────────────────────────────
 function ProdutoCard({ produto }) {
   const [hovered, setHovered] = useState(false);
+  const [fotoIdx, setFotoIdx] = useState(0);
   const { isAuthenticated } = useAuth();
   const { isFavorite, toggleFavorite } = useWishlist();
   const navigate = useNavigate();
@@ -100,19 +101,67 @@ function ProdutoCard({ produto }) {
     ? Number(produto.preco_base).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
     : null;
 
-  // Foto 1 (capa) e Foto 2 (hover) a partir de imagens_vitrine (com fallback para imagens)
+  // Vitrine e cores unificadas
   const vitrine = Array.isArray(produto.imagens_vitrine) && produto.imagens_vitrine.length > 0
-    ? produto.imagens_vitrine
+    ? produto.imagens_vitrine.filter(Boolean)
     : Array.isArray(produto.imagens) && produto.imagens.length > 0
-    ? produto.imagens
+    ? produto.imagens.filter(Boolean)
     : [];
 
-  const foto1 = vitrine[0] || produto.imagem_url;
-  const foto2 = vitrine[1] || null;
-  const fotoExibida = hovered && foto2 ? foto2 : foto1;
+  const coresConfig = Array.isArray(produto.cores_config) ? produto.cores_config : [];
 
-  // Cores dinâmicas cadastradas nas variações do produto
-  const coresVariacoes = Array.from(new Set((produto.variacoes || []).map((v) => v.cor))).filter(Boolean);
+  const listaFotos = (() => {
+    if (coresConfig.length > 0) {
+      const fotosDeCores = coresConfig.map((c) => c.imagem_url).filter(Boolean);
+      if (fotosDeCores.length > 0) return fotosDeCores;
+    }
+    if (vitrine.length > 0) return vitrine;
+    return produto.imagem_url ? [produto.imagem_url] : [];
+  })();
+
+  const fotoExibida = listaFotos[fotoIdx] || listaFotos[0] || produto.imagem_url || '';
+
+  const handleMouseEnter = () => {
+    setHovered(true);
+    if (listaFotos.length > 1) {
+      setFotoIdx(1);
+    } else {
+      setFotoIdx(0);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setHovered(false);
+    setFotoIdx(0);
+  };
+
+  const handlePrevFoto = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (listaFotos.length > 1) {
+      setFotoIdx((prev) => (prev - 1 + listaFotos.length) % listaFotos.length);
+    }
+  };
+
+  const handleNextFoto = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (listaFotos.length > 1) {
+      setFotoIdx((prev) => (prev + 1) % listaFotos.length);
+    }
+  };
+
+  // Cores dinâmicas cadastradas nas variações do produto (deduplicadas para evitar repetição)
+  const coresVariacoesRaw = Array.from(new Set((produto.variacoes || []).map((v) => v.cor?.trim()))).filter(Boolean);
+  const coresVariacoesDeduplicadas = coresConfig.length > 0
+    ? Array.from(new Set(
+        [...coresConfig]
+          .sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
+          .map((c) => c.cor?.trim())
+          .filter(Boolean)
+      )).filter((c) => coresVariacoesRaw.length === 0 || coresVariacoesRaw.includes(c))
+    : coresVariacoesRaw;
+  const coresVariacoes = coresVariacoesDeduplicadas.length > 0 ? coresVariacoesDeduplicadas : coresVariacoesRaw;
   const temAvaliacao = Number(produto.avaliacoes_count) > 0;
   const qtdEstrelas = Math.max(1, Math.min(5, Math.round(Number(produto.avaliacoes_avg_nota || 0))));
 
@@ -131,8 +180,8 @@ function ProdutoCard({ produto }) {
       to={`/produto/${produto.id}`}
       className="produto-card"
       aria-label={produto.nome}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       <div className="produto-card-img">
         <button
@@ -146,6 +195,30 @@ function ProdutoCard({ produto }) {
             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
           </svg>
         </button>
+
+        {/* Setas para navegar nas cores/fotos quando há mais de 2 fotos/cores */}
+        {hovered && listaFotos.length > 2 && (
+          <>
+            <button
+              type="button"
+              onClick={handlePrevFoto}
+              className="card-nav-arrow card-nav-arrow-left"
+              title="Foto/Cor anterior"
+              aria-label="Foto/Cor anterior"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={handleNextFoto}
+              className="card-nav-arrow card-nav-arrow-right"
+              title="Próxima foto/cor"
+              aria-label="Próxima foto/cor"
+            >
+              ›
+            </button>
+          </>
+        )}
 
         {fotoExibida ? (
           <img

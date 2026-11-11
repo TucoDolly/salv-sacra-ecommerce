@@ -5,6 +5,8 @@ import { useCart } from '../contexts/CartContext';
 import { useWishlist } from '../contexts/WishlistContext';
 import MainLayout from '../layouts/MainLayout';
 import api from '../services/api';
+import IconPix from '../components/IconPix';
+import CardBrandIcon, { detectarBandeira } from '../components/CardBrandIcon';
 import { imprimirReciboPedido } from '../utils/imprimirRecibo';
 import {
   alterarSenha,
@@ -674,9 +676,18 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                             fontSize: '12px',
                             fontWeight: 700,
                             cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
                           }}
                         >
-                          {pixAbertoId === p.id ? 'Ocultar QR Code PIX' : '💠 Pagar Agora (Ver QR Code)'}
+                          {pixAbertoId === p.id ? (
+                            'Ocultar QR Code PIX'
+                          ) : (
+                            <>
+                              <IconPix size={14} style={{ marginRight: '6px' }} />
+                              Pagar Agora (Ver QR Code)
+                            </>
+                          )}
                         </button>
                         <button
                           type="button"
@@ -1089,21 +1100,43 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                                 {p.devolucao.codigo_postagem_reversa || 'CÓDIGO EM EMISSÃO'}
                               </strong>
                               {p.devolucao.codigo_postagem_reversa && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(p.devolucao.codigo_postagem_reversa);
-                                    setModalAviso({
-                                      aberto: true,
-                                      titulo: 'Código de Postagem Copiado!',
-                                      mensagem: 'O código de logística reversa foi copiado. Apresente-o em qualquer agência dos Correios para despacho gratuito.',
-                                      icon: '📦',
-                                    });
-                                  }}
-                                  style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
-                                >
-                                  Copiar
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(p.devolucao.codigo_postagem_reversa);
+                                      setModalAviso({
+                                        aberto: true,
+                                        titulo: 'Código de Postagem Copiado!',
+                                        mensagem: 'O código de logística reversa foi copiado. Apresente-o em qualquer agência dos Correios para despacho gratuito.',
+                                        icon: '📦',
+                                      });
+                                    }}
+                                    style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                                  >
+                                    Copiar
+                                  </button>
+                                  <a
+                                    href={`https://rastreamento.correios.com.br/app/index.php?codigo=${encodeURIComponent(p.devolucao.codigo_postagem_reversa)}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{
+                                      background: '#f8fafc',
+                                      color: '#0284c7',
+                                      border: '1px solid #0284c7',
+                                      padding: '5px 12px',
+                                      borderRadius: '4px',
+                                      fontSize: '11px',
+                                      fontWeight: 700,
+                                      textDecoration: 'none',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                    }}
+                                  >
+                                    Acompanhar Rastreio ↗
+                                  </a>
+                                </>
                               )}
                               <span style={{ fontSize: '11px', color: '#b45309', fontWeight: 700 }}>
                                 🚩 Validade: {p.devolucao.prazo_postagem || '7 dias corridos'}
@@ -1152,16 +1185,16 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                               </strong>
                               <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '12.5px', color: '#334155', lineHeight: 1.65 }}>
                                 <li style={{ marginBottom: '6px' }}>
-                                  <strong>Reembalar o pacote:</strong> Utilize preferencialmente a embalagem original ou um pacote com dimensões similares às informadas durante a geração da logística reversa. Com isso você evita alterações no valor do frete após a conferência métrica dos Correios.
+                                  <strong>Reembalar o pacote:</strong> Utilize preferencialmente a embalagem original ou um pacote com dimensões similares às informadas durante a geração da logística reversa. Atenção: retire ou cubra totalmente a etiqueta antiga de envio para não causar confusão ou erro de leitura nos Correios.
                                 </li>
                                 <li style={{ marginBottom: '6px' }}>
                                   <strong>Declaração de Conteúdo:</strong> Imprima a declaração de conteúdo (botão acima) e fixe-a na parte externa da embalagem ou entregue ao atendente.
                                 </li>
                                 <li style={{ marginBottom: '6px' }}>
-                                  <strong>Comparecer até a agência dos Correios:</strong> Vá até a agência com o pacote pronto para o envio e informe o <strong>Código de Postagem Reversa</strong> durante o atendimento (você não paga nada).
+                                  <strong>Comparecer até a agência dos Correios:</strong> Vá até a agência com o pacote pronto para o envio e informe o <strong>Código de Postagem Reversa (rastreio)</strong> durante o atendimento (você não paga nada).
                                 </li>
                                 <li>
-                                  <strong>Envio e Liberação:</strong> O pacote seguirá para a Salv Sacra e, assim que verificado, liberaremos seu vale-compras ou estorno.
+                                  <strong>Envio e Liberação:</strong> O pacote seguirá para o nosso endereço e, assim que verificado, liberaremos seu vale-compras ou estorno.
                                 </li>
                               </ol>
                               <div style={{ marginTop: '10px', fontSize: '12px', color: '#b45309', fontWeight: 600 }}>
@@ -2278,11 +2311,13 @@ function FormasPagamento({ cartoes, recarregar }) {
     setErro('');
     setSalvando(true);
     try {
+      const bandeiraCard = detectarBandeira(form.numero) || 'Cartão';
       await criarCartao({
         tipo: form.tipo,
         titular: form.titular,
         numero: form.numero.replace(/\s+/g, ''),
         validade: form.validade,
+        bandeira: bandeiraCard,
       });
       setForm(null);
       await recarregar();
@@ -2334,7 +2369,12 @@ function FormasPagamento({ cartoes, recarregar }) {
 
           <div className="conta-grid-2">
             <div className="auth-field">
-              <label htmlFor="card-num">Número do Cartão</label>
+              <label htmlFor="card-num" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Número do Cartão</span>
+                {detectarBandeira(form.numero) && (
+                  <CardBrandIcon brand={detectarBandeira(form.numero)} height={20} withBackground />
+                )}
+              </label>
               <input
                 id="card-num"
                 name="numero"
@@ -2387,8 +2427,8 @@ function FormasPagamento({ cartoes, recarregar }) {
         {cartoes.map((card) => (
           <div key={card.id} className="conta-box conta-cartao-item">
             <div className="conta-cartao-left">
-              <div className="conta-cartao-icon">
-                {card.bandeira || 'CARD'}
+              <div className="conta-cartao-icon" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '3px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CardBrandIcon brand={card.bandeira || card.tipo} height={22} />
               </div>
               <div className="conta-cartao-detalhes">
                 <strong>

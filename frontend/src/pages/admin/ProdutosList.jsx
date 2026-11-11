@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { deleteProduto, getProdutos } from '../../services/produtoService';
 import '../../styles/admin.css';
 
@@ -18,9 +18,17 @@ export default function ProdutosList() {
   const [success, setSuccess]     = useState('');
 
   // ── Filtros e Ordenação ───────────────────────────────────────────────────
+  const [searchParams] = useSearchParams();
+  const buscaUrl = searchParams.get('busca') || '';
   const [ordenacao, setOrdenacao]       = useState('recentes'); // recentes | nome_asc | nome_desc | preco_asc | preco_desc | colecao_asc
   const [filtroColecao, setFiltroColecao] = useState('');
-  const [busca, setBusca]               = useState('');
+  const [busca, setBusca]               = useState(buscaUrl);
+
+  useEffect(() => {
+    if (buscaUrl !== undefined) {
+      setBusca(buscaUrl);
+    }
+  }, [buscaUrl]);
 
   // ── Modal de confirmação ───────────────────────────────────────────────────
   const [modalTarget, setModalTarget] = useState(null); // { id, nome }
@@ -32,7 +40,7 @@ export default function ProdutosList() {
     setError('');
     try {
       const { data } = await getProdutos();
-      setProdutos(data);
+      setProdutos(Array.isArray(data) ? data : (data?.data ?? []));
     } catch {
       setError('Não foi possível carregar os produtos. Tente novamente.');
     } finally {
@@ -64,14 +72,15 @@ export default function ProdutosList() {
     Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
   // ── Coleções únicas para o filtro ──────────────────────────────────────────
-  const colecoes = Array.from(new Set(produtos.map((p) => p.colecao).filter(Boolean)));
+  const listaProdutos = Array.isArray(produtos) ? produtos : [];
+  const colecoes = Array.from(new Set(listaProdutos.map((p) => p.colecao).filter(Boolean)));
 
   // ── Filtragem e Ordenação ──────────────────────────────────────────────────
-  const produtosExibidos = produtos
+  const produtosExibidos = listaProdutos
     .filter((p) => {
       if (filtroColecao && p.colecao !== filtroColecao) return false;
-      if (busca.trim()) {
-        const termo = busca.toLowerCase();
+      const termo = (typeof busca === 'string' ? busca : '').toLowerCase().trim();
+      if (termo) {
         const nomeOk = (p.nome || '').toLowerCase().includes(termo);
         const colOk = (p.colecao || '').toLowerCase().includes(termo);
         const catOk = (p.categoria?.nome || '').toLowerCase().includes(termo);

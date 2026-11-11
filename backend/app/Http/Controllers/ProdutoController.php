@@ -18,7 +18,12 @@ class ProdutoController extends Controller
     {
         $query = Produto::with(['categoria', 'devocao', 'variacoes'])
             ->withCount('avaliacoes')
-            ->withAvg('avaliacoes', 'nota');
+            ->withAvg('avaliacoes', 'nota')
+            ->withCount(['itemPedidos as vendas_count' => function ($q) {
+                $q->whereHas('pedido', function ($pq) {
+                    $pq->whereIn('status', ['Pago', 'Em separação', 'Em montagem', 'Enviado', 'Em transporte', 'Entregue']);
+                });
+            }]);
 
         // Filtro por termo de busca
         if ($request->filled('busca')) {
@@ -26,11 +31,18 @@ class ProdutoController extends Controller
             $query->where(function ($q) use ($termo) {
                 $q->where('nome', 'like', "%{$termo}%")
                   ->orWhere('descricao', 'like', "%{$termo}%")
+                  ->orWhere('colecao', 'like', "%{$termo}%")
+                  ->orWhere('modelo', 'like', "%{$termo}%")
                   ->orWhereHas('devocao', function ($d) use ($termo) {
                       $d->where('nome', 'like', "%{$termo}%");
                   })
                   ->orWhereHas('categoria', function ($c) use ($termo) {
                       $c->where('nome', 'like', "%{$termo}%");
+                  })
+                  ->orWhereHas('variacoes', function ($v) use ($termo) {
+                      $v->where('cor', 'like', "%{$termo}%")
+                        ->orWhere('modelo', 'like', "%{$termo}%")
+                        ->orWhere('tamanho', 'like', "%{$termo}%");
                   });
             });
         }
@@ -118,9 +130,10 @@ class ProdutoController extends Controller
             'preco_base'   => ['required', 'numeric', 'min:0'],
             'imagem_url'        => ['nullable', 'string', 'max:2048'],
             'imagens'           => ['nullable', 'array'],
-            'imagens.*'         => ['nullable', 'string', 'max:2048'],
+            'imagens.*'         => ['nullable'],
             'imagens_vitrine'   => ['nullable', 'array'],
             'imagens_vitrine.*' => ['nullable', 'string', 'max:2048'],
+            'cores_config'      => ['nullable', 'array'],
             'disponivel'        => ['boolean'],
             'colecao'           => ['nullable', 'string', 'max:255'],
             'modelo'            => ['nullable', 'string', 'max:255'],
@@ -144,9 +157,13 @@ class ProdutoController extends Controller
             
             // Se imagens vieram, filtra URLs vazias
             if (isset($dadosProduto['imagens']) && is_array($dadosProduto['imagens'])) {
-                $dadosProduto['imagens'] = array_values(array_filter($dadosProduto['imagens'], fn($u) => !empty(trim($u))));
+                $dadosProduto['imagens'] = array_values(array_filter($dadosProduto['imagens'], function ($item) {
+                    if (is_array($item)) return !empty(trim($item['url'] ?? ''));
+                    return !empty(trim((string)$item));
+                }));
                 if (empty($dadosProduto['imagem_url'])) {
-                    $dadosProduto['imagem_url'] = $dadosProduto['imagens_vitrine'][0] ?? $dadosProduto['imagens'][0] ?? null;
+                    $primeira = $dadosProduto['imagens_vitrine'][0] ?? $dadosProduto['imagens'][0] ?? null;
+                    $dadosProduto['imagem_url'] = is_array($primeira) ? ($primeira['url'] ?? null) : $primeira;
                 }
             } elseif (!empty($dadosProduto['imagem_url'])) {
                 $dadosProduto['imagens'] = [$dadosProduto['imagem_url']];
@@ -198,9 +215,10 @@ class ProdutoController extends Controller
             'preco_base'   => ['sometimes', 'numeric', 'min:0'],
             'imagem_url'        => ['nullable', 'string', 'max:2048'],
             'imagens'           => ['nullable', 'array'],
-            'imagens.*'         => ['nullable', 'string', 'max:2048'],
+            'imagens.*'         => ['nullable'],
             'imagens_vitrine'   => ['nullable', 'array'],
             'imagens_vitrine.*' => ['nullable', 'string', 'max:2048'],
+            'cores_config'      => ['nullable', 'array'],
             'disponivel'        => ['boolean'],
             'colecao'           => ['nullable', 'string', 'max:255'],
             'modelo'            => ['nullable', 'string', 'max:255'],
@@ -223,9 +241,13 @@ class ProdutoController extends Controller
             }
 
             if (array_key_exists('imagens', $dadosProduto) && is_array($dadosProduto['imagens'])) {
-                $dadosProduto['imagens'] = array_values(array_filter($dadosProduto['imagens'], fn($u) => !empty(trim($u))));
+                $dadosProduto['imagens'] = array_values(array_filter($dadosProduto['imagens'], function ($item) {
+                    if (is_array($item)) return !empty(trim($item['url'] ?? ''));
+                    return !empty(trim((string)$item));
+                }));
                 if (empty($dadosProduto['imagem_url'])) {
-                    $dadosProduto['imagem_url'] = $dadosProduto['imagens_vitrine'][0] ?? $dadosProduto['imagens'][0] ?? null;
+                    $primeira = $dadosProduto['imagens_vitrine'][0] ?? $dadosProduto['imagens'][0] ?? null;
+                    $dadosProduto['imagem_url'] = is_array($primeira) ? ($primeira['url'] ?? null) : $primeira;
                 }
             }
 

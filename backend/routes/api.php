@@ -35,7 +35,8 @@ Route::get('devocaos',           [DevocaoController::class,   'index']);
 // Pedidos / Checkout: exigem usuário autenticado (ver grupo auth:sanctum abaixo)
 
 // Configurações públicas da loja (banner de topo, frete grátis, contatos)
-Route::get('configuracoes', [\App\Http\Controllers\ConfiguracaoController::class, 'publicas']);
+Route::get('configuracoes',          [\App\Http\Controllers\ConfiguracaoController::class, 'publicas']);
+Route::get('configuracoes/publicas', [\App\Http\Controllers\ConfiguracaoController::class, 'publicas']);
 
 // Cálculo real de frete e prazo por CEP
 Route::post('frete/calcular', [\App\Http\Controllers\FreteController::class, 'calcular']);

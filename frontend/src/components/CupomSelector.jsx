@@ -36,7 +36,11 @@ export default function CupomSelector() {
         <div>
           <strong>🏷 {cupom.codigo}</strong>
           <span>
-            {Number(cupom.percentual)}% OFF {cupom.tipo === 'frete' ? 'no frete' : 'nas peças'}
+            {cupom.tipo === 'frete'
+              ? `${Number(cupom.percentual)}% OFF no frete`
+              : cupom.valor_fixo && Number(cupom.valor_fixo) > 0
+                ? `${moeda(cupom.valor_fixo)} OFF em 1 produto`
+                : `${Number(cupom.percentual)}% OFF em 1 produto`}
             {descontoCupom > 0 ? ` · −${moeda(descontoCupom)}` : ' · não se aplica aos itens atuais'}
           </span>
         </div>
@@ -72,7 +76,11 @@ export default function CupomSelector() {
                 <div className="cupom-item-info">
                   <strong>{c.codigo}</strong>
                   <span>
-                    {Number(c.percentual)}% OFF {c.tipo === 'frete' ? 'no frete' : 'nas peças'}
+                    {c.tipo === 'frete'
+                      ? `${Number(c.percentual)}% OFF no frete`
+                      : c.valor_fixo && Number(c.valor_fixo) > 0
+                        ? `${moeda(c.valor_fixo)} OFF em 1 peça`
+                        : `${Number(c.percentual)}% OFF em 1 peça`}
                     {!c.todos_produtos && ' (peças selecionadas)'}
                   </span>
                   {c.descricao && <small>{c.descricao}</small>}
