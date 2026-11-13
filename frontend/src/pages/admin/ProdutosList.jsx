@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { deleteProduto, getProdutos } from '../../services/produtoService';
+import LoadingSpinner from '../../components/LoadingSpinner';
 import '../../styles/admin.css';
 
 // ── Ícones inline leves ────────────────────────────────────────────────────
@@ -179,7 +180,9 @@ export default function ProdutosList() {
 
       {/* ── Loading ── */}
       {loading ? (
-        <p className="admin-loading">Carregando produtos…</p>
+        <div style={{ padding: '60px 20px' }}>
+          <LoadingSpinner size="md" />
+        </div>
       ) : produtos.length === 0 ? (
         /* ── Empty state ── */
         <div className="admin-empty">

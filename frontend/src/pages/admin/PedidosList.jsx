@@ -10,6 +10,7 @@ import {
   limparFinalizadosAdmin,
 } from '../../services/adminPedidoService';
 import { imprimirReciboPedido } from '../../utils/imprimirRecibo';
+import LoadingSpinner from '../../components/LoadingSpinner';
 import '../../styles/admin.css';
 import '../../styles/minha-conta.css';
 
@@ -224,6 +225,12 @@ export default function PedidosList() {
   useEffect(() => {
     setPaginaAtual(1);
     carregarPedidos();
+
+    // Verificação periódica automática de status e entregas no Melhor Envio (a cada 90s)
+    const interval = setInterval(() => {
+      carregarPedidos();
+    }, 90000);
+    return () => clearInterval(interval);
   }, [statusFiltro]);
 
   const handleBuscar = (e) => {
@@ -551,16 +558,6 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
           >
             🧹 Limpar Pedidos Finalizados
           </button>
-          <button
-            type="button"
-            className="admin-btn admin-btn-secondary"
-            onClick={handleSincronizarTodos}
-            disabled={sincronizandoTodos}
-            title="Verifica se os pacotes em transporte foram entregues"
-            style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            {sincronizandoTodos ? '🔄 Verificando...' : '🔄 Sincronizar Rastreios'}
-          </button>
         </div>
       </div>
 
@@ -604,7 +601,9 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
 
       {/* ── Lista de Pedidos ── */}
       {loading ? (
-        <p className="admin-loading">Carregando pedidos...</p>
+        <div style={{ padding: '40px' }}>
+          <LoadingSpinner size="md" />
+        </div>
       ) : pedidos.length === 0 ? (
         <div className="admin-empty">
           <p>Nenhum pedido encontrado para os filtros selecionados.</p>
@@ -741,8 +740,8 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                     <div style={{ fontSize: '12px', fontWeight: 600, color: '#222' }}>
                       {p.tipo_frete || 'Padrão'}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#666', fontFamily: 'monospace' }}>
-                      📦 {p.codigo_rastreio || `BR${String(p.id).padStart(6, '0')}SS`}
+                    <div style={{ fontSize: '11px', color: p.codigo_rastreio ? '#475569' : '#94a3b8', fontFamily: p.codigo_rastreio ? 'monospace' : 'inherit' }}>
+                      {p.codigo_rastreio ? `📦 ${p.codigo_rastreio}` : '—'}
                     </div>
                   </td>
                   <td>

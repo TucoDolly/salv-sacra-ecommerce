@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
+import LoadingSpinner from '../../components/LoadingSpinner';
 import '../../styles/admin.css';
 
 const TEXTO_PADRAO_INSTRUCOES = `Reembalar o produto (preferencialmente na embalagem original ou pacote com dimensões similares). Retirar etiqueta antiga e imprimir a declaração de conteúdo anexa e fixar na parte externa da embalagem ou entregar ao atendente da agência dos Correios. Informar o código de postagem reversa no atendimento (envio gratuito). Atenção: validade de 7 dias corridos a partir da data de emissão. Dúvidas: WhatsApp (48) 99620-5153.`;
@@ -16,6 +17,10 @@ export default function DevolucoesList() {
   const [busca, setBusca] = useState('');
   const [devolucaoSelecionada, setDevolucaoSelecionada] = useState(null);
   const [destaqueId, setDestaqueId] = useState(null);
+
+  // Paginação
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const [itensPorPagina, setItensPorPagina] = useState(10);
 
   // Form de aprovação
   const [codigoPostagem, setCodigoPostagem] = useState('');
@@ -35,6 +40,13 @@ export default function DevolucoesList() {
   const [modalConcluirConfirm, setModalConcluirConfirm] = useState(false);
   const [modalAlerta, setModalAlerta] = useState({ aberto: false, titulo: '', msg: '' });
 
+  const totalDevolucoes = devolucoes.length;
+  const totalPaginas = itensPorPagina === 'todos' ? 1 : Math.max(1, Math.ceil(totalDevolucoes / Number(itensPorPagina)));
+  const paginaCorrigida = Math.min(Math.max(1, paginaAtual), totalPaginas);
+  const inicioIdx = itensPorPagina === 'todos' ? 0 : (paginaCorrigida - 1) * Number(itensPorPagina);
+  const fimIdx = itensPorPagina === 'todos' ? totalDevolucoes : Math.min(inicioIdx + Number(itensPorPagina), totalDevolucoes);
+  const devolucoesPaginadas = itensPorPagina === 'todos' ? devolucoes : devolucoes.slice(inicioIdx, fimIdx);
+
   const carregarDevolucoes = async () => {
     setLoading(true);
     try {
@@ -52,6 +64,7 @@ export default function DevolucoesList() {
   };
 
   useEffect(() => {
+    setPaginaAtual(1);
     carregarDevolucoes();
   }, [filtroStatus]);
 
@@ -86,6 +99,7 @@ export default function DevolucoesList() {
 
   const handleBuscar = (e) => {
     e.preventDefault();
+    setPaginaAtual(1);
     carregarDevolucoes();
   };
 
@@ -104,6 +118,15 @@ export default function DevolucoesList() {
     e.preventDefault();
     if (!codigoPostagem.trim()) {
       setModalAlerta({ aberto: true, titulo: 'Atenção', msg: 'Informe o Código de Postagem Reversa dos Correios.' });
+      return;
+    }
+
+    if (!arquivoDeclaracao && !devolucaoSelecionada?.declaracao_conteudo_url) {
+      setModalAlerta({
+        aberto: true,
+        titulo: 'Declaração de Conteúdo Obrigatória',
+        msg: 'A Declaração de Conteúdo é obrigatória para aprovar a devolução. Por favor, anexe o arquivo (PDF ou imagem) antes de enviar a autorização ao cliente.',
+      });
       return;
     }
 
@@ -292,8 +315,8 @@ export default function DevolucoesList() {
       {/* ── Tabela de Solicitações ── */}
       <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #eaeaea', overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#888', fontSize: '14px' }}>
-            Carregando devoluções...
+          <div style={{ padding: '40px' }}>
+            <LoadingSpinner size="md" />
           </div>
         ) : devolucoes.length === 0 ? (
           <div style={{ padding: '50px 20px', textAlign: 'center', color: '#888', fontSize: '14px' }}>
@@ -314,7 +337,7 @@ export default function DevolucoesList() {
                 </tr>
               </thead>
               <tbody>
-                {devolucoes.map((d) => {
+                {devolucoesPaginadas.map((d) => {
                   const clienteNome = d.user?.name || d.pedido?.user?.name || 'Cliente';
                   const clienteEmail = d.user?.email || d.pedido?.email_contato || '-';
                   const valorFmt = Number(d.valor_estorno || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -398,6 +421,81 @@ export default function DevolucoesList() {
             </table>
           </div>
         )}
+
+        {/* ── Paginação (Idêntica à aba de Pedidos) ── */}
+        {!loading && totalDevolucoes > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '14px 20px',
+              background: '#f8fafc',
+              borderTop: '1px solid #e2e8f0',
+              flexWrap: 'wrap',
+              gap: '12px',
+              fontSize: '13px',
+              color: '#475569',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label htmlFor="devolucoesPorPagina" style={{ fontWeight: 600 }}>
+                Solicitações por página:
+              </label>
+              <select
+                id="devolucoesPorPagina"
+                value={itensPorPagina}
+                onChange={(e) => {
+                  setItensPorPagina(e.target.value === 'todos' ? 'todos' : Number(e.target.value));
+                  setPaginaAtual(1);
+                }}
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  background: '#fff',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  outline: 'none',
+                }}
+              >
+                <option value={10}>10 solicitações</option>
+                <option value={20}>20 solicitações</option>
+                <option value={50}>50 solicitações</option>
+                <option value="todos">Mostrar todas ({totalDevolucoes})</option>
+              </select>
+              <span style={{ marginLeft: '6px' }}>
+                Mostrando <strong>{totalDevolucoes === 0 ? 0 : inicioIdx + 1}</strong> a <strong>{fimIdx}</strong> de <strong>{totalDevolucoes}</strong>
+              </span>
+            </div>
+
+            {itensPorPagina !== 'todos' && totalPaginas > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary admin-btn-sm"
+                  onClick={() => setPaginaAtual((p) => Math.max(1, p - 1))}
+                  disabled={paginaCorrigida <= 1}
+                  style={{ padding: '6px 12px' }}
+                >
+                  ◀ Anterior
+                </button>
+                <span style={{ fontSize: '13px', color: '#1e293b', fontWeight: 700, padding: '0 8px' }}>
+                  Página {paginaCorrigida} de {totalPaginas}
+                </span>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary admin-btn-sm"
+                  onClick={() => setPaginaAtual((p) => Math.min(totalPaginas, p + 1))}
+                  disabled={paginaCorrigida >= totalPaginas}
+                  style={{ padding: '6px 12px' }}
+                >
+                  Próxima ▶
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Modal de Gestão da Devolução ── */}
@@ -461,9 +559,41 @@ export default function DevolucoesList() {
                   <p style={{ margin: '2px 0 0', fontWeight: 700, color: '#111' }}>
                     {devolucaoSelecionada.user?.name || devolucaoSelecionada.pedido?.user?.name || 'Cliente'}
                   </p>
-                  <span style={{ color: '#888', fontSize: '12px' }}>
+                  <span style={{ color: '#888', fontSize: '12px', display: 'block' }}>
                     {devolucaoSelecionada.user?.email || devolucaoSelecionada.pedido?.email_contato}
                   </span>
+                  {(() => {
+                    const tel = devolucaoSelecionada.pedido?.telefone || devolucaoSelecionada.user?.telefone || '';
+                    const telLimpo = tel.replace(/\D/g, '');
+                    if (!telLimpo) return null;
+                    const nomeCli = devolucaoSelecionada.user?.name || devolucaoSelecionada.pedido?.user?.name || 'Cliente';
+                    return (
+                      <div style={{ marginTop: '8px' }}>
+                        <a
+                          href={`https://wa.me/55${telLimpo}?text=${encodeURIComponent(`Olá ${nomeCli}, falo da equipe Salv Sacra sobre a solicitação de devolução do seu Pedido #${devolucaoSelecionada.pedido_id}.`)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            background: '#25D366',
+                            color: '#fff',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            textDecoration: 'none',
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.598 2.664-.698c.972.531 1.762.813 2.796.813 3.179 0 5.766-2.587 5.767-5.766.001-3.187-2.575-5.77-5.767-5.77zm6.969 5.766c-.001 3.844-3.125 6.969-6.969 6.969-1.205 0-2.327-.312-3.32-.862l-3.711.973.99-3.621c-.637-1.042-.999-2.261-.999-3.459.001-3.843 3.126-6.969 6.97-6.969 3.843 0 6.969 3.126 6.969 6.969z"/>
+                          </svg>
+                          Fale no WhatsApp ({tel})
+                        </a>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div>
                   <span style={{ color: '#64748b', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Preferência do Cliente</span>
@@ -586,17 +716,30 @@ export default function DevolucoesList() {
                   </div>
 
                   {/* ── Campo de Upload da Declaração de Conteúdo (DC-e) ── */}
-                  <div style={{ marginBottom: '16px', background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
-                      📄 Declaração de Conteúdo (PDF ou Imagem)
-                    </label>
+                  <div style={{
+                    marginBottom: '16px',
+                    background: (!arquivoDeclaracao && !devolucaoSelecionada.declaracao_conteudo_url) ? '#fef2f2' : '#f8fafc',
+                    padding: '12px 14px',
+                    borderRadius: '8px',
+                    border: (!arquivoDeclaracao && !devolucaoSelecionada.declaracao_conteudo_url) ? '1.5px solid #f87171' : '1px solid #e2e8f0',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                        📄 Declaração de Conteúdo (PDF ou Imagem) <span style={{ color: '#dc2626' }}>* (Obrigatória)</span>
+                      </label>
+                      {(!arquivoDeclaracao && !devolucaoSelecionada.declaracao_conteudo_url) && (
+                        <span style={{ fontSize: '11px', color: '#dc2626', fontWeight: 700, background: '#fee2e2', padding: '2px 8px', borderRadius: '4px' }}>
+                          ⚠️ Anexo Obrigatório
+                        </span>
+                      )}
+                    </div>
                     <span style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '8px', lineHeight: 1.4 }}>
-                      Anexe o arquivo gerado no Melhor Envio ou Correios. O arquivo será anexado no e-mail de aprovação e disponibilizado para download na área do cliente.
+                      Anexe o arquivo oficial gerado no Melhor Envio ou Correios. O administrador <strong>não pode liberar a devolução sem este documento</strong>.
                     </span>
 
                     {devolucaoSelecionada.declaracao_conteudo_url && (
                       <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-                        <span style={{ color: '#166534', fontWeight: 600 }}>✓ Arquivo atual:</span>
+                        <span style={{ color: '#166534', fontWeight: 600 }}>✓ Arquivo anexado:</span>
                         <a
                           href={devolucaoSelecionada.declaracao_conteudo_url}
                           target="_blank"
@@ -610,6 +753,7 @@ export default function DevolucoesList() {
 
                     <input
                       type="file"
+                      required={!devolucaoSelecionada.declaracao_conteudo_url}
                       accept=".pdf,image/*"
                       onChange={(e) => setArquivoDeclaracao(e.target.files?.[0] || null)}
                       style={{ fontSize: '12px', color: '#475569' }}
@@ -645,20 +789,34 @@ export default function DevolucoesList() {
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       onClick={() => setModoRecusa(!modoRecusa)}
-                      style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '12px', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+                      style={{
+                        background: modoRecusa ? '#fee2e2' : '#fff',
+                        border: '1.5px solid #dc2626',
+                        color: '#dc2626',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        padding: '8px 14px',
+                        borderRadius: '6px',
+                      }}
                     >
-                      {modoRecusa ? 'Cancelar recusa' : 'Recusar esta solicitação'}
+                      {modoRecusa ? 'Fechar formulário de recusa' : '❌ Negar / Recusar Devolução'}
                     </button>
 
                     <button
                       type="submit"
-                      disabled={salvandoAprovacao}
+                      disabled={salvandoAprovacao || (!arquivoDeclaracao && !devolucaoSelecionada.declaracao_conteudo_url)}
                       className="admin-btn admin-btn-primary admin-btn-sm"
-                      style={{ padding: '9px 20px', background: '#0284c7' }}
+                      style={{
+                        padding: '9px 20px',
+                        background: (!arquivoDeclaracao && !devolucaoSelecionada.declaracao_conteudo_url) ? '#94a3b8' : '#0284c7',
+                        cursor: (!arquivoDeclaracao && !devolucaoSelecionada.declaracao_conteudo_url) ? 'not-allowed' : 'pointer'
+                      }}
+                      title={(!arquivoDeclaracao && !devolucaoSelecionada.declaracao_conteudo_url) ? 'Anexe o arquivo de declaração de conteúdo antes de aprovar' : 'Aprovar e enviar autorização ao cliente'}
                     >
                       {salvandoAprovacao ? 'Aprovando...' : '✓ Aprovar e Enviar Código ao Cliente'}
                     </button>
@@ -666,30 +824,47 @@ export default function DevolucoesList() {
                 </form>
 
                 {modoRecusa && (
-                  <form onSubmit={handleRecusar} style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #fed7aa' }}>
+                  <form onSubmit={handleRecusar} style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #fecaca' }}>
                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#991b1b', marginBottom: '4px' }}>
-                      Justificativa da Recusa (visível para o cliente) *
+                      Motivo / Justificativa da Recusa (enviado ao cliente por notificação e e-mail) *
                     </label>
                     <textarea
-                      rows={2}
+                      rows={3}
                       required
-                      placeholder="Ex: Solicitação realizada após o prazo legal de 7 dias do CDC..."
+                      placeholder="Ex: Produto devolvido com sinais de uso / avarias não cobertas ou fora do prazo legal de 7 dias do CDC..."
                       value={motivoRecusa}
                       onChange={(e) => setMotivoRecusa(e.target.value)}
-                      style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #fca5a5', fontSize: '12px', outline: 'none' }}
+                      style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1.5px solid #f87171', fontSize: '12px', outline: 'none' }}
                     />
                     <div style={{ textAlign: 'right', marginTop: '8px' }}>
                       <button
                         type="submit"
                         disabled={recusando}
                         className="admin-btn admin-btn-sm"
-                        style={{ background: '#dc2626', color: '#fff' }}
+                        style={{ background: '#dc2626', color: '#fff', fontWeight: 700 }}
                       >
-                        {recusando ? 'Recusando...' : 'Confirmar Recusa'}
+                        {recusando ? 'Enviando recusa...' : 'Confirmar e Notificar Cliente da Recusa'}
                       </button>
                     </div>
                   </form>
                 )}
+              </div>
+            )}
+
+            {devolucaoSelecionada.status === 'Recusada' && (
+              <div style={{ background: '#fef2f2', border: '1.5px solid #f87171', borderRadius: '10px', padding: '20px', marginBottom: '20px' }}>
+                <h4 style={{ fontSize: '15px', fontWeight: 800, color: '#991b1b', margin: '0 0 10px' }}>
+                  ❌ Solicitação de Devolução Recusada
+                </h4>
+                <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#7f1d1d' }}>
+                  Esta solicitação foi negada. O cliente recebeu a notificação no painel e por e-mail transacional.
+                </p>
+                <div style={{ background: '#fff', border: '1px solid #fecaca', padding: '12px 14px', borderRadius: '6px', fontSize: '13px' }}>
+                  <strong style={{ color: '#991b1b' }}>Motivo informado:</strong>
+                  <p style={{ margin: '4px 0 0', color: '#333', whiteSpace: 'pre-line' }}>
+                    {devolucaoSelecionada.motivo_recusa || 'Não especificado.'}
+                  </p>
+                </div>
               </div>
             )}
 
@@ -739,6 +914,8 @@ export default function DevolucoesList() {
                   </div>
                 )}
 
+                {/* Ações após recebimento das peças */}
+
                 <div style={{ background: '#fff', padding: '16px', borderRadius: '8px', border: '1px solid #bae6fd', marginBottom: '16px', fontSize: '13px' }}>
                   <p style={{ margin: '0 0 8px', fontWeight: 700, color: '#111' }}>
                     As peças já chegaram de volta e foram conferidas?
@@ -750,7 +927,24 @@ export default function DevolucoesList() {
                   </span>
                 </div>
 
-                <div style={{ textAlign: 'right' }}>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => setModoRecusa(!modoRecusa)}
+                    className="admin-btn admin-btn-sm"
+                    style={{
+                      background: modoRecusa ? '#fee2e2' : '#fff',
+                      color: '#dc2626',
+                      border: '1.5px solid #dc2626',
+                      padding: '10px 18px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      borderRadius: '6px',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {modoRecusa ? 'Fechar formulário de recusa' : '❌ Negar / Recusar Devolução'}
+                  </button>
                   <button
                     type="button"
                     onClick={() => setModalConcluirConfirm(true)}
@@ -761,6 +955,51 @@ export default function DevolucoesList() {
                     {concluindo ? 'Concluindo...' : '✓ Concluir Devolução & Notificar Cliente'}
                   </button>
                 </div>
+
+                {modoRecusa && (
+                  <form onSubmit={handleRecusar} style={{ marginTop: '16px', background: '#fff', padding: '16px', borderRadius: '8px', border: '1.5px solid #f87171' }}>
+                    <h5 style={{ margin: '0 0 8px', color: '#b91c1c', fontSize: '13px', fontWeight: 800 }}>
+                      Justificativa da Recusa da Devolução
+                    </h5>
+                    <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#666' }}>
+                      Informe ao cliente o motivo pelo qual a devolução está sendo recusada após conferência (ex: peças avariadas, com indícios de lavagem/uso, divergência dos itens originais). O cliente receberá esta justificativa por e-mail e notificação no site.
+                    </p>
+                    <textarea
+                      value={motivoRecusa}
+                      onChange={(e) => setMotivoRecusa(e.target.value)}
+                      rows={4}
+                      placeholder="Descreva detalhadamente o motivo da não aceitação da devolução..."
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '13px',
+                        marginBottom: '12px',
+                        boxSizing: 'border-box',
+                        outline: 'none',
+                      }}
+                      required
+                    />
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        onClick={() => setModoRecusa(false)}
+                        className="admin-btn admin-btn-secondary admin-btn-sm"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={recusando}
+                        className="admin-btn admin-btn-sm"
+                        style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '8px 18px', fontWeight: 700 }}
+                      >
+                        {recusando ? 'Enviando recusa...' : 'Confirmar Recusa e Notificar Cliente'}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             )}
 

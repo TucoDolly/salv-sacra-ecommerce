@@ -6,7 +6,42 @@ import { useWishlist } from '../../contexts/WishlistContext';
 import api from '../../services/api';
 import { getHexCor } from '../../constants/cores';
 import IconPix from '../../components/IconPix';
+import LoadingSpinner from '../../components/LoadingSpinner';
+import ProdutoCard from '../../components/ProdutoCard';
 import '../../styles/produto-detalhe.css';
+import '../../styles/home.css';
+
+function formatarTextoNegrito(texto) {
+  if (!texto) return null;
+  // Suporta tanto *palavra* (solicitado pelo usuário) quanto **palavra**
+  const partes = String(texto).split(/(\*{1,2}[^*\n]+?\*{1,2})/g);
+  return partes.map((parte, idx) => {
+    if (
+      (parte.startsWith('**') && parte.endsWith('**') && parte.length > 4) ||
+      (parte.startsWith('*') && parte.endsWith('*') && parte.length > 2)
+    ) {
+      const conteudo = parte.replace(/^\*+|\*+$/g, '');
+      return <strong key={idx}>{conteudo}</strong>;
+    }
+    return parte;
+  });
+}
+
+function deduplicarCores(lista) {
+  const vistos = new Set();
+  const res = [];
+  for (const item of lista) {
+    if (!item || typeof item !== 'string') continue;
+    const limpo = item.trim();
+    if (!limpo) continue;
+    const chave = limpo.toLowerCase();
+    if (!vistos.has(chave)) {
+      vistos.add(chave);
+      res.push(limpo);
+    }
+  }
+  return res;
+}
 
 // Ícones SVG inline baseados no Figma
 const IconCheck = () => (
@@ -151,22 +186,23 @@ export default function ProdutoDetalhe() {
   const variacoes = produto?.variacoes || [];
   const coresConfig = Array.isArray(produto?.cores_config) ? produto.cores_config : [];
 
-  // Obtém lista ordenada de cores: respeita cores_config se existir, senão usa variações (deduplicada)
+  // Obtém lista ordenada de cores: respeita cores_config se existir, senão usa variações (rigorosamente deduplicada)
   const coresExibicao = (() => {
-    const coresVar = Array.from(new Set(variacoes.map((v) => v.cor?.trim()))).filter(Boolean);
+    const coresVar = deduplicarCores(variacoes.map((v) => v.cor));
     if (coresConfig.length > 0) {
-      const ordenadas = Array.from(new Set(
+      const ordenadas = deduplicarCores(
         [...coresConfig]
           .sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
-          .map((c) => c.cor?.trim())
-          .filter(Boolean)
-      )).filter((c) => coresVar.length === 0 || coresVar.includes(c));
+          .map((c) => c.cor)
+      ).filter((c) => coresVar.length === 0 || coresVar.map((x) => x.toLowerCase()).includes(c.toLowerCase()));
       coresVar.forEach((cor) => {
-        if (!ordenadas.includes(cor)) ordenadas.push(cor);
+        if (!ordenadas.map((x) => x.toLowerCase()).includes(cor.toLowerCase())) {
+          ordenadas.push(cor);
+        }
       });
-      return ordenadas.length > 0 ? ordenadas : (coresVar.length > 0 ? coresVar : ['Preto']);
+      return ordenadas.length > 0 ? ordenadas : (coresVar.length > 0 ? coresVar : ['Preta']);
     }
-    return coresVar.length > 0 ? coresVar : ['Preto'];
+    return coresVar.length > 0 ? coresVar : ['Preta'];
   })();
 
   // Galeria de fotos menores do lado esquerdo da foto grande (com suporte a vínculo de cor)
@@ -329,7 +365,9 @@ export default function ProdutoDetalhe() {
 
   const scrollSimilares = (dir) => {
     if (similarTrackRef.current) {
-      similarTrackRef.current.scrollBy({ left: dir * 260 * 2, behavior: 'smooth' });
+      const cardEl = similarTrackRef.current.querySelector('.produto-card');
+      const step = cardEl ? (cardEl.offsetWidth + 20) * 4 : similarTrackRef.current.clientWidth;
+      similarTrackRef.current.scrollBy({ left: dir * step, behavior: 'smooth' });
     }
   };
 
@@ -601,8 +639,8 @@ export default function ProdutoDetalhe() {
   if (loading) {
     return (
       <div className="pdp-wrapper">
-        <div className="pdp-container">
-          <p style={{ textAlign: 'center', padding: '60px 0', color: '#666' }}>Carregando produto...</p>
+        <div className="pdp-container" style={{ padding: '80px 0' }}>
+          <LoadingSpinner size="lg" />
         </div>
       </div>
     );
@@ -1024,30 +1062,26 @@ export default function ProdutoDetalhe() {
 
         {/* ── PARTE INFERIOR (FIGMA SEGUNDA IMAGEM) ── */}
         
-        {/* Seção de Texto Descritivo e Devoção */}
+        {/* Seção de Texto Descritivo (Fiel ao cadastro no Admin) */}
         <section id="detalhes-texto" className="pdp-text-details-section">
-          <p className="lead-devocao">
-            <strong>{produto.devocao ? produto.devocao.nome.toUpperCase() : 'NOSSA SENHORA DESATADORA DOS NÓS'}</strong>{' '}
-            {produto.devocao?.descricao ||
-              'é uma das invocações da Virgem Maria, simbolizando sua intercessão para resolver dificuldades e "nós" da vida dos fiéis que parecem impossíveis de serem desatados sozinhos.'}
-          </p>
-
-          <p>
-            {produto.descricao ||
-              'Confeccionada em malha premium fio 30 penteado, oferece um toque macio e alta durabilidade, garantindo conforto durante todo o dia.'}
-          </p>
-
-          <p>
-            Sua estampa tradicional em <em>silk screen</em> proporciona cores vibrantes e resistência, permitindo que você lave na máquina e passe a ferro sem preocupações. Disponível nos tamanhos PP, P, M, G, GG, G1 e G2, atende a todos os perfis.
-          </p>
-
-          <p>
-            Mais do que uma peça de roupa, esta camiseta é uma forma de <strong>evangelizar diariamente</strong>, carregando a fé em cada detalhe. Ideal para quem busca qualidade, durabilidade e uma mensagem inspiradora em seu vestuário.
-          </p>
-
-          <p>
-            Garanta já a sua e viva a fé com conforto e estilo!
-          </p>
+          {produto.descricao ? (
+            <div
+              className="pdp-descricao-texto"
+              style={{
+                fontSize: '14.5px',
+                lineHeight: '1.8',
+                color: '#333333',
+                whiteSpace: 'pre-line',
+                margin: '0 0 24px',
+              }}
+            >
+              {formatarTextoNegrito(produto.descricao)}
+            </div>
+          ) : (
+            <p style={{ color: '#666', fontStyle: 'italic', margin: '0 0 24px' }}>
+              Sem descrição cadastrada para este produto.
+            </p>
+          )}
 
           {/* Compartilhamento Social */}
           <div className="pdp-social-share-row">
@@ -1210,54 +1244,101 @@ export default function ProdutoDetalhe() {
           </div>
         </section>
 
-        {/* Seção Produtos Similares (Carrossel Figma) */}
+        {/* Seção Produtos Similares (Carrossel Figma / Editorial) */}
         {produtosSimilares.length > 0 && (
           <section className="pdp-similar-products-section">
             <h2 className="pdp-similar-title">Produtos similares</h2>
 
-            <div className="pdp-similar-carousel-wrap">
+            <div className="carousel-wrapper">
               <button
                 type="button"
-                className="pdp-similar-arrow prev"
+                className="carousel-btn carousel-btn--prev"
                 onClick={() => scrollSimilares(-1)}
                 aria-label="Anterior"
               >
                 <IconChevronLeft />
               </button>
 
-              <div className="pdp-similar-track" ref={similarTrackRef}>
+              <div className="carousel-track" ref={similarTrackRef}>
                 {produtosSimilares.map((sim) => (
-                  <Link
-                    key={sim.id}
-                    to={`/produto/${sim.id}`}
-                    className="pdp-similar-card"
-                  >
-                    <div className="pdp-similar-card-img-wrap">
-                      {sim.imagem_url ? (
-                        <img src={sim.imagem_url} alt={sim.nome} loading="lazy" />
-                      ) : (
-                        <span style={{ fontSize: '32px' }}>🕊️</span>
-                      )}
-                      {/* Dots indicativos de cores */}
-                      <div className="pdp-similar-card-dots">
-                        <span className="pdp-similar-dot" />
-                        <span className="pdp-similar-dot gold" />
-                      </div>
-                    </div>
-
-                    <div className="pdp-similar-card-info">
-                      <span className="pdp-similar-card-name">{sim.nome}</span>
-                      <span className="pdp-similar-espiar-btn">
-                        <IconEye /> ESPIAR
-                      </span>
-                    </div>
-                  </Link>
+                  <ProdutoCard key={sim.id} produto={sim} />
                 ))}
+
+                {/* Card Ver Catálogo Completo / Ver Vitrine ao final do carrossel */}
+                <Link
+                  to="/produtos?categoria=camisetas"
+                  className="produto-card produto-card--ver-mais"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minWidth: '220px',
+                    background: 'linear-gradient(135deg, #1e1e1e 0%, #121212 100%)',
+                    borderRadius: '16px',
+                    padding: '24px 18px',
+                    textAlign: 'center',
+                    textDecoration: 'none',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                    border: '1.5px solid rgba(212, 175, 55, 0.4)',
+                    transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.22)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.12)';
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '54px',
+                      height: '54px',
+                      borderRadius: '50%',
+                      background: 'rgba(212, 175, 55, 0.15)',
+                      color: '#c5a059',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: '14px',
+                    }}
+                  >
+                    <IconChevronRight style={{ width: '28px', height: '28px' }} />
+                  </div>
+                  <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '2px', color: '#c5a059', fontWeight: 700, marginBottom: '6px' }}>
+                    Explorar
+                  </span>
+                  <h4 style={{ fontSize: '17px', fontWeight: 700, color: '#ffffff', margin: '0 0 8px', lineHeight: 1.3 }}>
+                    Ver Catálogo Completo
+                  </h4>
+                  <span style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.4 }}>
+                    Conheça todas as nossas peças exclusivas
+                  </span>
+                  <span
+                    style={{
+                      marginTop: '16px',
+                      padding: '8px 18px',
+                      borderRadius: '20px',
+                      background: '#c5a059',
+                      color: '#111',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '1px',
+                    }}
+                  >
+                    Ver Vitrine →
+                  </span>
+                </Link>
               </div>
 
               <button
                 type="button"
-                className="pdp-similar-arrow next"
+                className="carousel-btn carousel-btn--next"
                 onClick={() => scrollSimilares(1)}
                 aria-label="Próximo"
               >

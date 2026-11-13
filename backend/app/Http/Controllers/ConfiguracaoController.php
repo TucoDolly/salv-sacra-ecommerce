@@ -31,6 +31,7 @@ class ConfiguracaoController extends Controller
             'pix_desconto_pct',
             'mercadopago_public_key',
             'cartao_parcelas_max',
+            'cartao_parcela_minima',
             'cartao_gateway_modo',
             'contato_email',
             'contato_telefone',

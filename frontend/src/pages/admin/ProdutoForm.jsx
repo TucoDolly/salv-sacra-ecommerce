@@ -9,6 +9,8 @@ import {
 } from '../../services/produtoService';
 import { uploadArquivoImagem } from '../../services/uploadService';
 import { CORES_PADRAO, getHexCor } from '../../constants/cores';
+import LoadingSpinner from '../../components/LoadingSpinner';
+import api from '../../services/api';
 import '../../styles/admin.css';
 
 // ── Ícones ─────────────────────────────────────────────────────────────────
@@ -59,7 +61,20 @@ export default function ProdutoForm() {
   const [coresConfig, setCoresConfig]         = useState([{ cor: 'Preta', imagem_url: '' }]);
   const [variacoes, setVariacoes]             = useState([]);
   const imagensVitrine = coresConfig.map((c) => c.imagem_url || '');
-  const coresDisponiveis = Array.from(new Set(coresConfig.map((c) => c.cor?.trim()).filter(Boolean)));
+  const coresDisponiveis = (() => {
+    const vistas = new Set();
+    const unicas = [];
+    for (const c of coresConfig) {
+      const nome = c.cor?.trim();
+      if (!nome) continue;
+      const chave = nome.toLowerCase();
+      if (!vistas.has(chave)) {
+        vistas.add(chave);
+        unicas.push(nome);
+      }
+    }
+    return unicas;
+  })();
   const [uploading, setUploading]             = useState(null); // { tipo: 'galeria'|'vitrine', idx: number }
   const [errors, setErrors]       = useState({});
   const [apiError, setApiError]   = useState('');
@@ -69,6 +84,8 @@ export default function ProdutoForm() {
   // ── Listas para selects ────────────────────────────────────────────────────
   const [categorias, setCategorias] = useState([]);
   const [devocaos, setDevocaos]     = useState([]);
+  const [colecoes, setColecoes]     = useState([]);
+  const [modelos, setModelos]       = useState([]);
 
   // ── Carrega dados existentes (modo edição) ─────────────────────────────────
   const loadProduto = useCallback(async () => {
@@ -140,19 +157,24 @@ export default function ProdutoForm() {
     if (isEditing) loadProduto();
   }, [isEditing, loadProduto]);
 
-  // Busca categorias e devoções em paralelo ao montar o formulário
+  // Busca categorias, devoções, coleções e modelos em paralelo ao montar o formulário
   useEffect(() => {
-    Promise.all([getCategorias(), getDevocaos()])
-      .then(([catRes, devRes]) => {
-        // Laravel pode retornar o array em res.data (Collection)
-        // ou em res.data.data (paginado). Normaliza os dois formatos.
+    Promise.all([
+      getCategorias(),
+      getDevocaos(),
+      api.get('/colecoes').catch(() => ({ data: [] })),
+      api.get('/modelos').catch(() => ({ data: [] })),
+    ])
+      .then(([catRes, devRes, colRes, modRes]) => {
         const toArray = (res) =>
           Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
         setCategorias(toArray(catRes));
         setDevocaos(toArray(devRes));
+        setColecoes(toArray(colRes));
+        setModelos(toArray(modRes));
       })
       .catch((err) => {
-        console.error('Falha ao carregar categorias/devoções:', err);
+        console.error('Falha ao carregar taxonomias:', err);
       });
   }, []);
 
@@ -488,7 +510,11 @@ export default function ProdutoForm() {
 
   // ── Loading inicial (modo edição) ─────────────────────────────────────────
   if (fetching) {
-    return <p className="admin-loading">Carregando produto…</p>;
+    return (
+      <div style={{ padding: '80px 20px' }}>
+        <LoadingSpinner size="lg" />
+      </div>
+    );
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -565,11 +591,14 @@ export default function ProdutoForm() {
                 onChange={handleChange}
               >
                 <option value="">— Selecione uma coleção —</option>
-                <option value="Santos">Santos</option>
-                <option value="Datas Comemorativas">Datas Comemorativas</option>
-                <option value="Geral">Geral</option>
-                <option value="Inverno">Inverno</option>
-                <option value="Verão">Verão</option>
+                {colecoes.map((c) => (
+                  <option key={c.id || c.nome} value={c.nome}>
+                    {c.nome}
+                  </option>
+                ))}
+                {form.colecao && !colecoes.some((c) => c.nome?.toLowerCase() === form.colecao.toLowerCase()) && (
+                  <option value={form.colecao}>{form.colecao}</option>
+                )}
               </select>
             </div>
           </div>
@@ -964,9 +993,9 @@ export default function ProdutoForm() {
                             }}
                           >
                             <option value="">— Foto Geral (Todas as cores) —</option>
-                            {coresConfig.filter((c) => c.cor?.trim()).map((c) => (
-                              <option key={c.cor} value={c.cor}>
-                                {c.cor}
+                            {coresDisponiveis.map((cor) => (
+                              <option key={cor} value={cor}>
+                                {cor}
                               </option>
                             ))}
                           </select>
@@ -1116,7 +1145,7 @@ export default function ProdutoForm() {
                 value={form.devocao_id}
                 onChange={handleChange}
               >
-                <option value="">— Selecione uma devoção —</option>
+                <option value="">— Sem devoção específica (Geral / Trindade / etc.) —</option>
                 {devocaos.map((dev) => (
                   <option key={dev.id} value={dev.id}>{dev.nome}</option>
                 ))}
@@ -1130,6 +1159,10 @@ export default function ProdutoForm() {
               const isCamiseta = catSelecionada && catSelecionada.nome.toLowerCase().includes('camiseta');
               if (!isCamiseta) return null;
 
+              const opcoesModelos = modelos && modelos.length > 0
+                ? modelos.map((m) => m.nome)
+                : ['Regular Fit', 'Oversized'];
+
               return (
                 <div className="admin-field">
                   <label htmlFor="modelo">Modelo</label>
@@ -1140,8 +1173,11 @@ export default function ProdutoForm() {
                     onChange={handleChange}
                   >
                     <option value="">— Selecione o modelo —</option>
-                    <option value="Regular Fit">Regular Fit</option>
-                    <option value="Oversized">Oversized</option>
+                    {opcoesModelos.map((modNome) => (
+                      <option key={modNome} value={modNome}>
+                        {modNome}
+                      </option>
+                    ))}
                     <option value="Ambos">Ambos</option>
                   </select>
                   {errors.modelo && <span className="admin-field-error">{errors.modelo}</span>}

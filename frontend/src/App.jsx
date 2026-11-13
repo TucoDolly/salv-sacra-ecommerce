@@ -56,6 +56,7 @@ function App() {
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
         <Route path="/produtos" element={<CatalogoPage />} />
+        <Route path="/catalogo" element={<Navigate to="/produtos?categoria=camisetas" replace />} />
         <Route path="/produto/:id" element={<ProdutoDetalhe />} />
         <Route path="/contato" element={<ContatoPage />} />
         <Route path="/guia-de-medidas" element={<GuiaMedidasPage />} />

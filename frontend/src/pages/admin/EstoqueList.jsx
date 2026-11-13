@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getEstoqueAdmin, updateEstoqueVariacao } from '../../services/adminEstoqueService';
 import { getHexCor } from '../../constants/cores';
+import LoadingSpinner from '../../components/LoadingSpinner';
 import '../../styles/admin.css';
 
 const OPCOES_TAMANHO = ['PP', 'P', 'M', 'G', 'GG', 'G1', 'G2'];
+
+const normalizarBusca = (txt) =>
+  (txt || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 
 export default function EstoqueList() {
   const [produtos, setProdutos] = useState([]);
@@ -119,7 +128,23 @@ export default function EstoqueList() {
 
   // Processa e filtra produtos e suas variações
   const produtosProcessados = useMemo(() => {
+    const termoNorm = normalizarBusca(busca);
+
     return produtos
+      .filter((produto) => {
+        if (!termoNorm) return true;
+        const nomeNorm = normalizarBusca(produto.nome);
+        const catNorm  = normalizarBusca(produto.categoria?.nome);
+        const devNorm  = normalizarBusca(produto.devocao?.nome);
+        const modNorm  = normalizarBusca(produto.modelo);
+        if (nomeNorm.includes(termoNorm) || catNorm.includes(termoNorm) || devNorm.includes(termoNorm) || modNorm.includes(termoNorm)) {
+          return true;
+        }
+        return (produto.variacoes || []).some((v) =>
+          normalizarBusca(v.cor).includes(termoNorm) ||
+          normalizarBusca(v.tamanho).includes(termoNorm)
+        );
+      })
       .map((produto) => {
         const vars = (produto.variacoes || []).filter((v) => {
           if (modeloFiltro !== 'todos' && (v.modelo || 'Regular Fit') !== modeloFiltro) {
@@ -178,7 +203,7 @@ export default function EstoqueList() {
         const temFiltroAtivo = modeloFiltro !== 'todos' || tamanhoFiltro !== '' || corFiltro !== '';
         return temFiltroAtivo ? prod.variacoesExibidas.length > 0 : true;
       });
-  }, [produtos, modeloFiltro, tamanhoFiltro, corFiltro, ordenacaoEstoque, edicoes]);
+  }, [produtos, busca, modeloFiltro, tamanhoFiltro, corFiltro, ordenacaoEstoque, edicoes]);
 
   const temFiltroVariacaoAtivo =
     modeloFiltro !== 'todos' || tamanhoFiltro !== '' || corFiltro !== '' || ordenacaoEstoque !== 'tamanho_padrao';
@@ -545,8 +570,8 @@ export default function EstoqueList() {
 
       {/* ── Lista de Produtos e Variações ── */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#888' }}>
-          <p>Carregando itens de estoque...</p>
+        <div style={{ padding: '60px 20px' }}>
+          <LoadingSpinner size="md" />
         </div>
       ) : produtosProcessados.length === 0 ? (
         <div style={{ background: '#fff', padding: '50px 20px', textAlign: 'center', borderRadius: '12px', border: '1px solid #eee' }}>

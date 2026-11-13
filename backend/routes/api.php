@@ -31,6 +31,8 @@ Route::get('produtos/{produto}', [ProdutoController::class, 'show']);
 Route::get('produtos/{produto}/avaliacoes', [\App\Http\Controllers\AvaliacaoController::class, 'index']);
 Route::get('categorias',         [CategoriaController::class, 'index']);
 Route::get('devocaos',           [DevocaoController::class,   'index']);
+Route::get('colecoes',           [\App\Http\Controllers\ColecaoController::class, 'index']);
+Route::get('modelos',            [\App\Http\Controllers\ModeloCamisetaController::class, 'index']);
 
 // Pedidos / Checkout: exigem usuário autenticado (ver grupo auth:sanctum abaixo)
 
@@ -50,6 +52,9 @@ Route::post('webhooks/melhor-envio', [PedidoController::class, 'webhookMelhorEnv
 
 // Cupons ativos disponíveis para o cliente
 Route::get('cupons/disponiveis', [\App\Http\Controllers\CupomController::class, 'disponiveis']);
+
+// Validação em tempo real do estoque dos itens no carrinho do cliente
+Route::post('carrinho/verificar-estoque', [\App\Http\Controllers\ProdutoController::class, 'verificarEstoqueCarrinho']);
 
 /*
 |--------------------------------------------------------------------------
@@ -121,6 +126,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // ── Gestão de Devoções (CRUD completo) ────────────────────────────
         Route::apiResource('devocaos', DevocaoController::class)
+            ->except(['index']);
+
+        // ── Gestão de Coleções (CRUD completo) ────────────────────────────
+        Route::apiResource('colecoes', \App\Http\Controllers\ColecaoController::class)
+            ->except(['index']);
+
+        // ── Gestão de Modelos de Camiseta (CRUD completo) ───────────────────
+        Route::apiResource('modelos', \App\Http\Controllers\ModeloCamisetaController::class)
             ->except(['index']);
 
         // ── Gestão de Pedidos (Administração) ─────────────────────────────

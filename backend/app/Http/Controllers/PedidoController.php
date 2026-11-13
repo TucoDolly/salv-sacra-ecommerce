@@ -394,9 +394,127 @@ class PedidoController extends Controller
             }
         }
 
-        // Modo Simulação / Sandbox (quando selecionado manualmente pelo Admin)
+        // Modo Simulação / Sandbox (quando selecionado no painel Admin)
+        // Suporta os cartões de teste e cenários da documentação oficial do Mercado Pago:
+        // https://www.mercadopago.com.br/developers/pt/docs/checkout-api-orders/resources/test-cards
+        $titularUpper = strtoupper(trim($titular));
+
+        // 1. Validação de formato dos dados
+        if (strlen($numeroLimpo) < 13) {
+            return [
+                'aprovado' => false,
+                'mensagem' => $this->traduzirErroMercadoPago('cc_rejected_bad_filled_card_number', 'Número do cartão inválido.'),
+            ];
+        }
+
+        if (strlen($valLimpa) < 4) {
+            return [
+                'aprovado' => false,
+                'mensagem' => $this->traduzirErroMercadoPago('cc_rejected_bad_filled_date', 'Data de validade do cartão incorreta.'),
+            ];
+        }
+
+        $mesVal = (int) substr($valLimpa, 0, 2);
+        $anoVal = (int) substr($valLimpa, 2);
+        if ($anoVal < 100) {
+            $anoVal += 2000;
+        }
+        $anoAtual = (int) date('Y');
+        $mesAtual = (int) date('m');
+
+        if ($mesVal < 1 || $mesVal > 12 || $anoVal < $anoAtual || ($anoVal === $anoAtual && $mesVal < $mesAtual)) {
+            return [
+                'aprovado' => false,
+                'mensagem' => $this->traduzirErroMercadoPago('cc_rejected_bad_filled_date', 'Data de validade do cartão incorreta.'),
+            ];
+        }
+
+        if (strlen($cvvLimpo) < 3) {
+            return [
+                'aprovado' => false,
+                'mensagem' => $this->traduzirErroMercadoPago('cc_rejected_bad_filled_security_code', 'Código de segurança (CVV) inválido. Verifique os 3 dígitos no verso do cartão.'),
+            ];
+        }
+
+        // 2. Cenários de resposta do Mercado Pago por Nome do Titular (cardholder.name)
+        if (str_contains($titularUpper, 'FUND')) {
+            return [
+                'aprovado' => false,
+                'mensagem' => $this->traduzirErroMercadoPago('cc_rejected_insufficient_amount', null),
+            ];
+        }
+
+        if (str_contains($titularUpper, 'CALL')) {
+            return [
+                'aprovado' => false,
+                'mensagem' => $this->traduzirErroMercadoPago('cc_rejected_call_for_authorize', null),
+            ];
+        }
+
+        if (str_contains($titularUpper, 'SECU')) {
+            return [
+                'aprovado' => false,
+                'mensagem' => $this->traduzirErroMercadoPago('cc_rejected_bad_filled_security_code', null),
+            ];
+        }
+
+        if (str_contains($titularUpper, 'EXPI')) {
+            return [
+                'aprovado' => false,
+                'mensagem' => $this->traduzirErroMercadoPago('cc_rejected_bad_filled_date', null),
+            ];
+        }
+
+        if (str_contains($titularUpper, 'FORM') || str_contains($titularUpper, 'CARD')) {
+            return [
+                'aprovado' => false,
+                'mensagem' => $this->traduzirErroMercadoPago('cc_rejected_bad_filled_other', null),
+            ];
+        }
+
+        if (str_contains($titularUpper, 'BLAC') || str_contains($titularUpper, 'LOCK')) {
+            return [
+                'aprovado' => false,
+                'mensagem' => $this->traduzirErroMercadoPago('cc_rejected_high_risk', null),
+            ];
+        }
+
+        if (str_contains($titularUpper, 'DUPL')) {
+            return [
+                'aprovado' => false,
+                'mensagem' => $this->traduzirErroMercadoPago('cc_rejected_duplicated_payment', null),
+            ];
+        }
+
+        if (str_contains($titularUpper, 'CTNA')) {
+            return [
+                'aprovado' => false,
+                'mensagem' => $this->traduzirErroMercadoPago('cc_rejected_card_type_not_allowed', null),
+            ];
+        }
+
+        if (str_contains($titularUpper, 'OTHE') || str_contains($titularUpper, 'UNSU')) {
+            return [
+                'aprovado' => false,
+                'mensagem' => 'A operadora recusou o pagamento. Verifique se o cartão está liberado para compras online ou tente via PIX.',
+            ];
+        }
+
+        // Cenário Pendente / Em Análise (CONT)
+        if (str_contains($titularUpper, 'CONT')) {
+            $pedido->update([
+                'pagamento_id' => 'CARD-SIMUL-' . strtoupper(Str::random(10)),
+                'status'       => 'Pendente',
+            ]);
+            return [
+                'aprovado' => true,
+                'mensagem' => 'Pagamento em análise pelo emissor do cartão.',
+            ];
+        }
+
+        // Cenário Aprovado (APRO ou qualquer titular normal)
         $pedido->update([
-            'pagamento_id' => 'CARD-' . strtoupper(Str::random(10)),
+            'pagamento_id' => 'CARD-SIMUL-' . strtoupper(Str::random(10)),
             'status'       => 'Pago',
         ]);
 
@@ -648,6 +766,7 @@ class PedidoController extends Controller
 
         // Dispara e-mail de notificação de novo pedido para o administrador apenas quando o pedido estiver Pago
         if ($pedido->status === 'Pago') {
+            $this->consumirCupomTroca($pedido);
             try {
                 \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovoPedidoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
             } catch (\Throwable $e) {
@@ -823,6 +942,7 @@ class PedidoController extends Controller
 
         if ($pedido->status === 'Pendente') {
             $pedido->update(['status' => 'Pago']);
+            $this->consumirCupomTroca($pedido);
 
             try {
                 $destinatario = $pedido->email_contato ?: $pedido->user?->email;
@@ -862,6 +982,23 @@ class PedidoController extends Controller
             if ($item->variacao) {
                 $item->variacao->increment('estoque', (int) $item->quantidade);
             }
+        }
+    }
+
+    /**
+     * Invalida e exclui o cupom de troca de uso único assim que o pagamento for concluído.
+     */
+    private function consumirCupomTroca(Pedido $pedido): void
+    {
+        if (empty($pedido->cupom_codigo)) {
+            return;
+        }
+
+        $codigo = strtoupper(trim($pedido->cupom_codigo));
+        $cupom = \App\Models\Cupom::where('codigo', $codigo)->first();
+        if ($cupom && (str_starts_with($cupom->codigo, 'TROCA-') || $cupom->tipo === 'troca')) {
+            $cupom->delete();
+            \Illuminate\Support\Facades\Log::info("Cupom de troca {$codigo} consumido e excluído com sucesso após a confirmação do pedido #{$pedido->id}.");
         }
     }
 
@@ -1040,6 +1177,7 @@ class PedidoController extends Controller
     public function indexAdmin(Request $request): JsonResponse
     {
         $this->cancelarPedidosPendentesExpirados();
+        \App\Services\RastreioService::sincronizarSeNecessario();
 
         $query = Pedido::with(['user', 'itens.variacao.produto', 'devolucao'])->latest('data_pedido');
 

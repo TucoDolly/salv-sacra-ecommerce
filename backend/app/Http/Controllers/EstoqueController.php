@@ -17,13 +17,24 @@ class EstoqueController extends Controller
     {
         $query = Produto::query();
 
-        // Filtro por termo de busca (nome do produto ou categoria)
+        // Filtro por termo de busca (nome do produto, modelo, categoria, devoção ou variação)
         if ($request->filled('busca')) {
-            $busca = $request->input('busca');
-            $query->where(function ($q) use ($busca) {
-                $q->where('nome', 'like', "%{$busca}%")
-                  ->orWhereHas('categoria', function ($c) use ($busca) {
-                      $c->where('nome', 'like', "%{$busca}%");
+            $busca = trim((string) $request->input('busca'));
+            $driver = \Illuminate\Support\Facades\DB::getDriverName();
+            $likeOp = $driver === 'pgsql' ? 'ILIKE' : 'like';
+
+            $query->where(function ($q) use ($busca, $likeOp) {
+                $q->where('nome', $likeOp, "%{$busca}%")
+                  ->orWhere('modelo', $likeOp, "%{$busca}%")
+                  ->orWhereHas('categoria', function ($c) use ($busca, $likeOp) {
+                      $c->where('nome', $likeOp, "%{$busca}%");
+                  })
+                  ->orWhereHas('devocao', function ($d) use ($busca, $likeOp) {
+                      $d->where('nome', $likeOp, "%{$busca}%");
+                  })
+                  ->orWhereHas('variacoes', function ($v) use ($busca, $likeOp) {
+                      $v->where('tamanho', $likeOp, "%{$busca}%")
+                        ->orWhere('cor', $likeOp, "%{$busca}%");
                   });
             });
         }
@@ -57,6 +68,36 @@ class EstoqueController extends Controller
         }
 
         $produtos = $query->orderBy('nome', 'asc')->get();
+
+        // Se o usuário buscou e a busca contém termos sem acento para textos acentuados (ou vice-versa),
+        // complementa com busca normalizada (Str::ascii) caso o banco não suporte unaccent nativo
+        if ($request->filled('busca')) {
+            $buscaAscii = strtolower(\Illuminate\Support\Str::ascii($request->input('busca')));
+            if ($buscaAscii !== '') {
+                $todosParaChecar = Produto::with(['categoria', 'devocao', 'variacoes'])->get();
+                $extras = $todosParaChecar->filter(function ($p) use ($buscaAscii) {
+                    $nomeAscii = strtolower(\Illuminate\Support\Str::ascii($p->nome ?? ''));
+                    $catAscii  = strtolower(\Illuminate\Support\Str::ascii($p->categoria?->nome ?? ''));
+                    $devAscii  = strtolower(\Illuminate\Support\Str::ascii($p->devocao?->nome ?? ''));
+                    $modAscii  = strtolower(\Illuminate\Support\Str::ascii($p->modelo ?? ''));
+                    if (str_contains($nomeAscii, $buscaAscii) ||
+                        str_contains($catAscii, $buscaAscii) ||
+                        str_contains($devAscii, $buscaAscii) ||
+                        str_contains($modAscii, $buscaAscii)) {
+                        return true;
+                    }
+                    foreach ($p->variacoes as $v) {
+                        $corAscii = strtolower(\Illuminate\Support\Str::ascii($v->cor ?? ''));
+                        $tamAscii = strtolower(\Illuminate\Support\Str::ascii($v->tamanho ?? ''));
+                        if (str_contains($corAscii, $buscaAscii) || str_contains($tamAscii, $buscaAscii)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+                $produtos = $produtos->merge($extras)->unique('id')->sortBy('nome')->values();
+            }
+        }
 
         // Totalizadores para os cards rápidos no topo da página
         $totalVariacoes = Variacao::count();

@@ -190,10 +190,11 @@ function Resumo({ user, pedidos, enderecos, cartoes, totalFavoritos, resumo, irP
 /* ───────────────────────── Pedidos ───────────────────────── */
 function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, carregando }) {
   const pendenteMaisRecente = pedidos.find((p) => p.status === 'Pendente');
+  const pendentePixMaisRecente = pedidos.find((p) => p.status === 'Pendente' && !(p.metodo_pagamento || '').includes('cartao'));
   const [aberto, setAberto] = useState(
     pedidoSelecionadoInicial ? Number(pedidoSelecionadoInicial) : (pendenteMaisRecente ? pendenteMaisRecente.id : null)
   );
-  const [pixAbertoId, setPixAbertoId] = useState(pendenteMaisRecente ? pendenteMaisRecente.id : null);
+  const [pixAbertoId, setPixAbertoId] = useState(pendentePixMaisRecente ? pendentePixMaisRecente.id : null);
   const [copiadoId, setCopiadoId] = useState(null);
   const [confirmandoId, setConfirmandoId] = useState(null);
   const [agoraMs, setAgoraMs] = useState(() => Date.now());
@@ -539,6 +540,8 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
       <div className="conta-lista">
         {pedidos.map((p) => {
           const isPendente = p.status === 'Pendente';
+          const ehCartao = (p.metodo_pagamento || '').includes('cartao');
+          const ehPix = !ehCartao;
           const podeCancelar = ['Pendente', 'Pago', 'Em separação', 'Em montagem'].includes(p.status);
           const jaEnviadoOuEntregue = ['Enviado', 'Em transporte', 'Entregue'].includes(p.status);
           const itensResumo = (p.itens || [])
@@ -567,7 +570,14 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
           <div
             key={p.id}
             className="conta-box"
-            style={isPendente ? { border: '1.5px solid #f59e0b', background: '#fffdf7' } : undefined}
+            style={
+              isPendente
+                ? {
+                    border: ehCartao ? '1.5px solid #60a5fa' : '1.5px solid #f59e0b',
+                    background: ehCartao ? '#f8faff' : '#fffdf7',
+                  }
+                : undefined
+            }
           >
             <button
               type="button"
@@ -584,16 +594,16 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '5px',
-                      background: '#fef3c7',
-                      color: '#b45309',
-                      border: '1px solid #fde68a',
+                      background: ehCartao ? '#eff6ff' : '#fef3c7',
+                      color: ehCartao ? '#1e40af' : '#b45309',
+                      border: `1px solid ${ehCartao ? '#bfdbfe' : '#fde68a'}`,
                       fontSize: '11px',
                       fontWeight: 800,
                       padding: '2px 8px',
                       borderRadius: '999px',
                     }}
                   >
-                    🔔 Pagamento Pendente ({minFmt}:{secFmt})
+                    {ehCartao ? '⏳ Pagamento em Análise' : `🔔 Pagamento Pendente (${minFmt}:${secFmt})`}
                   </span>
                 )}
               </div>
@@ -644,7 +654,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
             {aberto === p.id && (
               <div className="conta-pedido-detalhe">
                 {/* ── Alerta e Área de Pagamento PIX para Pedido Pendente ── */}
-                {isPendente && (
+                {isPendente && ehPix && (
                   <div
                     style={{
                       background: '#fffbeb',
@@ -805,6 +815,48 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                   </div>
                 )}
 
+                {/* ── Alerta para Pagamento com Cartão em Análise ── */}
+                {isPendente && ehCartao && (
+                  <div
+                    style={{
+                      background: '#eff6ff',
+                      border: '1.5px solid #bfdbfe',
+                      borderRadius: '10px',
+                      padding: '16px 18px',
+                      marginBottom: '18px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                      <div style={{ flex: '1 1 300px' }}>
+                        <strong style={{ color: '#1e40af', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>⏳</span> Pagamento em Análise pela Operadora
+                        </strong>
+                        <span style={{ fontSize: '13px', color: '#1e3a8a', display: 'block', marginTop: '4px', lineHeight: 1.5 }}>
+                          A transação no seu cartão de crédito está passando pela conferência de segurança da operadora. Esse processo costuma levar alguns minutos. Assim que a cobrança for confirmada pelo banco, o status mudará automaticamente para <strong>Pago</strong> e você receberá uma notificação por e-mail. Não é necessário realizar nenhuma ação ou pagamento adicional.
+                        </span>
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => setPedidoParaCancelar(p)}
+                          style={{
+                            background: '#fff',
+                            color: '#dc2626',
+                            border: '1px solid #fca5a5',
+                            borderRadius: '6px',
+                            padding: '9px 14px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ✕ Cancelar Pedido
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* ── Rastreamento e Linha do Tempo ── */}
                 <div className="conta-rastreio-container">
                   <div className="conta-previsao-banner">
@@ -849,7 +901,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                   {p.status !== 'Cancelado' && (() => {
                     const etapaAtual = obterEtapaRastreio(p.status);
                     const steps = [
-                      { num: 1, label: 'Pendente', sub: etapaAtual > 1 ? 'Concluído' : 'Aguardando pagamento' },
+                      { num: 1, label: 'Pendente', sub: etapaAtual > 1 ? 'Concluído' : (ehCartao ? 'Em análise' : 'Aguardando pagamento') },
                       { num: 2, label: 'Pago', sub: etapaAtual >= 2 ? 'Confirmado' : 'Aguardando' },
                       { num: 3, label: 'Em separação', sub: etapaAtual > 3 ? 'Concluído' : (etapaAtual === 3 ? 'Separando peças' : 'Pendente') },
                       { num: 4, label: 'Enviado', sub: etapaAtual >= 4 ? 'Postado na agência' : 'Pendente' },
@@ -959,42 +1011,44 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                 </div>
 
                 {/* ── Ação de Comprar Novamente ── */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'flex-end',
-                    flexWrap: 'wrap',
-                    gap: '10px',
-                    marginTop: '16px',
-                    paddingTop: '14px',
-                    borderTop: '1px solid #f1f5f9',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => handleComprarNovamente(p)}
+                {p.status !== 'Cancelado' && (
+                  <div
                     style={{
-                      background: '#0f172a',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '8px 18px',
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
+                      display: 'flex',
                       alignItems: 'center',
-                      gap: '6px',
-                      transition: 'all 0.2s ease',
+                      justifyContent: 'flex-end',
+                      flexWrap: 'wrap',
+                      gap: '10px',
+                      marginTop: '16px',
+                      paddingTop: '14px',
+                      borderTop: '1px solid #f1f5f9',
                     }}
-                    onMouseOver={(e) => { e.currentTarget.style.background = '#1e293b'; }}
-                    onMouseOut={(e) => { e.currentTarget.style.background = '#0f172a'; }}
-                    title="Adicionar todos os itens deste pedido ao carrinho para comprar novamente"
                   >
-                    🛒 Comprar Novamente
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => handleComprarNovamente(p)}
+                      style={{
+                        background: '#0f172a',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '8px 18px',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseOver={(e) => { e.currentTarget.style.background = '#1e293b'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.background = '#0f172a'; }}
+                      title="Adicionar todos os itens deste pedido ao carrinho para comprar novamente"
+                    >
+                      🛒 Comprar Novamente
+                    </button>
+                  </div>
+                )}
 
                 {/* ── Ações do Pedido: Cancelamento ou Troca/Devolução ── */}
                 {podeCancelar && (
@@ -2806,8 +2860,24 @@ export default function MinhaContaPage() {
       carregarPedidos();
       carregarResumo();
     };
+
     window.addEventListener('salv-pedidos-atualizados', handleAtualizados);
-    return () => window.removeEventListener('salv-pedidos-atualizados', handleAtualizados);
+
+    const handleFocus = () => handleAtualizados();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') handleAtualizados();
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    const interval = setInterval(handleAtualizados, 15000);
+
+    return () => {
+      window.removeEventListener('salv-pedidos-atualizados', handleAtualizados);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(interval);
+    };
   }, [carregarPedidos, carregarResumo]);
 
   if (loading) return null;

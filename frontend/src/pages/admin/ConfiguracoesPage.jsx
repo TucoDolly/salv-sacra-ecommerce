@@ -8,6 +8,7 @@ import bannerDesatadora from '../../assets/banner-desatadora.jpg';
 import bannerPorVoce from '../../assets/banner-por-voce.jpg';
 import '../../styles/admin.css';
 import CuponsAdmin from './CuponsAdmin';
+import LoadingSpinner from '../../components/LoadingSpinner';
 
 const DEFAULT_CARROSSEL_SLIDES = [
   {
@@ -61,6 +62,7 @@ export default function ConfiguracoesPage() {
     mercadopago_public_key: '',
     cartao_gateway_modo: 'mercadopago',
     cartao_parcelas_max: '6',
+    cartao_parcela_minima: '50.00',
     pix_chave: '',
     pix_beneficiario: '',
     pix_cidade: '',
@@ -266,8 +268,8 @@ export default function ConfiguracoesPage() {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>
-          Carregando configurações...
+        <div style={{ padding: '60px' }}>
+          <LoadingSpinner size="md" />
         </div>
       ) : abaAtiva === 'cupons' ? (
         <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #eaeaea', padding: '32px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
@@ -311,7 +313,7 @@ export default function ConfiguracoesPage() {
           {/* ════════ ABA 2: FRETE & BANNER DE TOPO ════════ */}
           {abaAtiva === 'frete' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
                     CEP de Origem da Loja (Centro de Distribuição)
@@ -322,29 +324,10 @@ export default function ConfiguracoesPage() {
                     value={form.cep_origem || '88702-280'}
                     onChange={handleChange}
                     placeholder="Ex: 88702-280"
-                    style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
+                    style={{ width: '100%', maxWidth: '400px', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
                   />
                   <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
                     Utilizado como ponto de partida no cálculo do frete (Ex: Tubarão/SC).
-                  </span>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
-                    Valor Mínimo para Frete Grátis (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    name="frete_gratis_minimo"
-                    value={form.frete_gratis_minimo}
-                    onChange={handleChange}
-                    placeholder="Ex: 500.00"
-                    style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none' }}
-                  />
-                  <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
-                    Pedidos iguais ou acima deste valor ganham envio econômico grátis.
                   </span>
                 </div>
               </div>
@@ -516,10 +499,10 @@ export default function ConfiguracoesPage() {
                       style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none', background: '#fff' }}
                     >
                       <option value="mercadopago">Produção — Mercado Pago API (Cobrança real no cartão)</option>
-                      <option value="simulacao">Simulação / Sandbox (Aprovação automática para testes)</option>
+                      <option value="simulacao">Simulação / Sandbox (Testes e cenários Mercado Pago)</option>
                     </select>
                     <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
-                      No modo Produção (padrão), o cartão é validado, tokenizado e cobrado em tempo real via Mercado Pago. No modo Simulação, qualquer cartão válido é aprovado para testes.
+                      No modo Produção, o cartão é cobrado via Mercado Pago. No modo Simulação, você pode testar aprovações e erros usando as regras oficiais do Mercado Pago (ex.: titular APRO aprova, FUND recusa por saldo, SECU recusa por CVV, etc.).
                     </span>
                   </div>
 
@@ -541,6 +524,25 @@ export default function ConfiguracoesPage() {
                     </select>
                     <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
                       Aceita cartões de crédito e cartões múltiplos (à vista em 1x ou parcelado sem juros).
+                    </span>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#333', marginBottom: '8px' }}>
+                      Valor da Parcela Mínima (R$)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="1"
+                      name="cartao_parcela_minima"
+                      value={form.cartao_parcela_minima ?? '50.00'}
+                      onChange={handleChange}
+                      placeholder="50.00"
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', outline: 'none', background: '#fff' }}
+                    />
+                    <span style={{ display: 'block', fontSize: '12px', color: '#888', marginTop: '6px' }}>
+                      Valor mínimo por parcela para o cálculo das opções de parcelamento no checkout (padrão: R$ 50,00).
                     </span>
                   </div>
                 </div>

@@ -5,11 +5,14 @@ import {
   atualizarTaxonomia,
   excluirTaxonomia,
 } from '../../services/adminTaxonomiaService';
+import LoadingSpinner from '../../components/LoadingSpinner';
 import '../../styles/admin.css';
 
 const ABAS = [
-  { kind: 'categorias', titulo: 'Categorias', singular: 'categoria', placeholder: 'Ex: Camisetas' },
-  { kind: 'devocaos', titulo: 'Devoções', singular: 'devoção', placeholder: 'Ex: Nossa Senhora' },
+  { kind: 'categorias', titulo: 'Categorias', singular: 'categoria', placeholder: 'Ex: Camisetas, Moletons' },
+  { kind: 'devocaos', titulo: 'Devoções', singular: 'devoção', placeholder: 'Ex: Nossa Senhora, Jesus, Espírito Santo' },
+  { kind: 'colecoes', titulo: 'Coleções', singular: 'coleção', placeholder: 'Ex: Geral, Santos, Datas Comemorativas' },
+  { kind: 'modelos', titulo: 'Modelos de Camiseta', singular: 'modelo', placeholder: 'Ex: Regular Fit, Oversized, Babylook' },
 ];
 
 export default function CategoriasDevocoesPage() {
@@ -108,9 +111,9 @@ export default function CategoriasDevocoesPage() {
     <div className="admin-page" style={{ maxWidth: '900px' }}>
       <div className="admin-header" style={{ marginBottom: '24px' }}>
         <div>
-          <h1 className="admin-title">Categorias e Devoções</h1>
+          <h1 className="admin-title">Categorias</h1>
           <p style={{ color: '#777', fontSize: '14px', marginTop: '4px' }}>
-            Organize o catálogo. Estes itens alimentam o cadastro de produtos e os filtros da vitrine.
+            Organize categorias, devoções e coleções. Estes itens alimentam o cadastro de produtos e os filtros da vitrine.
           </p>
         </div>
       </div>
@@ -180,7 +183,9 @@ export default function CategoriasDevocoesPage() {
 
       <div style={{ background: '#fff', border: '1px solid #eaeaea', borderRadius: '12px', overflow: 'hidden' }}>
         {loading ? (
-          <p style={{ padding: '40px', textAlign: 'center', color: '#888' }}>Carregando...</p>
+          <div style={{ padding: '40px' }}>
+            <LoadingSpinner size="md" />
+          </div>
         ) : itens.length === 0 ? (
           <p style={{ padding: '40px', textAlign: 'center', color: '#888' }}>
             Nenhuma {cfg.singular} cadastrada ainda.
@@ -214,7 +219,31 @@ export default function CategoriasDevocoesPage() {
                           style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1.5px solid #d97706', fontSize: '14px', outline: 'none' }}
                         />
                       ) : (
-                        item.nome
+                        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                          <span>{item.nome}</span>
+                          {aba === 'categorias' && item.nome.toLowerCase().includes('camiseta') && (
+                            <button
+                              type="button"
+                              onClick={() => setAba('modelos')}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '11.5px',
+                                padding: '3px 9px',
+                                background: '#f8fafc',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                color: '#1e293b',
+                                fontWeight: 600,
+                              }}
+                              title="Gerenciar modelos de camiseta (Regular Fit, Oversized...)"
+                            >
+                              👕 Ver / Adicionar Modelos →
+                            </button>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td style={{ ...td, textAlign: 'center', color: '#64748b' }}>

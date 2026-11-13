@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
-import { getHexCor } from '../../constants/cores';
-import { useAuth } from '../../contexts/AuthContext';
-import { useWishlist } from '../../contexts/WishlistContext';
+import ProdutoCard from '../../components/ProdutoCard';
 import '../../styles/home.css';
 import bannerSaoJose from '../../assets/banner-sao-jose.jpg';
 import bannerDesatadora from '../../assets/banner-desatadora.jpg';
@@ -88,191 +86,6 @@ const BENEFITS = [
   { icon: <IconHeadset />,    title: 'Precisa de ajuda?', desc: 'Fale conosco pelo WhatsApp' },
 ];
 
-// ── Componente de card de produto ──────────────────────────────────────────────
-function ProdutoCard({ produto }) {
-  const [hovered, setHovered] = useState(false);
-  const [fotoIdx, setFotoIdx] = useState(0);
-  const { isAuthenticated } = useAuth();
-  const { isFavorite, toggleFavorite } = useWishlist();
-  const navigate = useNavigate();
-  const favoritado = isFavorite(produto.id);
-
-  const preco = produto.preco_base
-    ? Number(produto.preco_base).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-    : null;
-
-  // Vitrine e cores unificadas
-  const vitrine = Array.isArray(produto.imagens_vitrine) && produto.imagens_vitrine.length > 0
-    ? produto.imagens_vitrine.filter(Boolean)
-    : Array.isArray(produto.imagens) && produto.imagens.length > 0
-    ? produto.imagens.filter(Boolean)
-    : [];
-
-  const coresConfig = Array.isArray(produto.cores_config) ? produto.cores_config : [];
-
-  const listaFotos = (() => {
-    if (coresConfig.length > 0) {
-      const fotosDeCores = coresConfig.map((c) => c.imagem_url).filter(Boolean);
-      if (fotosDeCores.length > 0) return fotosDeCores;
-    }
-    if (vitrine.length > 0) return vitrine;
-    return produto.imagem_url ? [produto.imagem_url] : [];
-  })();
-
-  const fotoExibida = listaFotos[fotoIdx] || listaFotos[0] || produto.imagem_url || '';
-
-  const handleMouseEnter = () => {
-    setHovered(true);
-    if (listaFotos.length > 1) {
-      setFotoIdx(1);
-    } else {
-      setFotoIdx(0);
-    }
-  };
-
-  const handleMouseLeave = () => {
-    setHovered(false);
-    setFotoIdx(0);
-  };
-
-  const handlePrevFoto = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (listaFotos.length > 1) {
-      setFotoIdx((prev) => (prev - 1 + listaFotos.length) % listaFotos.length);
-    }
-  };
-
-  const handleNextFoto = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (listaFotos.length > 1) {
-      setFotoIdx((prev) => (prev + 1) % listaFotos.length);
-    }
-  };
-
-  // Cores dinâmicas cadastradas nas variações do produto (deduplicadas para evitar repetição)
-  const coresVariacoesRaw = Array.from(new Set((produto.variacoes || []).map((v) => v.cor?.trim()))).filter(Boolean);
-  const coresVariacoesDeduplicadas = coresConfig.length > 0
-    ? Array.from(new Set(
-        [...coresConfig]
-          .sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
-          .map((c) => c.cor?.trim())
-          .filter(Boolean)
-      )).filter((c) => coresVariacoesRaw.length === 0 || coresVariacoesRaw.includes(c))
-    : coresVariacoesRaw;
-  const coresVariacoes = coresVariacoesDeduplicadas.length > 0 ? coresVariacoesDeduplicadas : coresVariacoesRaw;
-  const temAvaliacao = Number(produto.avaliacoes_count) > 0;
-  const qtdEstrelas = Math.max(1, Math.min(5, Math.round(Number(produto.avaliacoes_avg_nota || 0))));
-
-  const handleToggleFavorite = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!isAuthenticated) {
-      navigate('/login', { state: { from: window.location.pathname } });
-      return;
-    }
-    toggleFavorite(produto);
-  };
-
-  return (
-    <Link
-      to={`/produto/${produto.id}`}
-      className="produto-card"
-      aria-label={produto.nome}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      <div className="produto-card-img">
-        <button
-          type="button"
-          onClick={handleToggleFavorite}
-          className="produto-card-fav-btn"
-          title={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
-          aria-label={favoritado ? 'Remover dos favoritos' : 'Salvar na lista de desejos'}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill={favoritado ? '#dc2626' : 'none'} stroke={favoritado ? '#dc2626' : '#444'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-          </svg>
-        </button>
-
-        {/* Setas para navegar nas cores/fotos quando há mais de 2 fotos/cores */}
-        {hovered && listaFotos.length > 2 && (
-          <>
-            <button
-              type="button"
-              onClick={handlePrevFoto}
-              className="card-nav-arrow card-nav-arrow-left"
-              title="Foto/Cor anterior"
-              aria-label="Foto/Cor anterior"
-            >
-              ‹
-            </button>
-            <button
-              type="button"
-              onClick={handleNextFoto}
-              className="card-nav-arrow card-nav-arrow-right"
-              title="Próxima foto/cor"
-              aria-label="Próxima foto/cor"
-            >
-              ›
-            </button>
-          </>
-        )}
-
-        {fotoExibida ? (
-          <img
-            src={fotoExibida}
-            alt={produto.nome}
-            loading="lazy"
-          />
-        ) : (
-          <div className="produto-card-placeholder" aria-hidden="true">
-            <span>🕊️</span>
-          </div>
-        )}
-      </div>
-
-      {/* Faixa horizontal de cores com a linha divisória escura */}
-      <div className="produto-card-dots">
-        {coresVariacoes.length > 0 ? (
-          coresVariacoes.slice(0, 4).map((c) => (
-            <span
-              key={c}
-              className="produto-card-dot"
-              style={{ backgroundColor: getHexCor(c) }}
-              title={c}
-            />
-          ))
-        ) : (
-          <span
-            className="produto-card-dot"
-            style={{ backgroundColor: '#1e1e1e' }}
-            title="Cor única"
-          />
-        )}
-      </div>
-
-      <div className="produto-card-info">
-        <p className="produto-card-nome">{produto.nome}</p>
-
-        <div className="produto-card-rating">
-          {temAvaliacao ? (
-            <>
-              <span className="produto-card-stars">{'★'.repeat(qtdEstrelas)}</span>
-              <span className="produto-card-rating-count">({produto.avaliacoes_count})</span>
-            </>
-          ) : null}
-        </div>
-
-        {preco && (
-          <p className="produto-card-preco">{preco}</p>
-        )}
-      </div>
-    </Link>
-  );
-}
-
 // ── Carrossel de cards com setas ───────────────────────────────────────────────
 function CardCarousel({ items, loading, emptyMsg }) {
   const trackRef  = useRef(null);
@@ -305,6 +118,77 @@ function CardCarousel({ items, loading, emptyMsg }) {
 
       <div className="carousel-track" ref={trackRef}>
         {items.map((p) => <ProdutoCard key={p.id} produto={p} />)}
+
+        {/* Card Ver Catálogo Completo / Ver Vitrine ao final do carrossel */}
+        <Link
+          to="/produtos?categoria=camisetas"
+          className="produto-card produto-card--ver-mais"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minWidth: '220px',
+            background: 'linear-gradient(135deg, #1e1e1e 0%, #121212 100%)',
+            borderRadius: '16px',
+            padding: '24px 18px',
+            textAlign: 'center',
+            textDecoration: 'none',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            border: '1.5px solid rgba(212, 175, 55, 0.4)',
+            transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.transform = 'translateY(-4px)';
+            e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.22)';
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.12)';
+          }}
+        >
+          <div
+            style={{
+              width: '54px',
+              height: '54px',
+              borderRadius: '50%',
+              background: 'rgba(212, 175, 55, 0.15)',
+              color: '#c5a059',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '14px',
+            }}
+          >
+            <IconChevronRight style={{ width: '28px', height: '28px' }} />
+          </div>
+          <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '2px', color: '#c5a059', fontWeight: 700, marginBottom: '6px' }}>
+            Explorar
+          </span>
+          <h4 style={{ fontSize: '17px', fontWeight: 700, color: '#ffffff', margin: '0 0 8px', lineHeight: 1.3 }}>
+            Ver Catálogo Completo
+          </h4>
+          <span style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.4 }}>
+            Conheça todas as nossas peças exclusivas
+          </span>
+          <span
+            style={{
+              marginTop: '16px',
+              padding: '8px 18px',
+              borderRadius: '20px',
+              background: '#c5a059',
+              color: '#111',
+              fontSize: '12px',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '1px',
+            }}
+          >
+            Ver Vitrine →
+          </span>
+        </Link>
       </div>
 
       <button className="carousel-btn carousel-btn--next" onClick={() => scroll(1)} aria-label="Próximo">
@@ -381,9 +265,7 @@ function HeroBanner({ slidesConfig }) {
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function Home() {
   const [destaques, setDestaques]       = useState([]);
-  const [vemPorAi, setVemPorAi]         = useState([]);
   const [loadingDestaques, setLoadingD] = useState(true);
-  const [loadingVem, setLoadingV]       = useState(true);
   const [slidesBanner, setSlidesBanner] = useState(BANNER_SLIDES);
 
   // Busca produtos e configurações do carrossel da API
@@ -421,15 +303,6 @@ export default function Home() {
       })
       .catch(() => setDestaques([]))
       .finally(() => setLoadingD(false));
-
-    // Vem por aí — próximos 8 produtos (offset simples)
-    api.get('/produtos', { params: { per_page: 16 } })
-      .then(({ data }) => {
-        const lista = Array.isArray(data) ? data : (data.data ?? []);
-        setVemPorAi(lista.slice(8, 16));
-      })
-      .catch(() => setVemPorAi([]))
-      .finally(() => setLoadingV(false));
   }, []);
 
   return (
@@ -460,19 +333,7 @@ export default function Home() {
         />
       </section>
 
-      {/* ── 4. Vem por aí (somente renderizado quando houver produtos) ── */}
-      {vemPorAi.length > 0 && (
-        <section className="home-section" aria-labelledby="vem-title">
-          <h2 id="vem-title" className="home-section-title">Vem por aí!</h2>
-          <CardCarousel
-            items={vemPorAi}
-            loading={loadingVem}
-            emptyMsg="Novidades chegando em breve."
-          />
-        </section>
-      )}
-
-      {/* ── 5. CTA Instagram (Fiel à Imagem 3) ───────────────────────── */}
+      {/* ── 4. CTA Instagram (Fiel à Imagem 3) ───────────────────────── */}
       <section className="instagram-cta" aria-label="Siga no Instagram">
         <div className="instagram-header-row">
           <IconInstagram />

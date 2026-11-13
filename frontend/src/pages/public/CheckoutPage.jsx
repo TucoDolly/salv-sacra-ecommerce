@@ -138,6 +138,7 @@ export default function CheckoutPage() {
   const [tipoCartao, setTipoCartao] = useState('credito'); // 'credito' | 'debito'
   const [parcelasCartao, setParcelasCartao] = useState(1);
   const [maxParcelas, setMaxParcelas] = useState(6);
+  const [parcelaMinima, setParcelaMinima] = useState(50.0);
   const [cpfTitular, setCpfTitular] = useState('');
   const [salvarDadosCompra, setSalvarDadosCompra] = useState(false);
   const [cartao, setCartao] = useState({
@@ -387,6 +388,10 @@ export default function CheckoutPage() {
           const max = parseInt(res.data.cartao_parcelas_max, 10);
           if (max >= 1 && max <= 12) setMaxParcelas(max);
         }
+        if (res.data?.cartao_parcela_minima) {
+          const min = parseFloat(res.data.cartao_parcela_minima);
+          if (!isNaN(min) && min > 0) setParcelaMinima(min);
+        }
       })
       .catch(() => {});
   }, []);
@@ -471,8 +476,8 @@ export default function CheckoutPage() {
   const totalFinal = Math.max(0, (subtotal || 79.9) + freteValor - (descontoCupom || 0));
   const totalBase = totalFinal;
 
-  // Calcula o número máximo de parcelas permitidas (parcela mínima de R$ 50,00, máximo 12x)
-  const maxParcelasDisponiveis = Math.max(1, Math.min(12, Math.floor(totalFinal / 50.00)));
+  // Calcula o número máximo de parcelas permitidas (parcela mínima configurada, padrão R$ 50,00, máximo 12x)
+  const maxParcelasDisponiveis = Math.max(1, Math.min(12, Math.floor(totalFinal / (parcelaMinima || 50.00))));
 
   useEffect(() => {
     if (parcelasCartao > maxParcelasDisponiveis) {
@@ -696,9 +701,10 @@ export default function CheckoutPage() {
 
   if (authLoading || !isAuthenticated) return null;
 
-  // Fluxo Pós-Finalização: Aguardando Pagamento (PIX) vs. Pedido Confirmado
+  // Fluxo Pós-Finalização: Aguardando Pagamento (PIX) vs. Em Análise (Cartão) vs. Pedido Confirmado
   if (pedidoConcluido) {
     const aguardandoPix = metodoPagamento === 'pix' && pedidoConcluido.status === 'Pendente';
+    const emAnaliseCartao = metodoPagamento === 'cartao' && pedidoConcluido.status === 'Pendente';
     const codigoPix =
       pedidoConcluido.pix_copia_e_cola ||
       `00020126580014br.gov.bcb.pix0120salvsacra2@gmail.com5204000053039865405${Number(pedidoConcluido.valor_total || totalFinal).toFixed(2)}5802BR5910SALV SACRA6007TUBARAO62140510PEDIDO${String(pedidoConcluido.id).padStart(4, '0')}6304B14F`;
@@ -906,6 +912,132 @@ export default function CheckoutPage() {
                   ← Voltar para a loja (pagar depois)
                 </button>
               </div>
+            </div>
+          </div>
+        ) : emAnaliseCartao ? (
+          /* ── TELA 3: PAGAMENTO COM CARTÃO EM ANÁLISE ── */
+          <div className="checkout-success-wrap" style={{ maxWidth: '580px' }}>
+            <div
+              style={{
+                width: '68px',
+                height: '68px',
+                borderRadius: '50%',
+                background: '#eff6ff',
+                color: '#2563eb',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '32px',
+                margin: '0 auto 16px',
+                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.2)',
+              }}
+            >
+              ⏳
+            </div>
+
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: '#eff6ff',
+                color: '#1e40af',
+                border: '1px solid #bfdbfe',
+                padding: '6px 16px',
+                borderRadius: '999px',
+                fontSize: '12px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                marginBottom: '14px',
+              }}
+            >
+              Em Análise de Segurança
+            </div>
+
+            <h2 style={{ fontSize: '24px', fontWeight: 800, color: '#111', margin: '0 0 8px' }}>
+              Pedido Realizado com Sucesso!
+            </h2>
+            <p style={{ marginTop: '4px', color: '#4b5563', fontSize: '15px', lineHeight: 1.6 }}>
+              O pagamento do Pedido <strong>#{pedidoConcluido.id}</strong> está em análise preventiva pela operadora do cartão.
+            </p>
+            <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '6px', lineHeight: 1.5 }}>
+              Esse procedimento é padrão para a segurança da transação. Assim que o emissor aprovar a cobrança, você receberá a confirmação por e-mail e o pedido seguirá para separação.
+            </p>
+
+            <div
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '16px 20px',
+                margin: '22px 0',
+                textAlign: 'left',
+                fontSize: '13px',
+                color: '#334155',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span>Número do Pedido:</span>
+                <strong>#{pedidoConcluido.id}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span>Status da Transação:</span>
+                <span style={{ background: '#eff6ff', color: '#1e40af', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '12px' }}>
+                  Em análise pela operadora
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span>Forma de Pagamento:</span>
+                <strong>Cartão de Crédito</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Valor Total:</span>
+                <strong>R$ {Number(pedidoConcluido.valor_total || totalFinal).toFixed(2).replace('.', ',')}</strong>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '24px' }}>
+              <Link
+                to="/minha-conta?aba=pedidos"
+                className="checkout-submit-btn"
+                style={{
+                  background: '#1a1a1a',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '14px',
+                  fontWeight: 700,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  width: '100%',
+                  textDecoration: 'none',
+                  display: 'inline-block',
+                }}
+              >
+                Acompanhar na Minha Conta
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  clearCart();
+                  setPedidoConcluido(null);
+                  navigate('/');
+                }}
+                style={{
+                  background: 'transparent',
+                  color: '#475569',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '6px',
+                  padding: '12px',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  width: '100%',
+                }}
+              >
+                Continuar Comprando
+              </button>
             </div>
           </div>
         ) : (
@@ -1552,7 +1684,7 @@ export default function CheckoutPage() {
                             <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
                               <span>Opções de Parcelamento</span>
                               <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500, textTransform: 'none' }}>
-                                (mínimo de R$ 50,00 por parcela a partir de 2x)
+                                (mínimo de R$ {(parcelaMinima || 50).toFixed(2).replace('.', ',')} por parcela a partir de 2x)
                               </span>
                             </label>
                             <select

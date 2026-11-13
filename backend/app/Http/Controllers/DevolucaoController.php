@@ -159,6 +159,13 @@ class DevolucaoController extends Controller
             Log::warning("Falha ao enviar e-mail de devolução solicitada (#{$devolucao->id}): " . $e->getMessage());
         }
 
+        // Envia e-mail de notificação para o administrador da loja
+        try {
+            Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovaDevolucaoAdminMail($devolucao->load('user')));
+        } catch (\Throwable $e) {
+            Log::error("Falha ao enviar e-mail de nova devolução para o admin (#{$devolucao->id}): " . $e->getMessage());
+        }
+
         return response()->json([
             'message'   => 'Solicitação de devolução registrada com sucesso! Nossa equipe analisará e enviará as instruções por e-mail.',
             'devolucao' => $devolucao->load('pedido'),
@@ -203,6 +210,13 @@ class DevolucaoController extends Controller
             'instrucoes_admin'        => ['nullable', 'string', 'max:2000'],
             'declaracao_conteudo'     => ['nullable', 'file', 'max:10240'],
         ]);
+
+        if (! $request->hasFile('declaracao_conteudo') && empty($devolucao->declaracao_conteudo_path)) {
+            return response()->json([
+                'message' => 'O arquivo da declaração de conteúdo é obrigatório para aprovação da devolução.',
+                'errors'  => ['declaracao_conteudo' => ['O arquivo da declaração de conteúdo é obrigatório.']],
+            ], 422);
+        }
 
         $dadosUpdate = [
             'status'                  => 'Aprovada',
@@ -269,9 +283,30 @@ class DevolucaoController extends Controller
             'status'        => 'Recusada',
             'motivo_recusa' => trim($validated['motivo_recusa']),
         ]);
+        $devolucao->refresh();
+
+        // Notificação interna na plataforma para o cliente
+        NotificacaoService::notificarCliente(
+            $devolucao->user_id,
+            'devolucao',
+            "Devolução Não Aprovada · Pedido #{$devolucao->pedido_id}",
+            "Sua solicitação de devolução foi recusada. Motivo: " . Str::limit($devolucao->motivo_recusa, 140),
+            "/minha-conta?aba=pedidos&pedido={$devolucao->pedido_id}",
+            $devolucao->id
+        );
+
+        // Dispara e-mail formal com justificativa e canal WhatsApp para o cliente
+        try {
+            $destinatario = $devolucao->user?->email ?: $devolucao->pedido?->email_contato;
+            if ($destinatario) {
+                Mail::to($destinatario)->send(new \App\Mail\DevolucaoRecusadaMail($devolucao));
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Falha ao enviar e-mail de devolução recusada (#{$devolucao->id}): " . $e->getMessage());
+        }
 
         return response()->json([
-            'message'   => 'Solicitação de devolução recusada.',
+            'message'   => 'Solicitação de devolução recusada. Notificação e e-mail enviados ao cliente.',
             'devolucao' => $devolucao->fresh(),
         ]);
     }
@@ -292,7 +327,7 @@ class DevolucaoController extends Controller
                 'descricao'      => "Vale-Compras referente à Devolução/Troca do Pedido #{$devolucao->pedido_id}",
                 'percentual'     => 100,
                 'valor_fixo'     => $devolucao->valor_estorno,
-                'tipo'           => 'produto',
+                'tipo'           => 'troca',
                 'todos_produtos' => true,
                 'ativo'          => true,
             ]);

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { getHexCor } from '../../constants/cores';
+import LoadingSpinner from '../../components/LoadingSpinner';
 import { useAuth } from '../../contexts/AuthContext';
 import { useWishlist } from '../../contexts/WishlistContext';
 import '../../styles/catalogo.css';
@@ -14,6 +15,22 @@ const IconSort = () => (
     <line x1="12" y1="21" x2="12.01" y2="21" />
   </svg>
 );
+
+function deduplicarCores(lista) {
+  const vistos = new Set();
+  const res = [];
+  for (const item of lista) {
+    if (!item || typeof item !== 'string') continue;
+    const limpo = item.trim();
+    if (!limpo) continue;
+    const chave = limpo.toLowerCase();
+    if (!vistos.has(chave)) {
+      vistos.add(chave);
+      res.push(limpo);
+    }
+  }
+  return res;
+}
 
 // Subcomponente de Card do Produto padronizado com a vitrine Home
 function CatalogoItemCard({ prod }) {
@@ -80,16 +97,15 @@ function CatalogoItemCard({ prod }) {
     }
   };
 
-  const coresVariacoesRaw = Array.from(new Set((prod.variacoes || []).map((v) => v.cor?.trim()))).filter(Boolean);
-  const coresVariacoesDeduplicadas = coresConfig.length > 0
-    ? Array.from(new Set(
-        [...coresConfig]
-          .sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
-          .map((c) => c.cor?.trim())
-          .filter(Boolean)
-      )).filter((c) => coresVariacoesRaw.length === 0 || coresVariacoesRaw.includes(c))
+  const coresVariacoesRaw = deduplicarCores((prod.variacoes || []).map((v) => v.cor));
+  const coresConfigList = deduplicarCores(
+    [...coresConfig]
+      .sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
+      .map((c) => c.cor)
+  );
+  const coresVariacoes = coresConfigList.length > 0
+    ? coresConfigList.filter((c) => coresVariacoesRaw.length === 0 || coresVariacoesRaw.map((x) => x.toLowerCase()).includes(c.toLowerCase()))
     : coresVariacoesRaw;
-  const coresVariacoes = coresVariacoesDeduplicadas.length > 0 ? coresVariacoesDeduplicadas : coresVariacoesRaw;
   const temAvaliacao = Number(prod.avaliacoes_count) > 0;
   const qtdEstrelas = Math.max(1, Math.min(5, Math.round(Number(prod.avaliacoes_avg_nota || 0))));
 
@@ -211,6 +227,10 @@ export default function CatalogoPage({ modoFixo = null }) {
   const [precoMin, setPrecoMin] = useState('');
   const [precoMax, setPrecoMax] = useState('');
 
+  // Paginação (12 cards por página conforme solicitado)
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const ITEMS_PER_PAGE = 12;
+
   // Ordenação
   const [ordenacao, setOrdenacao] = useState('Mais vendidos');
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
@@ -220,6 +240,23 @@ export default function CatalogoPage({ modoFixo = null }) {
   const categoriaParam = searchParams.get('categoria') || '';
   const colecaoParam = searchParams.get('colecao') || '';
   const buscaParam = searchParams.get('busca') || '';
+
+  // Reseta para a primeira página sempre que qualquer filtro mudar
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [
+    categoriaParam,
+    colecaoParam,
+    buscaParam,
+    coresSelecionadas,
+    modeloSelecionado,
+    tamanhosSelecionados,
+    devocoesSelecionadas,
+    colecoesSelecionadas,
+    precoMin,
+    precoMax,
+    ordenacao,
+  ]);
 
   // Configuração de Título e Breadcrumb baseada no contexto
   const getContextInfo = () => {
@@ -690,20 +727,143 @@ export default function CatalogoPage({ modoFixo = null }) {
             </div>
           </aside>
 
-          {/* Grid de Produtos */}
+          {/* Grid de Produtos com Paginação (12 por página) */}
           <main className="catalogo-main-content">
             {loading ? (
-              <p style={{ textAlign: 'center', padding: '60px 0', color: '#666' }}>Carregando catálogo...</p>
+              <div style={{ padding: '60px 0' }}>
+                <LoadingSpinner size="lg" />
+              </div>
             ) : produtosFiltrados.length === 0 ? (
               <div className="catalogo-empty-box">
                 <p>Não temos resultados para sua pesquisa. Por favor, tente com outros filtros.</p>
+                {buscaParam && (
+                  <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '13px', color: '#666' }}>Procurando por uma página da sua conta ou da loja?</span>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                      <Link to="/minha-conta?aba=favoritos" style={{ padding: '8px 16px', background: '#2c2c2c', color: '#c5a880', borderRadius: '4px', textDecoration: 'none', fontSize: '12px', fontWeight: 700 }}>
+                        ❤️ Lista de Favoritos
+                      </Link>
+                      <Link to="/minha-conta?aba=pedidos" style={{ padding: '8px 16px', background: '#2c2c2c', color: '#c5a880', borderRadius: '4px', textDecoration: 'none', fontSize: '12px', fontWeight: 700 }}>
+                        📦 Meus Pedidos & Rastreamento
+                      </Link>
+                      <Link to="/guia-de-medidas" style={{ padding: '8px 16px', background: '#2c2c2c', color: '#c5a880', borderRadius: '4px', textDecoration: 'none', fontSize: '12px', fontWeight: 700 }}>
+                        📏 Guia de Medidas
+                      </Link>
+                      <Link to="/produtos" style={{ padding: '8px 16px', background: '#c4953a', color: '#ffffff', borderRadius: '4px', textDecoration: 'none', fontSize: '12px', fontWeight: 700 }}>
+                        👕 Ver Todo o Catálogo
+                      </Link>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
-              <div className="catalogo-products-grid">
-                {produtosFiltrados.map((prod) => (
-                  <CatalogoItemCard key={prod.id} prod={prod} />
-                ))}
-              </div>
+              <>
+                {(() => {
+                  const totalPaginas = Math.max(1, Math.ceil(produtosFiltrados.length / ITEMS_PER_PAGE));
+                  const paginaCorrigida = Math.min(Math.max(1, paginaAtual), totalPaginas);
+                  const inicioIdx = (paginaCorrigida - 1) * ITEMS_PER_PAGE;
+                  const fimIdx = Math.min(inicioIdx + ITEMS_PER_PAGE, produtosFiltrados.length);
+                  const produtosPaginados = produtosFiltrados.slice(inicioIdx, fimIdx);
+
+                  return (
+                    <>
+                      <div className="catalogo-products-grid">
+                        {produtosPaginados.map((prod) => (
+                          <CatalogoItemCard key={prod.id} prod={prod} />
+                        ))}
+                      </div>
+
+                      {/* Paginação */}
+                      {totalPaginas > 1 && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            gap: '8px',
+                            marginTop: '40px',
+                            marginBottom: '20px',
+                            flexWrap: 'wrap',
+                          }}
+                          aria-label="Navegação de páginas do catálogo"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaginaAtual((p) => Math.max(1, p - 1));
+                              window.scrollTo({ top: 120, behavior: 'smooth' });
+                            }}
+                            disabled={paginaCorrigida <= 1}
+                            style={{
+                              padding: '8px 16px',
+                              borderRadius: '6px',
+                              border: '1px solid #ddd',
+                              background: paginaCorrigida <= 1 ? '#f5f5f5' : '#fff',
+                              color: paginaCorrigida <= 1 ? '#aaa' : '#1e1e1e',
+                              fontSize: '13px',
+                              fontWeight: 600,
+                              cursor: paginaCorrigida <= 1 ? 'not-allowed' : 'pointer',
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            ◀ Anterior
+                          </button>
+
+                          {Array.from({ length: totalPaginas }, (_, i) => i + 1).map((num) => {
+                            const isActive = num === paginaCorrigida;
+                            return (
+                              <button
+                                key={num}
+                                type="button"
+                                onClick={() => {
+                                  setPaginaAtual(num);
+                                  window.scrollTo({ top: 120, behavior: 'smooth' });
+                                }}
+                                style={{
+                                  width: '38px',
+                                  height: '38px',
+                                  borderRadius: '6px',
+                                  border: isActive ? '1.5px solid #1e1e1e' : '1px solid #ddd',
+                                  background: isActive ? '#1e1e1e' : '#fff',
+                                  color: isActive ? '#fff' : '#333',
+                                  fontSize: '13px',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s',
+                                }}
+                              >
+                                {num}
+                              </button>
+                            );
+                          })}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaginaAtual((p) => Math.min(totalPaginas, p + 1));
+                              window.scrollTo({ top: 120, behavior: 'smooth' });
+                            }}
+                            disabled={paginaCorrigida >= totalPaginas}
+                            style={{
+                              padding: '8px 16px',
+                              borderRadius: '6px',
+                              border: '1px solid #ddd',
+                              background: paginaCorrigida >= totalPaginas ? '#f5f5f5' : '#fff',
+                              color: paginaCorrigida >= totalPaginas ? '#aaa' : '#1e1e1e',
+                              fontSize: '13px',
+                              fontWeight: 600,
+                              cursor: paginaCorrigida >= totalPaginas ? 'not-allowed' : 'pointer',
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            Próxima ▶
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </>
             )}
           </main>
 

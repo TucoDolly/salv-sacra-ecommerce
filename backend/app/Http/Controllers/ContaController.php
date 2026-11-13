@@ -24,23 +24,37 @@ class ContaController extends Controller
         app(PedidoController::class)->cancelarPedidosPendentesExpirados($user->id);
 
         $ultimoPedido = Pedido::where('user_id', $user->id)
-            ->with('devolucao')
+            ->with(['itens.variacao.produto', 'devolucao'])
             ->orderByDesc('data_pedido')
             ->first();
 
-        $pedidoPendente = Pedido::where('user_id', $user->id)
+        // Pedido pendente de pagamento PIX (aguardando transferência / QR Code)
+        $pedidoPendentePix = Pedido::where('user_id', $user->id)
             ->where('status', 'Pendente')
+            ->where(function ($q) {
+                $q->where('metodo_pagamento', 'pix')
+                  ->orWhereNull('metodo_pagamento')
+                  ->orWhere('metodo_pagamento', 'not like', '%cartao%');
+            })
+            ->latest('id')
+            ->first();
+
+        // Pedido com cartão em análise de segurança pela operadora
+        $pedidoPendenteCartao = Pedido::where('user_id', $user->id)
+            ->where('status', 'Pendente')
+            ->where('metodo_pagamento', 'like', '%cartao%')
             ->latest('id')
             ->first();
 
         return response()->json([
-            'total_pedidos'      => $user->pedidos()->count(),
-            'pedidos_pendentes'  => $pedidoPendente ? 1 : 0,
-            'pedido_pendente_id' => $pedidoPendente?->id,
-            'total_enderecos'    => $user->enderecos()->count(),
-            'total_cartoes'      => $user->cartoes()->count(),
-            'total_favoritos'    => $user->favoritos()->count(),
-            'ultimo_pedido'      => $ultimoPedido,
+            'total_pedidos'             => $user->pedidos()->count(),
+            'pedidos_pendentes'         => $pedidoPendentePix ? 1 : 0,
+            'pedido_pendente_id'        => $pedidoPendentePix?->id,
+            'pedidos_em_analise_cartao' => $pedidoPendenteCartao ? 1 : 0,
+            'total_enderecos'           => $user->enderecos()->count(),
+            'total_cartoes'             => $user->cartoes()->count(),
+            'total_favoritos'           => $user->favoritos()->count(),
+            'ultimo_pedido'             => $ultimoPedido,
         ]);
     }
 
@@ -148,6 +162,7 @@ class ContaController extends Controller
         $user = $request->user();
 
         app(PedidoController::class)->cancelarPedidosPendentesExpirados($user->id);
+        \App\Services\RastreioService::sincronizarSeNecessario();
 
         $pedidos = Pedido::where('user_id', $user->id)
             ->with(['itens.variacao.produto', 'devolucao'])

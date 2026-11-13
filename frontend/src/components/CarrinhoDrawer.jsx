@@ -432,10 +432,10 @@ export default function CarrinhoDrawer() {
               ⚠️
             </div>
             <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#111', margin: '0 0 10px' }}>
-              Pedido Pendente em Aberto
+              Pedido Pendente via PIX
             </h3>
             <p style={{ fontSize: '14px', color: '#4b5563', lineHeight: 1.6, margin: '0 0 22px' }}>
-              Você já possui um pedido pendente de pagamento
+              Você já possui um pedido aguardando pagamento via PIX
               {typeof modalPedidoPendente === 'number' ? ` (Pedido #${modalPedidoPendente})` : ''} em aberto. Conclua o pagamento via PIX ou cancele o pedido em <strong>Meus Pedidos</strong> antes de iniciar uma nova compra.
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>

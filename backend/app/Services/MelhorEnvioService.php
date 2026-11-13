@@ -161,10 +161,33 @@ class MelhorEnvioService
                 $protocol   = $data['protocol'] ?? '';
 
                 if ($shipmentId) {
+                    $statusAnterior = $pedido->status;
                     $pedido->update([
                         'melhor_envio_id' => $shipmentId,
                         'status'          => 'Em separação', // Mantém Em separação enquanto embala
                     ]);
+
+                    if ($statusAnterior !== 'Em separação') {
+                        try {
+                            $destinatario = $pedido->email_contato ?: $pedido->user?->email;
+                            if ($destinatario) {
+                                \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\StatusPedidoMail($pedido->fresh()->load('user')));
+                            }
+                        } catch (\Throwable $e) {
+                            Log::error('Erro ao enviar e-mail de status Em separação: ' . $e->getMessage());
+                        }
+
+                        if ($pedido->user_id) {
+                            \App\Services\NotificacaoService::notificarCliente(
+                                $pedido->user_id,
+                                'pedido',
+                                "Atualização no Pedido #{$pedido->id}: Em separação",
+                                "Seu pedido entrou em separação e conferência no nosso ateliê.",
+                                "/minha-conta?aba=pedidos&pedido={$pedido->id}",
+                                $pedido->id
+                            );
+                        }
+                    }
                 }
 
                 return [

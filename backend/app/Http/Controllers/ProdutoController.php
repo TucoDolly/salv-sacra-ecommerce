@@ -320,4 +320,75 @@ class ProdutoController extends Controller
 
         return response()->json(null, 204);
     }
+
+    /**
+     * Valida os itens atuais do carrinho no cliente contra o estoque real em banco.
+     * Retorna se cada item está disponível (estoque > 0) e a quantidade máxima permitida.
+     */
+    public function verificarEstoqueCarrinho(Request $request): JsonResponse
+    {
+        $itensSolicitados = $request->input('itens', []);
+        if (!is_array($itensSolicitados) || empty($itensSolicitados)) {
+            return response()->json(['itens' => []]);
+        }
+
+        $resultado = [];
+
+        foreach ($itensSolicitados as $item) {
+            $variacaoId = $item['variacao_id'] ?? null;
+            $qtd = (int) ($item['quantidade'] ?? 1);
+
+            if (! $variacaoId) {
+                // Tenta achar pela combinação produto_id, tamanho e cor
+                $prodId = $item['produto_id'] ?? $item['id'] ?? null;
+                $tam = $item['tamanho'] ?? null;
+                $cor = $item['cor'] ?? null;
+                $variacao = null;
+                if ($prodId) {
+                    $q = \App\Models\Variacao::where('produto_id', $prodId);
+                    if ($tam) $q->where('tamanho', $tam);
+                    if ($cor) $q->where('cor', $cor);
+                    $variacao = $q->first();
+                }
+            } else {
+                $variacao = \App\Models\Variacao::find($variacaoId);
+            }
+
+            if (! $variacao) {
+                $resultado[] = [
+                    'variacao_id'       => $variacaoId,
+                    'produto_id'        => $item['produto_id'] ?? $item['id'] ?? null,
+                    'tamanho'           => $item['tamanho'] ?? null,
+                    'cor'               => $item['cor'] ?? null,
+                    'estoque_atual'     => 0,
+                    'disponivel'        => false,
+                    'quantidade_valida' => 0,
+                    'mensagem'          => 'Produto ou variação não encontrado no catálogo.',
+                ];
+                continue;
+            }
+
+            $estoqueReal = max(0, (int) $variacao->estoque);
+            $disponivel = $estoqueReal > 0;
+            $quantidadeValida = min($qtd, $estoqueReal);
+
+            $resultado[] = [
+                'variacao_id'       => $variacao->id,
+                'produto_id'        => $variacao->produto_id,
+                'tamanho'           => $variacao->tamanho,
+                'cor'               => $variacao->cor,
+                'estoque_atual'     => $estoqueReal,
+                'disponivel'        => $disponivel,
+                'quantidade_valida' => $quantidadeValida,
+                'ajustado'          => $qtd > $estoqueReal,
+                'mensagem'          => ! $disponivel
+                    ? 'Item esgotado no estoque.'
+                    : ($qtd > $estoqueReal ? "Quantidade ajustada para {$estoqueReal} (limite disponível)." : null),
+            ];
+        }
+
+        return response()->json([
+            'itens' => $resultado,
+        ]);
+    }
 }

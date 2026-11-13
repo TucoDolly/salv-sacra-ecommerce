@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useCart } from '../contexts/CartContext';
 import { listarCuponsDisponiveis } from '../services/cupomService';
+import LoadingSpinner from './LoadingSpinner';
 
 const moeda = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -57,7 +58,7 @@ export default function CupomSelector() {
 
       {aberto && (
         <div className="cupom-lista">
-          {carregando && <p className="cupom-msg">Carregando cupons...</p>}
+          {carregando && <div style={{ padding: '12px' }}><LoadingSpinner size="sm" /></div>}
           {erro && <p className="cupom-msg erro">{erro}</p>}
           {!carregando && !erro && cupons.length === 0 && (
             <p className="cupom-msg">Nenhum cupom disponível no momento.</p>

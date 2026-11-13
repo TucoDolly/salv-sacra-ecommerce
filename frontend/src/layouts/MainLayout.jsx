@@ -242,8 +242,14 @@ function SiteHeader({ configs }) {
     const carregarNotificacoes = () => {
       obterNotificacoesCliente()
         .then(({ data }) => {
+          const novasNaoLidas = Number(data.total_nao_lidas || 0);
+          setTotalNaoLidas((prev) => {
+            if (novasNaoLidas > prev) {
+              window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+            }
+            return novasNaoLidas;
+          });
           setNotificacoes(data.notificacoes || []);
-          setTotalNaoLidas(Number(data.total_nao_lidas || 0));
         })
         .catch(() => {});
     };
@@ -404,6 +410,7 @@ function SiteHeader({ configs }) {
             {/* Dropdown de sugestões para o cliente */}
             {sugestoesClienteAbertas && sugestoesCliente.length > 0 && (
               <div
+                className="header-search-dropdown"
                 style={{
                   position: 'absolute',
                   top: 'calc(100% + 8px)',
@@ -411,52 +418,62 @@ function SiteHeader({ configs }) {
                   width: '100%',
                   background: '#1a1a1a',
                   borderRadius: '8px',
-                  boxShadow: '0 12px 32px rgba(0, 0, 0, 0.55)',
+                  boxShadow: '0 16px 40px rgba(0, 0, 0, 0.7)',
                   border: '1px solid #333333',
-                  overflow: 'hidden',
-                  zIndex: 1000,
-                  maxHeight: '380px',
+                  zIndex: 9999,
+                  maxHeight: '390px',
                   overflowY: 'auto',
+                  overflowX: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
                 }}
               >
-                <div style={{ padding: '8px 14px', background: '#222', borderBottom: '1px solid #2e2e2e', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ flexShrink: 0, padding: '9px 14px', background: '#222222', borderBottom: '1px solid #2e2e2e', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '11px', fontWeight: 700, color: '#c5a880', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     Sugestões (Enter para a 1ª opção)
                   </span>
-                  <span style={{ fontSize: '11px', color: '#888' }}>
+                  <span style={{ fontSize: '11px', color: '#888888', fontWeight: 600 }}>
                     {sugestoesCliente.length} resultado(s)
                   </span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
                   {sugestoesCliente.map((sug, idx) => (
                     <button
                       key={`${sug.rota}-${idx}`}
                       type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleExecutarNavegacaoCliente(sug.rota);
+                      }}
                       onClick={() => handleExecutarNavegacaoCliente(sug.rota)}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '12px',
-                        padding: '10px 14px',
-                        background: idx === 0 ? 'rgba(197, 168, 128, 0.1)' : 'transparent',
+                        padding: '12px 14px',
+                        minHeight: '52px',
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        background: idx === 0 ? 'rgba(197, 168, 128, 0.12)' : 'transparent',
                         border: 'none',
-                        borderBottom: idx < sugestoesCliente.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
+                        borderBottom: idx < sugestoesCliente.length - 1 ? '1px solid rgba(255, 255, 255, 0.06)' : 'none',
                         color: '#f3f4f6',
                         textAlign: 'left',
                         cursor: 'pointer',
                         transition: 'background 0.15s ease',
+                        flexShrink: 0,
                       }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = '#282828'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = idx === 0 ? 'rgba(197, 168, 128, 0.1)' : 'transparent'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = idx === 0 ? 'rgba(197, 168, 128, 0.12)' : 'transparent'; }}
                     >
                       {sug.imagem ? (
                         <img
                           src={sug.imagem}
                           alt=""
-                          style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'cover', flexShrink: 0 }}
+                          style={{ width: '36px', height: '36px', borderRadius: '4px', objectFit: 'cover', flexShrink: 0 }}
                         />
                       ) : (
-                        <span style={{ fontSize: '16px', width: '28px', textAlign: 'center', flexShrink: 0, color: '#c5a880' }}>
+                        <span style={{ fontSize: '18px', width: '28px', textAlign: 'center', flexShrink: 0, color: '#c5a880' }}>
                           {sug.icone}
                         </span>
                       )}
@@ -492,7 +509,7 @@ function SiteHeader({ configs }) {
                 title={totalNaoLidas > 0 ? `${totalNaoLidas} nova(s) notificação(ões)` : 'Notificações'}
                 style={{ position: 'relative' }}
               >
-                <IconBell /> Notificações
+                <IconBell /> <span className="header-action-label">Notificações</span>
                 {totalNaoLidas > 0 && (
                   <span
                     style={{
@@ -668,7 +685,7 @@ function SiteHeader({ configs }) {
               className="header-action-item"
               title="Favoritos"
             >
-              <IconHeart /> Favoritos
+              <IconHeart /> <span className="header-action-label">Favoritos</span>
             </button>
             <Link
               to={isAuthenticated ? (pedidosPendentesCount > 0 ? '/minha-conta?aba=pedidos' : '/minha-conta') : '/login'}
@@ -676,7 +693,7 @@ function SiteHeader({ configs }) {
               style={{ position: 'relative' }}
               title={pedidosPendentesCount > 0 ? 'Você possui um pedido pendente aguardando pagamento!' : 'Minha conta'}
             >
-              <IconUser /> Minha conta
+              <IconUser /> <span className="header-action-label">Minha conta</span>
               {isAuthenticated && pedidosPendentesCount > 0 && (
                 <span
                   style={{
@@ -703,7 +720,7 @@ function SiteHeader({ configs }) {
               className="header-action-item"
               style={{ position: 'relative' }}
             >
-              <IconCart /> Meu carrinho
+              <IconCart /> <span className="header-action-label">Meu carrinho</span>
               {totalItens > 0 && (
                 <span
                   style={{

@@ -219,10 +219,113 @@ export function CartProvider({ children }) {
   };
 
   const clearCart = () => {
-    salvarCarrinho([]);
+    try {
+      localStorage.removeItem('@SalvSacra:carrinho');
+    } catch {}
+    setItems([]);
+    window.dispatchEvent(new Event('cartUpdated'));
   };
 
-  const openCart = () => setIsCartOpen(true);
+  // Validação em tempo real do estoque do carrinho contra o backend
+  const validarEstoqueCarrinho = useCallback(async (itensParaChecar = null) => {
+    // SEMPRE obtém a lista atual real do localStorage se itensParaChecar não for fornecido explicitamente,
+    // evitando closures antigas do React ressuscitarem itens após um clearCart()!
+    let itens = itensParaChecar;
+    if (itens === null) {
+      try {
+        itens = JSON.parse(localStorage.getItem('@SalvSacra:carrinho') || '[]');
+      } catch {
+        itens = [];
+      }
+    }
+    if (!Array.isArray(itens) || itens.length === 0) {
+      setItems((atual) => (atual.length > 0 ? [] : atual));
+      return;
+    }
+
+    try {
+      const payload = itens.map((item) => ({
+        variacao_id: item.variacaoId || null,
+        produto_id: item.produtoId || null,
+        tamanho: item.tamanho || null,
+        cor: item.cor || null,
+        quantidade: item.quantidade || 1,
+      }));
+
+      const { data } = await api.post('/carrinho/verificar-estoque', { itens: payload });
+      if (!data || !Array.isArray(data.itens)) return;
+
+      // Confere se o carrinho não foi limpo enquanto a requisição HTTP trafegava
+      const salvoAposReq = localStorage.getItem('@SalvSacra:carrinho');
+      if (!salvoAposReq || salvoAposReq === '[]') {
+        setItems([]);
+        return;
+      }
+
+      let houveAlteracao = false;
+      const atualizados = [];
+
+      itens.forEach((item, idx) => {
+        const info = data.itens[idx];
+        if (!info) {
+          atualizados.push(item);
+          return;
+        }
+
+        // Se o estoque atual é 0 ou produto não disponível, o item DEVE SER REMOVIDO DO CARRINHO!
+        if (!info.disponivel || info.estoque_atual <= 0) {
+          houveAlteracao = true;
+          return; // Remove completamente
+        }
+
+        // Se a quantidade no carrinho for maior que o estoque atual, ajusta para o limite máximo restante
+        const novaQtd = Math.min(item.quantidade, info.estoque_atual);
+        if (novaQtd !== item.quantidade || item.estoque !== info.estoque_atual) {
+          houveAlteracao = true;
+          atualizados.push({
+            ...item,
+            quantidade: novaQtd,
+            estoque: info.estoque_atual,
+            variacaoId: info.variacao_id || item.variacaoId,
+          });
+        } else {
+          atualizados.push({
+            ...item,
+            estoque: info.estoque_atual,
+            variacaoId: info.variacao_id || item.variacaoId,
+          });
+        }
+      });
+
+      if (houveAlteracao) {
+        salvarCarrinho(atualizados);
+      }
+    } catch (err) {
+      console.warn('Erro ao validar estoque do carrinho:', err);
+    }
+  }, []);
+
+  // Executa validação de estoque na inicialização, ao focar na aba e quando pedidos forem concluídos
+  useEffect(() => {
+    validarEstoqueCarrinho();
+
+    const handleFocus = () => {
+      validarEstoqueCarrinho();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('salv-pedidos-atualizados', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('salv-pedidos-atualizados', handleFocus);
+    };
+  }, [validarEstoqueCarrinho]);
+
+  const openCart = () => {
+    validarEstoqueCarrinho();
+    setIsCartOpen(true);
+  };
   const closeCart = () => setIsCartOpen(false);
 
   const fretePreco = items.length > 0 ? (selectedShipping?.preco ?? 0) : 0;
@@ -295,6 +398,7 @@ export function CartProvider({ children }) {
         removerCupom,
         descontoCupom,
         calcularDescontoCupom,
+        validarEstoqueCarrinho,
       }}
     >
       {children}

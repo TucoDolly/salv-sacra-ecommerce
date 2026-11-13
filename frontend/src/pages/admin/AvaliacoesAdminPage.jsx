@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../../services/api';
+import LoadingSpinner from '../../components/LoadingSpinner';
 import '../../styles/admin.css';
 
 export default function AvaliacoesAdminPage() {
@@ -115,7 +116,9 @@ export default function AvaliacoesAdminPage() {
       {/* Tabela */}
       <div className="admin-table-container">
         {loading ? (
-          <p style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Carregando avaliações...</p>
+          <div style={{ padding: '40px' }}>
+            <LoadingSpinner size="md" />
+          </div>
         ) : avaliacoesFiltradas.length === 0 ? (
           <p style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Nenhuma avaliação encontrada.</p>
         ) : (
