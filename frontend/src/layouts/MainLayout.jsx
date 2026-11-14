@@ -255,11 +255,25 @@ function SiteHeader({ configs }) {
     };
 
     carregarNotificacoes();
-    const interval = setInterval(carregarNotificacoes, 20000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') carregarNotificacoes();
+    }, 5000);
+    const handleStorage = (e) => {
+      if (e.key === 'salv_sync_trigger') carregarNotificacoes();
+    };
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') carregarNotificacoes();
+    };
     window.addEventListener('salv-pedidos-atualizados', carregarNotificacoes);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
     return () => {
       clearInterval(interval);
       window.removeEventListener('salv-pedidos-atualizados', carregarNotificacoes);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
     };
   }, [isAuthenticated, location.pathname]);
 

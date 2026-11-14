@@ -288,6 +288,24 @@ class RastreioService
                 Log::error("Erro ao enviar e-mail de entrega do pedido #{$pedido->id}: " . $e->getMessage());
             }
 
+            try {
+                Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\PedidoEntregueAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
+            } catch (\Throwable $e) {
+                Log::error("Erro ao enviar e-mail de entrega para admin do pedido #{$pedido->id}: " . $e->getMessage());
+            }
+
+            try {
+                NotificacaoService::notificarAdmin(
+                    'pedido',
+                    "Pedido #{$pedido->id} Entregue!",
+                    "A entrega do pedido #{$pedido->id} para " . ($pedido->user?->name ?? 'Cliente') . " foi confirmada.",
+                    "/admin/pedidos?busca={$pedido->id}",
+                    $pedido->id
+                );
+            } catch (\Throwable $e) {
+                Log::error("Erro ao criar notificação no painel admin de entrega do pedido #{$pedido->id}: " . $e->getMessage());
+            }
+
             if ($pedido->user_id) {
                 NotificacaoService::notificarCliente(
                     $pedido->user_id,
@@ -302,12 +320,12 @@ class RastreioService
     }
 
     /**
-     * Verifica e sincroniza em segundo plano throttled (permite sincronização a cada 5s ao recarregar a tela).
+     * Verifica e sincroniza em segundo plano throttled (evita sobrecarregar API externa em polling curto de 5s).
      */
     public static function sincronizarSeNecessario(bool $forcar = false): void
     {
         $ultimoSync = \Illuminate\Support\Facades\Cache::get('melhor_envio_ultimo_sync');
-        if (! $forcar && $ultimoSync && (now()->timestamp - $ultimoSync) < 5) {
+        if (! $forcar && $ultimoSync && (now()->timestamp - $ultimoSync) < 20) {
             return;
         }
         \Illuminate\Support\Facades\Cache::put('melhor_envio_ultimo_sync', now()->timestamp, 30);

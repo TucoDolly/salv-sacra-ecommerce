@@ -11,6 +11,7 @@ use App\Models\Pedido;
 use App\Services\NotificacaoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -56,32 +57,47 @@ class DevolucaoController extends Controller
         }
 
         $validated = $request->validate([
-            'tipo_solicitacao' => ['required', 'string', 'in:cupom,reembolso'],
-            'motivo'           => ['required', 'string', 'max:100'],
-            'descricao'        => ['nullable', 'string', 'max:1500'],
-            'itens'            => ['required', 'array', 'min:1'],
-            'itens.*.item_id'  => ['required'],
+            'tipo_solicitacao'   => ['required', 'string', 'in:cupom,vale_compra,reembolso'],
+            'motivo'             => ['required', 'string', 'max:100'],
+            'descricao'          => ['nullable', 'string', 'max:1500'],
+            'itens'              => ['nullable', 'array', 'min:1'],
+            'itens.*.item_id'    => ['required'],
             'itens.*.quantidade' => ['required', 'integer', 'min:1'],
-            'fotos'            => ['nullable'],
-            'fotos.*'          => ['nullable', 'file', 'image', 'max:5120'],
+            'fotos'              => ['nullable'],
+            'fotos.*'            => ['nullable', 'file', 'image', 'max:5120'],
         ]);
+
+        $valorDinheiroPedido = round(max(0.0, (float) ($pedido->valor_pago_dinheiro ?? 0)), 2);
+        $valorValePedido = round(max(0.0, (float) ($pedido->valor_vale_compra ?? 0)), 2);
+        $ehModalidadeVale = in_array($validated['tipo_solicitacao'], ['cupom', 'vale_compra'], true);
+
+        if ($validated['tipo_solicitacao'] === 'reembolso' && $valorDinheiroPedido <= 0) {
+            return response()->json([
+                'message' => 'Este pedido não possui valor pago em dinheiro (R$ 0,00) para reembolso. Apenas a restauração dos benefícios originais utilizados é aplicável.',
+            ], 422);
+        }
 
         $pedido->load('itens.variacao.produto');
 
+        $itensSolicitados = $validated['itens'] ?? $pedido->itens->map(fn ($item) => [
+            'item_id'    => $item->id,
+            'quantidade' => (int) $item->quantidade,
+        ])->values()->all();
+
         $itensDevolvidos = [];
-        $valorTotalItens = 0.0;
-        $ehTrocaCupom = $validated['tipo_solicitacao'] === 'cupom';
+        $valorBrutoDevolvido = 0.0;
 
-        foreach ($validated['itens'] as $itemSol) {
+        foreach ($itensSolicitados as $itemSol) {
             $itemDb = $pedido->itens->firstWhere('id', (int) $itemSol['item_id']);
-            if (!$itemDb) continue;
+            if (! $itemDb) {
+                continue;
+            }
 
-            $qtd = min((int) $itemSol['quantidade'], (int) $itemDb->quantidade);
-            // Em caso de troca com cupom, calcula pelo preço cheio/tabela do produto para não penalizar o cliente que usou descontos anteriores
-            $precoTabela = (float) ($itemDb->variacao?->produto?->preco_base ?: $itemDb->preco_unitario);
-            $precoUnitario = $ehTrocaCupom ? $precoTabela : (float) $itemDb->preco_unitario;
+            $qtd = max(1, min((int) $itemSol['quantidade'], (int) $itemDb->quantidade));
+            // Nunca inflar devolução com preco_base: usa estritamente o preço praticado no item do pedido
+            $precoUnitario = round((float) $itemDb->preco_unitario, 2);
             $subtotalItem = round($qtd * $precoUnitario, 2);
-            $valorTotalItens += $subtotalItem;
+            $valorBrutoDevolvido += $subtotalItem;
 
             $produtoNome = $itemDb->variacao?->produto?->nome ?? 'Camiseta Salv Sacra';
             $tamCor = trim(($itemDb->variacao?->tamanho ?? '') . ' / ' . ($itemDb->variacao?->cor ?? ''), ' /');
@@ -97,14 +113,37 @@ class DevolucaoController extends Controller
             ];
         }
 
-        // Se for troca com cupom e o cliente estiver devolvendo o pedido por completo, inclui o frete para ele recomprar sem custos
-        if ($ehTrocaCupom && count($itensDevolvidos) === $pedido->itens->count() && (float) $pedido->valor_frete > 0) {
-            $valorTotalItens += (float) $pedido->valor_frete;
-        }
-
         if (empty($itensDevolvidos)) {
             return response()->json(['message' => 'Nenhum item válido selecionado para devolução.'], 422);
         }
+
+        // Deduz proporcionalmente o desconto promocional de produto para nunca converter cupom promocional em vale-compra
+        $somaBrutaPedido = round((float) $pedido->itens->sum(fn ($it) => (float) $it->preco_unitario * (int) $it->quantidade), 2);
+        $descontoProdutos = round(max(0.0, (float) ($pedido->valor_desconto_produto ?? 0)), 2);
+        if ($descontoProdutos <= 0 && ($pedido->cupom_tipo ?? '') !== 'frete' && (float) ($pedido->valor_desconto_cupom ?? 0) > 0) {
+            $descontoProdutos = round((float) $pedido->valor_desconto_cupom, 2);
+        }
+
+        $proporcaoItens = $somaBrutaPedido > 0 ? min(1.0, $valorBrutoDevolvido / $somaBrutaPedido) : 1.0;
+        $descontoProporcional = round($descontoProdutos * $proporcaoItens, 2);
+        $valorLiquidoItens = max(0.0, round($valorBrutoDevolvido - $descontoProporcional, 2));
+
+        // Apenas o frete efetivamente pago pelo cliente (valor_frete_pago) compõe o cálculo de restituição
+        $fretePago = round(max(0.0, (float) ($pedido->valor_frete_pago ?? 0)), 2);
+        $valorTotalEstorno = round($valorLiquidoItens + $fretePago, 2);
+
+        if ($ehModalidadeVale) {
+            // Para vale-compra, o teto máximo restituível é valor_pago_dinheiro + valor_vale_compra (excluindo descontos promocionais)
+            $tetoVale = round($valorDinheiroPedido + $valorValePedido, 2);
+            if ($tetoVale > 0 || $valorDinheiroPedido > 0 || $valorValePedido > 0) {
+                $valorTotalEstorno = min($valorTotalEstorno, $tetoVale);
+            }
+        } else {
+            // Para reembolso em dinheiro, o teto é exclusivamente o valor efetivamente pago em dinheiro
+            $valorTotalEstorno = min($valorTotalEstorno, $valorDinheiroPedido);
+        }
+
+        $valorTotalItens = round(max(0.0, $valorTotalEstorno), 2);
 
         // Upload de fotos anexadas pelo cliente (se houver)
         $fotosUrls = [];
@@ -132,10 +171,11 @@ class DevolucaoController extends Controller
         ]);
 
         // Notificações no sistema (Admin e Cliente)
+        $rotuloModalidade = in_array($devolucao->tipo_solicitacao, ['cupom', 'vale_compra'], true) ? 'Vale-Compras' : 'Estorno';
         NotificacaoService::notificarAdmin(
             'devolucao',
             "Nova Devolução Solicitada · Pedido #{$pedido->id}",
-            "O cliente {$user->name} solicitou devolução/troca no valor de R$ " . number_format($devolucao->valor_estorno, 2, ',', '.') . " (" . ($devolucao->tipo_solicitacao === 'cupom' ? 'Vale-Compras' : 'Estorno') . "). Motivo: {$devolucao->motivo}.",
+            "O cliente {$user->name} solicitou devolução/troca no valor de R$ " . number_format($devolucao->valor_estorno, 2, ',', '.') . " ({$rotuloModalidade}). Motivo: {$devolucao->motivo}.",
             "/admin/devolucoes",
             $devolucao->id
         );
@@ -317,40 +357,162 @@ class DevolucaoController extends Controller
      */
     public function adminConcluir(Request $request, Devolucao $devolucao): JsonResponse
     {
-        $cupomCodigo = null;
+        $resultado = DB::transaction(function () use ($devolucao) {
+            $devolucaoLocked = Devolucao::lockForUpdate()->findOrFail($devolucao->id);
 
-        if ($devolucao->tipo_solicitacao === 'cupom' && empty($devolucao->cupom_gerado_codigo)) {
-            $cupomCodigo = 'TROCA-' . strtoupper(Str::random(6));
-
-            Cupom::create([
-                'codigo'         => $cupomCodigo,
-                'descricao'      => "Vale-Compras referente à Devolução/Troca do Pedido #{$devolucao->pedido_id}",
-                'percentual'     => 100,
-                'valor_fixo'     => $devolucao->valor_estorno,
-                'tipo'           => 'troca',
-                'todos_produtos' => true,
-                'ativo'          => true,
-            ]);
-        } elseif ($devolucao->tipo_solicitacao === 'reembolso' && $devolucao->pedido) {
-            // Se for reembolso financeiro, estorna o pagamento diretamente no gateway Mercado Pago
-            try {
-                app(PedidoController::class)->estornarPagamentoMercadoPago($devolucao->pedido);
-            } catch (\Throwable $e) {
-                Log::warning("Erro ao solicitar estorno MP na conclusão da devolução #{$devolucao->id}: " . $e->getMessage());
+            if ($devolucaoLocked->status === 'Concluida') {
+                return [
+                    'erro_status' => 422,
+                    'payload'     => [
+                        'message'      => 'Esta devolução já foi concluída anteriormente. Nenhuma nova restituição foi gerada.',
+                        'ja_concluida' => true,
+                        'devolucao'    => $devolucaoLocked,
+                    ],
+                ];
             }
-        }
 
-        // Restaura os itens devolvidos ao estoque
-        if (!empty($devolucao->itens_devolvidos)) {
-            foreach ($devolucao->itens_devolvidos as $itemDev) {
-                if (!empty($itemDev['item_pedido_id'])) {
-                    $itemPedido = \App\Models\ItemPedido::find($itemDev['item_pedido_id']);
-                    if ($itemPedido && $itemPedido->variacao) {
-                        $qtd = (int) ($itemDev['quantidade'] ?? 1);
-                        $itemPedido->variacao->increment('estoque', $qtd);
+            if ($devolucaoLocked->status === 'Recusada') {
+                return [
+                    'erro_status' => 422,
+                    'payload'     => [
+                        'message' => 'Não é possível concluir uma devolução recusada.',
+                    ],
+                ];
+            }
+
+            $pedido = $devolucaoLocked->pedido_id
+                ? Pedido::lockForUpdate()->find($devolucaoLocked->pedido_id)
+                : null;
+
+            $ehModalidadeVale = in_array($devolucaoLocked->tipo_solicitacao, ['cupom', 'vale_compra'], true);
+            $pedidoController = app(PedidoController::class);
+
+            $cupomCodigo = null;
+            $novoVale = null;
+            $infoEstorno = null;
+            $valorReembolsado = 0.0;
+            $resumoBeneficios = [
+                'vale_restaurado'  => 0.0,
+                'cupom_restaurado' => false,
+            ];
+
+            if ($pedido) {
+                $valorDinheiroPedido = round(max(0.0, (float) ($pedido->valor_pago_dinheiro ?? 0)), 2);
+                $valorValePedido = round(max(0.0, (float) ($pedido->valor_vale_compra ?? 0)), 2);
+
+                if ($ehModalidadeVale) {
+                    if ($valorDinheiroPedido <= 0) {
+                        // Cenário B (100% vale) ou cupom 100%: restaura benefícios originais sem emitir novo vale duplicado
+                        $resumoBeneficios = $pedidoController->restaurarBeneficiosPedido(
+                            $pedido,
+                            "Conclusão da Devolução #{$devolucaoLocked->id} (restauração de benefícios originais)",
+                            true,
+                            true
+                        );
+                    } else {
+                        // Cenários A, C, D, E em vale-compra: incorpora vale consumido + dinheiro pago no novo vale e restaura cupom promocional
+                        $resumoBeneficios = $pedidoController->restaurarBeneficiosPedido(
+                            $pedido,
+                            "Conclusão da Devolução #{$devolucaoLocked->id} (convertida em vale-compra)",
+                            false,
+                            true
+                        );
+                        $tetoVale = round($valorDinheiroPedido + $valorValePedido, 2);
+                        $valorNovoVale = round(min((float) $devolucaoLocked->valor_estorno, $tetoVale), 2);
+                        if ($valorNovoVale > 0 && empty($devolucaoLocked->cupom_gerado_codigo)) {
+                            $novoVale = $pedidoController->emitirValeCompraRestituicao(
+                                $pedido,
+                                $valorNovoVale,
+                                "Vale-Compras referente à Devolução/Troca #{$devolucaoLocked->id} (Pedido #{$pedido->id}).",
+                                $devolucaoLocked->id,
+                                'TROCA-'
+                            );
+                            $cupomCodigo = $novoVale->codigo;
+                        }
+                    }
+                } else {
+                    // Modalidade Reembolso: restaura vale original + cupom promocional + estorna o valor efetivamente pago em dinheiro
+                    $resumoBeneficios = $pedidoController->restaurarBeneficiosPedido(
+                        $pedido,
+                        "Conclusão da Devolução #{$devolucaoLocked->id} (reembolso)",
+                        true,
+                        true
+                    );
+
+                    if ($valorDinheiroPedido > 0) {
+                        $valorReembolsar = round(min((float) $devolucaoLocked->valor_estorno, $valorDinheiroPedido), 2);
+                        if ($valorReembolsar > 0) {
+                            try {
+                                $infoEstorno = $pedidoController->estornarPagamentoMercadoPago($pedido, $valorReembolsar);
+                            } catch (\Throwable $e) {
+                                Log::warning("Erro ao solicitar estorno MP na conclusão da devolução #{$devolucaoLocked->id}: " . $e->getMessage());
+                            }
+                            $valorReembolsado = $valorReembolsar;
+                        }
+                    }
+                }
+            } elseif ($ehModalidadeVale && empty($devolucaoLocked->cupom_gerado_codigo)) {
+                do {
+                    $cupomCodigo = 'TROCA-' . strtoupper(Str::random(6));
+                } while (Cupom::where('codigo', $cupomCodigo)->exists());
+
+                $novoVale = Cupom::create([
+                    'codigo'               => $cupomCodigo,
+                    'descricao'            => "Vale-Compras referente à Devolução/Troca do Pedido #{$devolucaoLocked->pedido_id}",
+                    'percentual'           => 0,
+                    'valor_fixo'           => $devolucaoLocked->valor_estorno,
+                    'valor_inicial'        => $devolucaoLocked->valor_estorno,
+                    'saldo_atual'          => $devolucaoLocked->valor_estorno,
+                    'tipo'                 => Cupom::TIPO_VALE_COMPRA,
+                    'todos_produtos'       => true,
+                    'ativo'                => true,
+                    'status'               => Cupom::STATUS_ATIVO,
+                    'validade'             => now()->addYear(),
+                    'condicoes_utilizacao' => 'Crédito válido para futuras compras na loja.',
+                    'user_id'              => $devolucaoLocked->user_id,
+                    'pedido_origem_id'     => $devolucaoLocked->pedido_id,
+                    'devolucao_id'         => $devolucaoLocked->id,
+                ]);
+            }
+
+            // Restaura os itens devolvidos ao estoque
+            if (! empty($devolucaoLocked->itens_devolvidos)) {
+                foreach ($devolucaoLocked->itens_devolvidos as $itemDev) {
+                    if (! empty($itemDev['item_pedido_id'])) {
+                        $itemPedido = \App\Models\ItemPedido::find($itemDev['item_pedido_id']);
+                        if ($itemPedido && $itemPedido->variacao) {
+                            $qtd = (int) ($itemDev['quantidade'] ?? 1);
+                            $itemPedido->variacao->increment('estoque', $qtd);
+                        }
                     }
                 }
             }
+
+            $devolucaoLocked->update([
+                'status'              => 'Concluida',
+                'cupom_gerado_codigo' => $cupomCodigo ?: $devolucaoLocked->cupom_gerado_codigo,
+                'data_conclusao'      => now(),
+            ]);
+
+            return [
+                'erro_status'                => null,
+                'devolucao'                  => $devolucaoLocked->fresh(),
+                'cupom_codigo'               => $cupomCodigo,
+                'novo_vale_compra'           => $novoVale,
+                'valor_reembolsado_dinheiro' => $valorReembolsado,
+                'resumo_beneficios'          => $resumoBeneficios,
+                'estorno'                    => $infoEstorno,
+            ];
+        });
+
+        if (! empty($resultado['erro_status'])) {
+            return response()->json($resultado['payload'], $resultado['erro_status']);
+        }
+
+        $devolucaoAtualizada = $resultado['devolucao'];
+        $cupomCodigo = $resultado['cupom_codigo'];
+
+        if (! empty($devolucaoAtualizada->itens_devolvidos)) {
             try {
                 NotificacaoService::sincronizarEstoqueBaixo();
             } catch (\Throwable $e) {
@@ -358,39 +520,42 @@ class DevolucaoController extends Controller
             }
         }
 
-        $devolucao->update([
-            'status'              => 'Concluida',
-            'cupom_gerado_codigo' => $cupomCodigo ?: $devolucao->cupom_gerado_codigo,
-            'data_conclusao'      => now(),
-        ]);
-
         // Notificação para o cliente
-        $msgConclusao = $devolucao->tipo_solicitacao === 'cupom' && $cupomCodigo
-            ? "Sua devolução foi concluída com sucesso! Seu Vale-Compras no valor de R$ " . number_format($devolucao->valor_estorno, 2, ',', '.') . " foi gerado ({$cupomCodigo}). Resgate em sua próxima compra!"
-            : "Sua devolução foi concluída! O estorno de R$ " . number_format($devolucao->valor_estorno, 2, ',', '.') . " foi solicitado na sua forma de pagamento.";
+        if ($cupomCodigo) {
+            $msgConclusao = "Sua devolução foi concluída com sucesso! Seu Vale-Compras no valor de R$ " . number_format((float) ($resultado['novo_vale_compra']?->valor_inicial ?? $devolucaoAtualizada->valor_estorno), 2, ',', '.') . " foi gerado ({$cupomCodigo}). Resgate em sua próxima compra!";
+        } elseif (($resultado['valor_reembolsado_dinheiro'] ?? 0) <= 0 && ($resultado['resumo_beneficios']['vale_restaurado'] ?? 0) > 0) {
+            $msgConclusao = "Sua devolução foi concluída! O saldo de R$ " . number_format((float) $resultado['resumo_beneficios']['vale_restaurado'], 2, ',', '.') . " utilizado no seu vale-compra original foi restaurado.";
+        } else {
+            $msgConclusao = "Sua devolução foi concluída! O estorno de R$ " . number_format((float) ($resultado['valor_reembolsado_dinheiro'] ?? $devolucaoAtualizada->valor_estorno), 2, ',', '.') . " foi solicitado na sua forma de pagamento.";
+        }
 
         NotificacaoService::notificarCliente(
-            $devolucao->user_id,
+            $devolucaoAtualizada->user_id,
             'devolucao',
-            "Devolução Concluída · Pedido #{$devolucao->pedido_id}",
+            "Devolução Concluída · Pedido #{$devolucaoAtualizada->pedido_id}",
             $msgConclusao,
-            "/minha-conta?aba=pedidos&pedido={$devolucao->pedido_id}",
-            $devolucao->id
+            "/minha-conta?aba=pedidos&pedido={$devolucaoAtualizada->pedido_id}",
+            $devolucaoAtualizada->id
         );
 
         // Dispara e-mail avisando conclusão (e entregando o cupom ou comprovando estorno)
         try {
-            $destinatario = $devolucao->user?->email ?: $devolucao->pedido?->email_contato;
+            $destinatario = $devolucaoAtualizada->user?->email ?: $devolucaoAtualizada->pedido?->email_contato;
             if ($destinatario) {
-                Mail::to($destinatario)->send(new DevolucaoConcluidaMail($devolucao));
+                Mail::to($destinatario)->send(new DevolucaoConcluidaMail($devolucaoAtualizada));
             }
         } catch (\Throwable $e) {
-            Log::warning("Falha ao enviar e-mail de devolução concluída (#{$devolucao->id}): " . $e->getMessage());
+            Log::warning("Falha ao enviar e-mail de devolução concluída (#{$devolucaoAtualizada->id}): " . $e->getMessage());
         }
 
         return response()->json([
-            'message'   => 'Processo de devolução concluído com sucesso!',
-            'devolucao' => $devolucao->fresh(),
+            'message'                    => 'Processo de devolução concluído com sucesso!',
+            'devolucao'                  => $devolucaoAtualizada,
+            'novo_vale_compra'           => $resultado['novo_vale_compra'],
+            'valor_reembolsado_dinheiro' => $resultado['valor_reembolsado_dinheiro'],
+            'valor_vale_restaurado'      => $resultado['resumo_beneficios']['vale_restaurado'] ?? 0.0,
+            'cupom_restaurado'           => $resultado['resumo_beneficios']['cupom_restaurado'] ?? false,
+            'estorno'                    => $resultado['estorno'],
         ]);
     }
 }

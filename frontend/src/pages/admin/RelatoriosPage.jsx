@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getRelatoriosAdmin } from '../../services/adminRelatorioService';
 import '../../styles/admin.css';
 
@@ -22,31 +22,61 @@ export default function RelatoriosPage() {
   const [loading, setLoading] = useState(true);
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
+  const filtrosRef = useRef({ periodo, modoCustom, dataInicio, dataFim });
+  filtrosRef.current = { periodo, modoCustom, dataInicio, dataFim };
 
-  const carregarRelatorio = async () => {
-    setLoading(true);
-    setErro('');
+  const carregarRelatorio = async (silencioso = false) => {
+    if (!silencioso) {
+      setLoading(true);
+      setErro('');
+    }
     try {
+      const atual = filtrosRef.current;
       const params = {};
-      if (modoCustom) {
+      if (atual.modoCustom) {
         params.periodo = 'custom';
-        if (dataInicio) params.data_inicio = dataInicio;
-        if (dataFim) params.data_fim = dataFim;
+        if (atual.dataInicio) params.data_inicio = atual.dataInicio;
+        if (atual.dataFim) params.data_fim = atual.dataFim;
       } else {
-        params.periodo = periodo;
+        params.periodo = atual.periodo;
       }
 
       const { data } = await getRelatoriosAdmin(params);
       setDados(data);
     } catch {
-      setErro('Não foi possível carregar os relatórios.');
+      if (!silencioso) setErro('Não foi possível carregar os relatórios.');
     } finally {
-      setLoading(false);
+      if (!silencioso) setLoading(false);
     }
   };
 
   useEffect(() => {
     carregarRelatorio();
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') carregarRelatorio(true);
+    }, 5000);
+
+    const handleSync = () => carregarRelatorio(true);
+    const handleStorage = (e) => {
+      if (e.key === 'salv_sync_trigger') carregarRelatorio(true);
+    };
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') carregarRelatorio(true);
+    };
+
+    window.addEventListener('salv-pedidos-atualizados', handleSync);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('salv-pedidos-atualizados', handleSync);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
   }, [periodo]);
 
   const aplicarFiltroCustomizado = (e) => {

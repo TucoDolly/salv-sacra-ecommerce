@@ -12,3 +12,4 @@ export const consultarRastreioAdmin = (id) => api.post(`/admin/pedidos/${id}/ras
 export const sincronizarTodosRastreiosAdmin = () => api.post('/admin/pedidos/rastreio/sincronizar-todos');
 export const excluirPedidoAdmin = (id) => api.delete(`/pedidos/${id}`);
 export const limparFinalizadosAdmin = () => api.delete('/admin/pedidos/limpar-finalizados');
+export const bloquearValesPedidoAdmin = (pedidoId, dados) => api.post(`/admin/pedidos/${pedidoId}/bloquear-vales`, dados);

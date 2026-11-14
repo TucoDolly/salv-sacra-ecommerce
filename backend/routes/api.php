@@ -50,8 +50,9 @@ Route::post('contato', [\App\Http\Controllers\ContatoController::class, 'enviar'
 Route::post('webhooks/mercadopago',  [PedidoController::class, 'webhookMercadoPago']);
 Route::post('webhooks/melhor-envio', [PedidoController::class, 'webhookMelhorEnvio']);
 
-// Cupons ativos disponíveis para o cliente
+// Cupons ativos disponíveis e validação combinada para o cliente
 Route::get('cupons/disponiveis', [\App\Http\Controllers\CupomController::class, 'disponiveis']);
+Route::post('cupons/validar',    [\App\Http\Controllers\CupomController::class, 'validarCheckout']);
 
 // Validação em tempo real do estoque dos itens no carrinho do cliente
 Route::post('carrinho/verificar-estoque', [\App\Http\Controllers\ProdutoController::class, 'verificarEstoqueCarrinho']);
@@ -66,9 +67,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me',      [AuthController::class, 'me']);
 
     // Pedidos / Checkout (somente logado)
-    Route::post('pedidos',                             [PedidoController::class, 'store']);
-    Route::get('pedidos/{pedido}',                     [PedidoController::class, 'show']);
-    Route::post('pedidos/{pedido}/confirmar-pagamento',[PedidoController::class, 'confirmarPagamento']);
+    Route::post('pedidos',                              [PedidoController::class, 'store']);
+    Route::get('pedidos/{pedido}/opcoes-restituicao',   [PedidoController::class, 'opcoesRestituicao']);
+    Route::get('pedidos/{pedido}',                      [PedidoController::class, 'show']);
+    Route::post('pedidos/{pedido}/confirmar-pagamento', [PedidoController::class, 'confirmarPagamento']);
     Route::post('pedidos/{pedido}/cancelar',           [PedidoController::class, 'cancelarPeloCliente']);
     Route::post('pedidos/{pedido}/devolucoes',         [\App\Http\Controllers\DevolucaoController::class, 'solicitar']);
     Route::delete('pedidos/{pedido}',                  [PedidoController::class, 'destroy']);
@@ -104,6 +106,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('favoritos',            [\App\Http\Controllers\ContaController::class, 'favoritos']);
         Route::post('favoritos/sincronizar',[\App\Http\Controllers\ContaController::class, 'sincronizarFavoritos']);
         Route::post('favoritos/{produto}', [\App\Http\Controllers\ContaController::class, 'toggleFavorito']);
+        Route::get('vales-compra',         [\App\Http\Controllers\CupomController::class, 'meusVales']);
         Route::delete('excluir',           [\App\Http\Controllers\ContaController::class, 'excluirConta']);
     });
 
@@ -142,6 +145,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('admin/pedidos/{pedido}/melhor-envio/enviar', [PedidoController::class, 'enviarMelhorEnvio']);
         Route::post('admin/pedidos/{pedido}/rastreio/consultar',  [PedidoController::class, 'consultarRastreio']);
         Route::post('admin/pedidos/rastreio/sincronizar-todos',   [PedidoController::class, 'sincronizarTodosRastreios']);
+        Route::post('admin/pedidos/{pedido}/bloquear-vales',      [\App\Http\Controllers\CupomController::class, 'bloquearPorPedidoOrigem']);
         Route::delete('admin/pedidos/limpar-finalizados',         [PedidoController::class, 'limparFinalizados']);
 
         // ── Gestão de Devoluções & Trocas (Administração) ─────────────────
@@ -159,11 +163,27 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('admin/notificacoes/limpar-todas',       [\App\Http\Controllers\NotificacaoController::class, 'limparTodasAdmin']);
         Route::delete('admin/notificacoes/{notificacao}',     [\App\Http\Controllers\NotificacaoController::class, 'destroyAdmin']);
 
-        // ── Cupons de desconto (Administração) ────────────────────────────
-        Route::get('admin/cupons',            [\App\Http\Controllers\CupomController::class, 'index']);
-        Route::post('admin/cupons',           [\App\Http\Controllers\CupomController::class, 'store']);
-        Route::put('admin/cupons/{cupom}',    [\App\Http\Controllers\CupomController::class, 'update']);
-        Route::delete('admin/cupons/{cupom}', [\App\Http\Controllers\CupomController::class, 'destroy']);
+        // ── Cupons promocionais e Vales-Compra (Administração) ───────────
+        Route::get('admin/cupons',                      [\App\Http\Controllers\CupomController::class, 'index']);
+        Route::get('admin/cupons/promocionais',         [\App\Http\Controllers\CupomController::class, 'indexPromocionais']);
+        Route::get('admin/cupons/{cupom}',              [\App\Http\Controllers\CupomController::class, 'show']);
+        Route::get('admin/cupons/{cupom}/historico',    [\App\Http\Controllers\CupomController::class, 'historico']);
+        Route::post('admin/cupons',                     [\App\Http\Controllers\CupomController::class, 'store']);
+        Route::put('admin/cupons/{cupom}',              [\App\Http\Controllers\CupomController::class, 'update']);
+        Route::delete('admin/cupons/{cupom}',           [\App\Http\Controllers\CupomController::class, 'destroy']);
+        Route::post('admin/cupons/{cupom}/bloquear',    [\App\Http\Controllers\CupomController::class, 'bloquear']);
+        Route::patch('admin/cupons/{cupom}/bloquear',   [\App\Http\Controllers\CupomController::class, 'bloquear']);
+        Route::post('admin/cupons/{cupom}/revogar',     [\App\Http\Controllers\CupomController::class, 'revogar']);
+        Route::post('admin/cupons/{cupom}/desbloquear', [\App\Http\Controllers\CupomController::class, 'desbloquear']);
+        Route::patch('admin/cupons/{cupom}/desbloquear',[\App\Http\Controllers\CupomController::class, 'desbloquear']);
+
+        Route::get('admin/vales-compra',                      [\App\Http\Controllers\CupomController::class, 'indexValesCompra']);
+        Route::post('admin/vales-compra',                     [\App\Http\Controllers\CupomController::class, 'storeValeCompra']);
+        Route::get('admin/vales-compra/{cupom}',              [\App\Http\Controllers\CupomController::class, 'show']);
+        Route::put('admin/vales-compra/{cupom}',              [\App\Http\Controllers\CupomController::class, 'update']);
+        Route::post('admin/vales-compra/{cupom}/bloquear',    [\App\Http\Controllers\CupomController::class, 'bloquear']);
+        Route::post('admin/vales-compra/{cupom}/revogar',     [\App\Http\Controllers\CupomController::class, 'revogar']);
+        Route::post('admin/vales-compra/{cupom}/desbloquear', [\App\Http\Controllers\CupomController::class, 'desbloquear']);
 
         // ── Gestão de Estoque Rápida (Administração) ─────────────────────
         Route::get('admin/estoque',                      [\App\Http\Controllers\EstoqueController::class, 'index']);

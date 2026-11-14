@@ -86,8 +86,7 @@ export default function AdminDashboard() {
 
   const [loading, setLoading] = useState(!data);
 
-  // Busca os dados do dashboard uma única vez ao montar (traz 7d e 30d juntos)
-  useEffect(() => {
+  const carregarDashboard = () => {
     api.get('/admin/dashboard')
       .then((res) => {
         if (res.data) {
@@ -99,6 +98,36 @@ export default function AdminDashboard() {
         console.error('Erro ao buscar dashboard:', err);
       })
       .finally(() => setLoading(false));
+  };
+
+  // Busca ao montar e sincroniza automaticamente a cada 5s (quando visível) e entre abas
+  useEffect(() => {
+    carregarDashboard();
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') carregarDashboard();
+    }, 5000);
+
+    const handleSync = () => carregarDashboard();
+    const handleStorage = (e) => {
+      if (e.key === 'salv_sync_trigger') carregarDashboard();
+    };
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') carregarDashboard();
+    };
+
+    window.addEventListener('salv-pedidos-atualizados', handleSync);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('salv-pedidos-atualizados', handleSync);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
   }, []);
 
   const formatBRL = (val) =>

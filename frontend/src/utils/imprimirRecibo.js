@@ -55,8 +55,8 @@ export function imprimirReciboPedido(pedido) {
 
   const janela = window.open('', '_blank', 'width=850,height=900');
   if (!janela) {
-    alert('Por favor, permita pop-ups no seu navegador para imprimir o comprovante.');
-    return;
+    console.warn('Pop-up de impressão bloqueado pelo navegador.');
+    return false;
   }
 
   const html = `<!DOCTYPE html>

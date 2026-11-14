@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Configuracao;
+use App\Models\Cupom;
 use App\Models\ItemPedido;
 use App\Models\Pedido;
 use App\Models\Variacao;
@@ -10,6 +11,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use App\Services\RastreioService;
 use Carbon\Carbon;
@@ -536,12 +539,19 @@ class PedidoController extends Controller
             'bairro'             => ['required', 'string', 'max:150'],
             'cidade'             => ['required', 'string', 'max:150'],
             'estado'             => ['required', 'string', 'max:2'],
-            'tipo_frete'         => ['nullable', 'string', 'max:100'],
-            'valor_frete'        => ['required', 'numeric', 'min:0'],
-            'metodo_pagamento'   => ['required', 'in:cartao,pix,cartao_credito,cartao_debito'],
-            'observacoes'        => ['nullable', 'string'],
-            'cupom_codigo'       => ['nullable', 'string', 'max:50'],
-            'cartao_dados'       => ['nullable', 'array'],
+            'tipo_frete'           => ['nullable', 'string', 'max:100'],
+            'valor_frete'          => ['required', 'numeric', 'min:0'],
+            'metodo_pagamento'     => ['required', 'in:cartao,pix,cartao_credito,cartao_debito,boleto,vale_compra'],
+            'observacoes'          => ['nullable', 'string'],
+            'cupom_codigo'         => ['nullable', 'string', 'max:50'],
+            'vale_compra_codigo'   => ['nullable', 'string', 'max:50'],
+            'codigos'              => ['nullable', 'array'],
+            'codigos.*'            => ['string', 'max:50'],
+            'codigos_beneficios'   => ['nullable', 'array'],
+            'codigos_beneficios.*' => ['string', 'max:50'],
+            'cupons'               => ['nullable', 'array'],
+            'cupons.*'             => ['string', 'max:50'],
+            'cartao_dados'         => ['nullable', 'array'],
             'salvar_cartao'      => ['nullable', 'boolean'],
             'itens'              => ['required', 'array', 'min:1'],
             'itens.*.variacao_id'=> ['nullable', 'integer', 'exists:variacaos,id'],
@@ -557,9 +567,14 @@ class PedidoController extends Controller
         // 1. Cancela automaticamente pedidos pendentes que já expiraram (mais de 30 minutos)
         $this->cancelarPedidosPendentesExpirados($userId);
 
-        // 2. Verifica se o cliente ainda possui um pedido pendente em aberto (dentro do prazo de 30 min)
+        // 2. Verifica se o cliente ainda possui um pedido pendente em aberto via PIX (dentro do prazo de 30 min)
         $pedidoPendenteAtivo = Pedido::where('user_id', $userId)
             ->where('status', 'Pendente')
+            ->where(function ($q) {
+                $q->where('metodo_pagamento', 'pix')
+                  ->orWhereNull('metodo_pagamento')
+                  ->orWhere('metodo_pagamento', 'not like', '%cartao%');
+            })
             ->latest('id')
             ->first();
 
@@ -583,51 +598,94 @@ class PedidoController extends Controller
         }
 
         $pedido = DB::transaction(function () use ($validated, $userId) {
-            $subtotal = collect($validated['itens'])->sum(function ($item) {
-                return $item['preco'] * $item['quantidade'];
-            });
+            $codigosExtras = array_merge(
+                $validated['codigos'] ?? [],
+                $validated['codigos_beneficios'] ?? [],
+                $validated['cupons'] ?? []
+            );
 
-            $valorTotal = $subtotal + $validated['valor_frete'];
+            $beneficios = CupomController::resolverBeneficiosCheckout(
+                [
+                    'cupom_codigo'       => $validated['cupom_codigo'] ?? null,
+                    'vale_compra_codigo' => $validated['vale_compra_codigo'] ?? null,
+                    'codigos'            => $codigosExtras,
+                ],
+                $validated['itens'],
+                (float) $validated['valor_frete'],
+                $userId,
+                true
+            );
 
-            // Cupom de desconto (recalculado no servidor para evitar fraude)
-            $cupomCodigo = null;
-            $descontoCupom = 0.0;
-            if (! empty($validated['cupom_codigo'])) {
-                $cupom = \App\Models\Cupom::where('codigo', strtoupper(trim($validated['cupom_codigo'])))
-                    ->where('ativo', true)->first();
-                if ($cupom) {
-                    $descontoCupom = $cupom->calcularDesconto($validated['itens'], (float) $validated['valor_frete']);
-                    if ($descontoCupom > 0) {
-                        $cupomCodigo = $cupom->codigo;
-                        $valorTotal = max(0, $valorTotal - $descontoCupom);
-                    }
-                }
-            }
+            /** @var Cupom|null $cupomPromocional */
+            $cupomPromocional = $beneficios['cupom'];
+            /** @var Cupom|null $valeCompra */
+            $valeCompra = $beneficios['vale_compra'];
 
-            $ehCartao = in_array($validated['metodo_pagamento'], ['cartao', 'cartao_credito', 'cartao_debito'], true);
-            $statusInicial = $ehCartao ? 'Pago' : 'Pendente';
+            $descontoCupom = $beneficios['valor_desconto_cupom'];
+            $descontoProduto = $beneficios['valor_desconto_produto'];
+            $descontoFrete = $beneficios['valor_desconto_frete'];
+            $valorFreteOriginal = $beneficios['valor_frete_original'];
+            $valorFretePago = $beneficios['valor_frete_pago'];
+            $valorValeCompra = $beneficios['valor_vale_compra'];
+            $valorPagoDinheiro = $beneficios['valor_pago_dinheiro'];
+            $valorTotal = $valorPagoDinheiro;
+
+            $cobertoIntegralmente = $valorPagoDinheiro <= 0;
+            $ehCartao = ! $cobertoIntegralmente && in_array($validated['metodo_pagamento'], ['cartao', 'cartao_credito', 'cartao_debito'], true);
+            $statusInicial = ($ehCartao || $cobertoIntegralmente) ? 'Pago' : 'Pendente';
+            $pagamentoIdInicial = $cobertoIntegralmente
+                ? 'VALE-' . ($valeCompra?->codigo ?? ($cupomPromocional?->codigo ?? 'INTEGRAL'))
+                : null;
+            $metodoPagamentoFinal = $cobertoIntegralmente && $valeCompra && $validated['metodo_pagamento'] === 'vale_compra'
+                ? 'vale_compra'
+                : $validated['metodo_pagamento'];
+            $numParcelas = $ehCartao
+                ? ($validated['metodo_pagamento'] === 'cartao_debito' ? 1 : max(1, (int) ($validated['cartao_dados']['parcelas'] ?? 1)))
+                : null;
+            $valorParcela = ($numParcelas && $valorPagoDinheiro > 0) ? round($valorPagoDinheiro / $numParcelas, 2) : null;
 
             $pedido = Pedido::create([
-                'user_id'          => $userId,
-                'email_contato'    => $validated['email_contato'],
-                'telefone'         => $validated['telefone'],
-                'data_pedido'      => now(),
-                'status'           => $statusInicial,
-                'metodo_pagamento' => $validated['metodo_pagamento'],
-                'tipo_frete'       => $validated['tipo_frete'] ?? 'SEDEX',
-                'observacoes'      => $validated['observacoes'],
-                'cep'              => $validated['cep'],
-                'logradouro'       => $validated['logradouro'],
-                'numero'           => $validated['numero'],
-                'complemento'      => $validated['complemento'],
-                'bairro'           => $validated['bairro'],
-                'cidade'           => $validated['cidade'],
-                'estado'           => strtoupper($validated['estado']),
-                'valor_frete'      => $validated['valor_frete'],
-                'valor_total'      => $valorTotal,
-                'cupom_codigo'     => $cupomCodigo,
-                'valor_desconto_cupom' => $descontoCupom,
+                'user_id'                => $userId,
+                'email_contato'          => $validated['email_contato'],
+                'telefone'               => $validated['telefone'] ?? null,
+                'data_pedido'            => now(),
+                'status'                 => $statusInicial,
+                'metodo_pagamento'       => $metodoPagamentoFinal,
+                'pagamento_id'           => $pagamentoIdInicial,
+                'cartao_parcelas'        => $numParcelas,
+                'cartao_valor_parcela'   => $valorParcela,
+                'tipo_frete'             => $validated['tipo_frete'] ?? 'SEDEX',
+                'observacoes'            => $validated['observacoes'] ?? null,
+                'cep'                    => $validated['cep'],
+                'logradouro'             => $validated['logradouro'],
+                'numero'                 => $validated['numero'],
+                'complemento'            => $validated['complemento'] ?? null,
+                'bairro'                 => $validated['bairro'],
+                'cidade'                 => $validated['cidade'],
+                'estado'                 => strtoupper($validated['estado']),
+                'valor_frete'            => $valorFreteOriginal,
+                'valor_frete_pago'       => $valorFretePago,
+                'valor_total'            => $valorTotal,
+                'valor_pago_dinheiro'    => $valorPagoDinheiro,
+                'cupom_id'               => $cupomPromocional?->id,
+                'cupom_codigo'           => $cupomPromocional?->codigo,
+                'cupom_tipo'             => $cupomPromocional?->tipo,
+                'valor_desconto_cupom'   => $descontoCupom,
+                'valor_desconto_produto' => $descontoProduto,
+                'valor_desconto_frete'   => $descontoFrete,
+                'vale_compra_id'         => $valeCompra?->id,
+                'vale_compra_codigo'     => $valeCompra?->codigo,
+                'valor_vale_compra'      => $valorValeCompra,
+                'beneficios_restaurados' => false,
             ]);
+
+            if ($cupomPromocional && $descontoCupom > 0) {
+                $cupomPromocional->consumirNoPedido($descontoCupom, $pedido->id, $userId);
+            }
+
+            if ($valeCompra && $valorValeCompra > 0) {
+                $valeCompra->consumirNoPedido($valorValeCompra, $pedido->id, $userId);
+            }
 
             foreach ($validated['itens'] as $item) {
                 $variacaoId = $item['variacao_id'] ?? null;
@@ -676,47 +734,52 @@ class PedidoController extends Controller
         // Sincroniza notificações de estoque baixo para o admin caso algum item tenha ficado crítico (<= 3)
         \App\Services\NotificacaoService::sincronizarEstoqueBaixo();
 
-        // Se o pagamento for PIX, gera cobrança via Mercado Pago (ou BRCode oficial EMVCo)
-        if ($pedido->metodo_pagamento === 'pix') {
-            $this->processarPagamentoPix($pedido, $request->user());
-            $pedido->refresh();
-        } elseif (in_array($pedido->metodo_pagamento, ['cartao', 'cartao_credito', 'cartao_debito'], true)) {
-            $dadosCartao = $request->input('cartao_dados', []);
-            if (is_array($dadosCartao) && ! empty($dadosCartao)) {
-                $resultadoCartao = $this->processarPagamentoCartao($pedido, $dadosCartao, $request->user());
-                if (empty($resultadoCartao['aprovado'])) {
-                    $this->restaurarEstoquePedido($pedido);
-                    $pedido->delete();
-                    return response()->json([
-                        'message' => $resultadoCartao['mensagem'] ?? 'Pagamento recusado pela operadora do cartão.',
-                    ], 422);
-                }
+        // Se o pagamento envolver saldo em dinheiro, gera cobrança via gateway (PIX ou Cartão)
+        if ((float) $pedido->valor_pago_dinheiro > 0) {
+            if ($pedido->metodo_pagamento === 'pix') {
+                $this->processarPagamentoPix($pedido, $request->user());
+                $pedido->refresh();
+            } elseif (in_array($pedido->metodo_pagamento, ['cartao', 'cartao_credito', 'cartao_debito'], true)) {
+                $dadosCartao = $request->input('cartao_dados', []);
+                if (is_array($dadosCartao) && ! empty($dadosCartao)) {
+                    $resultadoCartao = $this->processarPagamentoCartao($pedido, $dadosCartao, $request->user());
+                    if (empty($resultadoCartao['aprovado'])) {
+                        $this->restaurarEstoquePedido($pedido);
+                        $this->restaurarBeneficiosPedido($pedido, 'Pagamento recusado no cartão');
+                        $pedido->delete();
+                        return response()->json([
+                            'message' => $resultadoCartao['mensagem'] ?? 'Pagamento recusado pela operadora do cartão.',
+                        ], 422);
+                    }
 
-                // Salva novo cartão na conta do cliente se solicitado
-                if ($request->boolean('salvar_cartao') && ! empty($dadosCartao['numero'])) {
-                    $numLimpo = preg_replace('/\D/', '', $dadosCartao['numero']);
-                    if (strlen($numLimpo) >= 13 && ! str_contains($dadosCartao['numero'], '*')) {
-                        $ultimos = substr($numLimpo, -4);
-                        $tipoSalvar = 'credito';
-                        $jaExiste = $request->user()->cartoes()
-                            ->where('ultimos_digitos', $ultimos)
-                            ->where('tipo', $tipoSalvar)
-                            ->exists();
+                    // Salva novo cartão na conta do cliente se solicitado
+                    if ($request->boolean('salvar_cartao') && ! empty($dadosCartao['numero'])) {
+                        $numLimpo = preg_replace('/\D/', '', $dadosCartao['numero']);
+                        if (strlen($numLimpo) >= 13 && ! str_contains($dadosCartao['numero'], '*')) {
+                            $ultimos = substr($numLimpo, -4);
+                            $tipoSalvar = 'credito';
+                            $jaExiste = $request->user()->cartoes()
+                                ->where('ultimos_digitos', $ultimos)
+                                ->where('tipo', $tipoSalvar)
+                                ->exists();
 
-                        if (! $jaExiste) {
-                            $request->user()->cartoes()->create([
-                                'tipo'            => $tipoSalvar,
-                                'titular'         => mb_strtoupper(trim($dadosCartao['titular'] ?? $request->user()->name)),
-                                'numero'          => $numLimpo,
-                                'ultimos_digitos' => $ultimos,
-                                'bandeira'        => $dadosCartao['bandeira'] ?? 'Cartão',
-                                'validade'        => $dadosCartao['validade'] ?? '12/30',
-                            ]);
+                            if (! $jaExiste) {
+                                $cpfCartao = preg_replace('/\D/', '', ($dadosCartao['cpf'] ?? '') ?: ($request->user()->cpf ?? ''));
+                                $request->user()->cartoes()->create([
+                                    'tipo'            => $tipoSalvar,
+                                    'titular'         => mb_strtoupper(trim($dadosCartao['titular'] ?? $request->user()->name)),
+                                    'cpf'             => $cpfCartao ?: null,
+                                    'numero'          => $numLimpo,
+                                    'ultimos_digitos' => $ultimos,
+                                    'bandeira'        => $dadosCartao['bandeira'] ?? 'Cartão',
+                                    'validade'        => $dadosCartao['validade'] ?? '12/30',
+                                ]);
+                            }
                         }
                     }
                 }
+                $pedido->refresh();
             }
-            $pedido->refresh();
         }
 
         // Salva dados de contato (telefone, CPF) e endereço na conta do cliente se autorizado
@@ -766,7 +829,6 @@ class PedidoController extends Controller
 
         // Dispara e-mail de notificação de novo pedido para o administrador apenas quando o pedido estiver Pago
         if ($pedido->status === 'Pago') {
-            $this->consumirCupomTroca($pedido);
             try {
                 \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\NovoPedidoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
             } catch (\Throwable $e) {
@@ -794,7 +856,7 @@ class PedidoController extends Controller
 
         return response()->json([
             'mensagem' => 'Pedido criado com sucesso!',
-            'pedido'   => $pedido->load(['itens.variacao.produto']),
+            'pedido'   => $pedido->load(['itens.variacao.produto', 'cupom', 'valeCompra']),
             'user'     => $request->user()->fresh(),
         ], 201);
     }
@@ -804,7 +866,12 @@ class PedidoController extends Controller
      */
     private function cancelarPagamentoMercadoPago(Pedido $pedido): void
     {
-        if (empty($pedido->pagamento_id) || str_starts_with((string) $pedido->pagamento_id, 'SIM-')) {
+        if (
+            empty($pedido->pagamento_id)
+            || str_starts_with((string) $pedido->pagamento_id, 'SIM-')
+            || str_starts_with((string) $pedido->pagamento_id, 'CARD-SIMUL-')
+            || str_starts_with((string) $pedido->pagamento_id, 'VALE-')
+        ) {
             return;
         }
 
@@ -869,13 +936,29 @@ class PedidoController extends Controller
                     }
                 }
 
-                $this->restaurarEstoquePedido($pedido);
-                $pedido->update(['status' => 'Cancelado']);
+                DB::transaction(function () use ($pedido) {
+                    $this->restaurarEstoquePedido($pedido);
+                    $this->restaurarBeneficiosPedido($pedido, 'Expiração automática do pedido pendente');
+                    $pedido->update(['status' => 'Cancelado']);
+                });
                 $this->cancelarPagamentoMercadoPago($pedido);
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::warning("Erro ao expirar pedido pendente #{$pedido->id}: " . $e->getMessage());
             }
         }
+    }
+
+    /**
+     * Retorna as opções detalhadas de restituição (Reembolso vs Vale-Compra) para cancelamento ou devolução.
+     */
+    public function opcoesRestituicao(Request $request, Pedido $pedido): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user->papel === 'admin' || $pedido->user_id === $user->id, 403, 'Acesso negado.');
+
+        $pedido->loadMissing(['cupom', 'valeCompra']);
+
+        return response()->json($pedido->calcularOpcoesRestituicao());
     }
 
     /**
@@ -910,7 +993,9 @@ class PedidoController extends Controller
                             }
                             $pedido->update(['status' => 'Pago']);
                         }
-                        return response()->json($pedido->fresh()->load(['itens.variacao.produto', 'user']));
+                        $loaded = $pedido->fresh()->load(['itens.variacao.produto', 'user', 'cupom', 'valeCompra']);
+                        $loaded->setAttribute('opcoes_restituicao', $loaded->calcularOpcoesRestituicao());
+                        return response()->json($loaded);
                     }
                 } catch (\Throwable $e) {
                     // Silencioso no polling
@@ -922,14 +1007,21 @@ class PedidoController extends Controller
         if ($pedido->status === 'Pendente') {
             $dataBase = $pedido->data_pedido ?? $pedido->created_at;
             if ($dataBase && \Carbon\Carbon::parse($dataBase)->addMinutes(30)->isPast()) {
-                $this->restaurarEstoquePedido($pedido);
-                $pedido->update(['status' => 'Cancelado']);
+                DB::transaction(function () use ($pedido) {
+                    $this->restaurarEstoquePedido($pedido);
+                    $this->restaurarBeneficiosPedido($pedido, 'Expiração automática do pedido pendente');
+                    $pedido->update(['status' => 'Cancelado']);
+                });
                 $this->cancelarPagamentoMercadoPago($pedido);
-                return response()->json($pedido->fresh()->load(['itens.variacao.produto', 'user']));
+                $loaded = $pedido->fresh()->load(['itens.variacao.produto', 'user', 'cupom', 'valeCompra']);
+                $loaded->setAttribute('opcoes_restituicao', $loaded->calcularOpcoesRestituicao());
+                return response()->json($loaded);
             }
         }
 
-        return response()->json($pedido->load(['itens.variacao.produto', 'user']));
+        $loaded = $pedido->load(['itens.variacao.produto', 'user', 'cupom', 'valeCompra']);
+        $loaded->setAttribute('opcoes_restituicao', $loaded->calcularOpcoesRestituicao());
+        return response()->json($loaded);
     }
 
     /**
@@ -942,7 +1034,6 @@ class PedidoController extends Controller
 
         if ($pedido->status === 'Pendente') {
             $pedido->update(['status' => 'Pago']);
-            $this->consumirCupomTroca($pedido);
 
             try {
                 $destinatario = $pedido->email_contato ?: $pedido->user?->email;
@@ -968,7 +1059,7 @@ class PedidoController extends Controller
 
         return response()->json([
             'mensagem' => 'Pagamento confirmado com sucesso!',
-            'pedido'   => $pedido->load(['itens.variacao.produto', 'user']),
+            'pedido'   => $pedido->load(['itens.variacao.produto', 'user', 'cupom', 'valeCompra']),
         ]);
     }
 
@@ -986,33 +1077,143 @@ class PedidoController extends Controller
     }
 
     /**
-     * Invalida e exclui o cupom de troca de uso único assim que o pagamento for concluído.
+     * Restaura de forma idempotente o saldo do vale-compra e o uso do cupom promocional
+     * quando um pedido é cancelado, expirado ou recusado.
      */
-    private function consumirCupomTroca(Pedido $pedido): void
-    {
-        if (empty($pedido->cupom_codigo)) {
-            return;
-        }
+    /**
+     * Restaura o saldo do vale-compra e o uso do cupom promocional vinculados ao pedido de forma idempotente.
+     */
+    public function restaurarBeneficiosPedido(
+        Pedido $pedido,
+        string $motivo = 'Cancelamento do pedido',
+        bool $restaurarValeOriginal = true,
+        bool $restaurarCupomPromocional = true
+    ): array {
+        return DB::transaction(function () use ($pedido, $motivo, $restaurarValeOriginal, $restaurarCupomPromocional) {
+            $pedidoLocked = Pedido::lockForUpdate()->find($pedido->id);
+            $resumo = [
+                'ja_restaurado'    => false,
+                'vale_restaurado'  => 0.0,
+                'vale_codigo'      => null,
+                'cupom_restaurado' => false,
+                'cupom_codigo'     => null,
+            ];
 
-        $codigo = strtoupper(trim($pedido->cupom_codigo));
-        $cupom = \App\Models\Cupom::where('codigo', $codigo)->first();
-        if ($cupom && (str_starts_with($cupom->codigo, 'TROCA-') || $cupom->tipo === 'troca')) {
-            $cupom->delete();
-            \Illuminate\Support\Facades\Log::info("Cupom de troca {$codigo} consumido e excluído com sucesso após a confirmação do pedido #{$pedido->id}.");
-        }
+            if (! $pedidoLocked || $pedidoLocked->beneficios_restaurados) {
+                $resumo['ja_restaurado'] = true;
+                return $resumo;
+            }
+
+            if ($restaurarValeOriginal && ($pedidoLocked->vale_compra_id || $pedidoLocked->vale_compra_codigo) && (float) $pedidoLocked->valor_vale_compra > 0) {
+                $vale = $pedidoLocked->vale_compra_id
+                    ? Cupom::lockForUpdate()->find($pedidoLocked->vale_compra_id)
+                    : Cupom::lockForUpdate()->where('codigo', strtoupper(trim((string) $pedidoLocked->vale_compra_codigo)))->first();
+
+                if ($vale) {
+                    $valorVale = round((float) $pedidoLocked->valor_vale_compra, 2);
+                    $vale->restaurarDoPedido(
+                        $valorVale,
+                        $pedidoLocked->id,
+                        $pedidoLocked->user_id,
+                        $motivo
+                    );
+                    $resumo['vale_restaurado'] = $valorVale;
+                    $resumo['vale_codigo'] = $vale->codigo;
+                }
+            }
+
+            if ($restaurarCupomPromocional && ($pedidoLocked->cupom_id || $pedidoLocked->cupom_codigo)) {
+                $cupom = $pedidoLocked->cupom_id
+                    ? Cupom::lockForUpdate()->find($pedidoLocked->cupom_id)
+                    : Cupom::lockForUpdate()->where('codigo', strtoupper(trim((string) $pedidoLocked->cupom_codigo)))->first();
+
+                if ($cupom) {
+                    $cupom->restaurarDoPedido(
+                        (float) ($pedidoLocked->valor_desconto_cupom ?? 0),
+                        $pedidoLocked->id,
+                        $pedidoLocked->user_id,
+                        $motivo
+                    );
+                    $resumo['cupom_restaurado'] = true;
+                    $resumo['cupom_codigo'] = $cupom->codigo;
+                }
+            }
+
+            $pedidoLocked->update(['beneficios_restaurados' => true]);
+            $pedido->beneficios_restaurados = true;
+
+            return $resumo;
+        });
     }
 
     /**
-     * Solicita o estorno integral (refund) do pagamento no Mercado Pago quando o pedido já estava Pago.
+     * Emite um novo vale-compra decorrente de restituição (cancelamento ou devolução) e registra histórico.
      */
-    public function estornarPagamentoMercadoPago(Pedido $pedido): array
+    public function emitirValeCompraRestituicao(
+        Pedido $pedido,
+        float $valorCredito,
+        string $descricao,
+        ?int $devolucaoId = null,
+        string $prefixo = 'VALE-'
+    ): Cupom {
+        $valorCredito = round(max(0.0, $valorCredito), 2);
+
+        do {
+            $codigo = strtoupper($prefixo) . strtoupper(Str::random(8));
+        } while (Cupom::where('codigo', $codigo)->exists());
+
+        $vale = Cupom::create([
+            'codigo'               => $codigo,
+            'descricao'            => $descricao,
+            'percentual'           => 0,
+            'tipo'                 => Cupom::TIPO_VALE_COMPRA,
+            'status'               => Cupom::STATUS_ATIVO,
+            'todos_produtos'       => true,
+            'valor_inicial'        => $valorCredito,
+            'saldo_atual'          => $valorCredito,
+            'valor_fixo'           => $valorCredito,
+            'valor_minimo_pedido'  => 0,
+            'limite_usos'          => null,
+            'usos_atuais'          => 0,
+            'validade'             => now()->addYear(),
+            'ativo'                => true,
+            'condicoes_utilizacao' => 'Crédito válido para futuras compras na loja. Pode ser utilizado parcial ou integralmente e combinado com 1 cupom promocional (produto ou frete).',
+            'user_id'              => $pedido->user_id,
+            'pedido_origem_id'     => $pedido->id,
+            'devolucao_id'         => $devolucaoId,
+        ]);
+
+        $vale->registrarHistorico(
+            'criacao',
+            $valorCredito,
+            0.0,
+            $valorCredito,
+            $pedido->id,
+            $pedido->user_id,
+            $descricao
+        );
+
+        return $vale;
+    }
+
+    /**
+     * Solicita o estorno integral ou parcial (refund) do pagamento no Mercado Pago quando o pedido já estava Pago.
+     */
+    public function estornarPagamentoMercadoPago(Pedido $pedido, ?float $valorEstorno = null): array
     {
         if (empty($pedido->pagamento_id)) {
             return ['sucesso' => false, 'mensagem' => 'Pedido sem ID de pagamento externo.'];
         }
 
-        // Em modo simulado (prefixo SIM-), confirma estorno simulado
-        if (str_starts_with((string) $pedido->pagamento_id, 'SIM-')) {
+        if (str_starts_with((string) $pedido->pagamento_id, 'VALE-')) {
+            return [
+                'sucesso'  => true,
+                'mensagem' => 'Saldo utilizado no vale-compra restaurado automaticamente.',
+            ];
+        }
+
+        // Em modo simulado (prefixo SIM- ou CARD-SIMUL-), confirma estorno simulado
+        if (str_starts_with((string) $pedido->pagamento_id, 'SIM-') || str_starts_with((string) $pedido->pagamento_id, 'CARD-SIMUL-')) {
             return [
                 'sucesso'  => true,
                 'mensagem' => 'Estorno processado automaticamente (modo simulação).',
@@ -1027,14 +1228,21 @@ class PedidoController extends Controller
         }
 
         try {
-            $resp = Http::withoutVerifying()
+            $payload = ($valorEstorno !== null && $valorEstorno > 0)
+                ? ['amount' => round($valorEstorno, 2)]
+                : [];
+
+            $http = Http::withoutVerifying()
                 ->withHeaders([
                     'Authorization'     => 'Bearer ' . trim($mpToken),
                     'Content-Type'      => 'application/json',
                     'X-Idempotency-Key' => 'refund-pedido-' . $pedido->id . '-' . uniqid(),
                 ])
-                ->timeout(4)
-                ->post("https://api.mercadopago.com/v1/payments/{$pedido->pagamento_id}/refunds");
+                ->timeout(4);
+
+            $resp = ! empty($payload)
+                ? $http->post("https://api.mercadopago.com/v1/payments/{$pedido->pagamento_id}/refunds", $payload)
+                : $http->post("https://api.mercadopago.com/v1/payments/{$pedido->pagamento_id}/refunds");
 
             if ($resp->successful()) {
                 return [
@@ -1060,66 +1268,176 @@ class PedidoController extends Controller
     }
 
     /**
-     * Permite ao próprio cliente cancelar um pedido enquanto estiver Pendente, Pago ou Em separação.
+     * Permite ao próprio cliente cancelar um pedido enquanto estiver Pendente, Pago, Em separação ou Em montagem.
      */
     public function cancelarPeloCliente(Request $request, Pedido $pedido): JsonResponse
     {
         $user = $request->user();
         abort_unless($pedido->user_id === $user->id, 403, 'Você não tem permissão para cancelar este pedido.');
 
-        $statusPermitidos = ['Pendente', 'Pago', 'Em separação', 'Em montagem'];
-        if (! in_array($pedido->status, $statusPermitidos, true)) {
-            return response()->json([
-                'message' => "Não é possível cancelar diretamente um pedido com status '{$pedido->status}'. Caso o pacote já tenha sido enviado, utilize a opção de Solicitar Devolução.",
-            ], 422);
+        $validated = $request->validate([
+            'tipo_restituicao' => ['nullable', 'string', 'in:reembolso,vale_compra,cupom'],
+            'tipo_solicitacao' => ['nullable', 'string', 'in:reembolso,vale_compra,cupom'],
+            'modalidade'       => ['nullable', 'string', 'in:reembolso,vale_compra,cupom'],
+        ]);
+
+        $escolhaRaw = $validated['tipo_restituicao'] ?? $validated['tipo_solicitacao'] ?? $validated['modalidade'] ?? null;
+        if ($escolhaRaw === 'cupom') {
+            $escolhaRaw = 'vale_compra';
         }
 
-        $estavaPago = in_array($pedido->status, ['Pago', 'Em separação', 'Em montagem'], true);
-        $infoEstorno = null;
+        $resultado = DB::transaction(function () use ($pedido, $escolhaRaw) {
+            $pedidoLocked = Pedido::lockForUpdate()->findOrFail($pedido->id);
 
-        DB::transaction(function () use ($pedido, $estavaPago, &$infoEstorno) {
-            // 1. Devolve as unidades ao estoque das variações
-            $this->restaurarEstoquePedido($pedido);
-
-            // 2. Se já estava PAGO, aciona o estorno no Mercado Pago
-            if ($estavaPago) {
-                $infoEstorno = $this->estornarPagamentoMercadoPago($pedido);
-            } else {
-                // Se NÃO estava pago, cancela a cobrança no Mercado Pago (invalida imediatamente o QR Code e link)
-                $this->cancelarPagamentoMercadoPago($pedido);
+            if ($pedidoLocked->status === 'Cancelado') {
+                return [
+                    'erro_status' => 422,
+                    'payload'     => [
+                        'message'      => 'Este pedido já foi cancelado anteriormente. Nenhuma nova restituição foi gerada.',
+                        'ja_cancelado' => true,
+                    ],
+                ];
             }
 
-            // 3. Atualiza status para Cancelado
-            $pedido->update(['status' => 'Cancelado']);
+            $statusPermitidos = ['Pendente', 'Pago', 'Em separação', 'Em montagem'];
+            if (! in_array($pedidoLocked->status, $statusPermitidos, true)) {
+                return [
+                    'erro_status' => 422,
+                    'payload'     => [
+                        'message' => "Não é possível cancelar diretamente um pedido com status '{$pedidoLocked->status}'. Caso o pacote já tenha sido enviado, utilize a opção de Solicitar Devolução.",
+                    ],
+                ];
+            }
+
+            $estavaPago = in_array($pedidoLocked->status, ['Pago', 'Em separação', 'Em montagem'], true);
+            $valorDinheiro = round(max(0.0, (float) ($pedidoLocked->valor_pago_dinheiro ?? 0)), 2);
+            $valorVale = round(max(0.0, (float) ($pedidoLocked->valor_vale_compra ?? 0)), 2);
+
+            if ($estavaPago && $valorDinheiro <= 0 && $escolhaRaw === 'reembolso') {
+                return [
+                    'erro_status' => 422,
+                    'payload'     => [
+                        'message' => 'Este pedido não possui valor pago em dinheiro (R$ 0,00) para reembolso. Apenas os benefícios originais utilizados serão restaurados.',
+                    ],
+                ];
+            }
+
+            $infoEstorno = null;
+            $novoValeCompra = null;
+            $valorReembolsadoDinheiro = 0.0;
+
+            $this->restaurarEstoquePedido($pedidoLocked);
+
+            if (! $estavaPago) {
+                $tipoRestituicaoAplicado = 'cancelamento_pendente';
+                $resumoBeneficios = $this->restaurarBeneficiosPedido(
+                    $pedidoLocked,
+                    'Cancelamento de pedido pendente pelo cliente',
+                    true,
+                    true
+                );
+                $this->cancelarPagamentoMercadoPago($pedidoLocked);
+            } elseif ($valorDinheiro <= 0) {
+                // Cenário B (100% vale-compra) ou cupom 100%: restaura apenas os benefícios originais sem emitir vale duplicado
+                $tipoRestituicaoAplicado = 'restauracao_beneficios';
+                $resumoBeneficios = $this->restaurarBeneficiosPedido(
+                    $pedidoLocked,
+                    'Cancelamento pelo cliente (restauração de benefícios originais)',
+                    true,
+                    true
+                );
+                $infoEstorno = [
+                    'sucesso'  => true,
+                    'mensagem' => 'Não há valor em dinheiro a estornar. Benefícios originais restaurados.',
+                ];
+            } else {
+                $tipoRestituicaoAplicado = $escolhaRaw ?: 'reembolso';
+
+                if ($tipoRestituicaoAplicado === 'vale_compra') {
+                    // Opção 2 (Cenários A, C, D, E): novo vale engloba valor pago em dinheiro + vale consumido; cupom promocional é restaurado à parte
+                    $resumoBeneficios = $this->restaurarBeneficiosPedido(
+                        $pedidoLocked,
+                        'Cancelamento pelo cliente (convertido em vale-compra)',
+                        false,
+                        true
+                    );
+                    $valorNovoVale = round($valorDinheiro + $valorVale, 2);
+                    $novoValeCompra = $this->emitirValeCompraRestituicao(
+                        $pedidoLocked,
+                        $valorNovoVale,
+                        "Vale-compra emitido pelo cancelamento do Pedido #{$pedidoLocked->id}."
+                    );
+                    $infoEstorno = [
+                        'sucesso'  => true,
+                        'mensagem' => "Valor convertido em vale-compra ({$novoValeCompra->codigo}) de R$ " . number_format($valorNovoVale, 2, ',', '.') . '.',
+                    ];
+                } else {
+                    // Opção 1: reembolso do valor efetivamente pago em dinheiro + restauração do vale original + restauração do cupom promocional
+                    $resumoBeneficios = $this->restaurarBeneficiosPedido(
+                        $pedidoLocked,
+                        'Cancelamento pelo cliente (reembolso)',
+                        true,
+                        true
+                    );
+                    $infoEstorno = $this->estornarPagamentoMercadoPago($pedidoLocked, $valorDinheiro);
+                    $valorReembolsadoDinheiro = $valorDinheiro;
+                }
+            }
+
+            $pedidoLocked->update(['status' => 'Cancelado']);
+
+            return [
+                'erro_status'                => null,
+                'estava_pago'                => $estavaPago,
+                'tipo_restituicao'           => $tipoRestituicaoAplicado,
+                'valor_reembolsado_dinheiro' => $valorReembolsadoDinheiro,
+                'resumo_beneficios'          => $resumoBeneficios,
+                'novo_vale_compra'           => $novoValeCompra,
+                'estorno'                    => $infoEstorno,
+                'pedido'                     => $pedidoLocked->fresh(),
+            ];
         });
 
-        // 4. Se o pedido estava PAGO, avisa cliente e admin por e-mail (em pedidos não pagos não trava a resposta com SMTP)
+        if (! empty($resultado['erro_status'])) {
+            return response()->json($resultado['payload'], $resultado['erro_status']);
+        }
+
+        $pedidoAtualizado = $resultado['pedido'];
+        $estavaPago = $resultado['estava_pago'];
+        $infoEstorno = $resultado['estorno'];
+
+        // Se o pedido estava PAGO, avisa cliente e admin por e-mail (em pedidos não pagos não trava a resposta com SMTP)
         if ($estavaPago) {
             try {
-                $destinatario = $pedido->email_contato ?: $pedido->user?->email;
+                $destinatario = $pedidoAtualizado->email_contato ?: $pedidoAtualizado->user?->email;
                 if ($destinatario) {
-                    \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\StatusPedidoMail($pedido->load('user')));
+                    \Illuminate\Support\Facades\Mail::to($destinatario)->send(new \App\Mail\StatusPedidoMail($pedidoAtualizado->load('user')));
                 }
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de cancelamento do pedido: ' . $e->getMessage());
             }
 
             try {
-                \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\PedidoCanceladoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
+                \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\PedidoCanceladoAdminMail($pedidoAtualizado->load(['itens.variacao.produto', 'user'])));
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de cancelamento para o admin: ' . $e->getMessage());
             }
         }
 
-        $msgRetorno = "Pedido #{$pedido->id} cancelado com sucesso.";
+        $msgRetorno = "Pedido #{$pedidoAtualizado->id} cancelado com sucesso.";
         if ($estavaPago && ! empty($infoEstorno['mensagem'])) {
             $msgRetorno .= ' ' . $infoEstorno['mensagem'];
         }
 
         return response()->json([
-            'mensagem' => $msgRetorno,
-            'estorno'  => $infoEstorno,
-            'pedido'   => $pedido->fresh()->load(['itens.variacao.produto', 'user']),
+            'mensagem'                   => $msgRetorno,
+            'tipo_restituicao'           => $resultado['tipo_restituicao'],
+            'valor_reembolsado_dinheiro' => $resultado['valor_reembolsado_dinheiro'],
+            'valor_vale_restaurado'      => $resultado['resumo_beneficios']['vale_restaurado'] ?? 0.0,
+            'cupom_restaurado'           => $resultado['resumo_beneficios']['cupom_restaurado'] ?? false,
+            'novo_vale_compra'           => $resultado['novo_vale_compra'],
+            'estorno'                    => $infoEstorno,
+            'pedido'                     => $pedidoAtualizado->load(['itens.variacao.produto', 'user', 'cupom', 'valeCompra']),
         ]);
     }
 
@@ -1179,7 +1497,7 @@ class PedidoController extends Controller
         $this->cancelarPedidosPendentesExpirados();
         \App\Services\RastreioService::sincronizarSeNecessario();
 
-        $query = Pedido::with(['user', 'itens.variacao.produto', 'devolucao'])->latest('data_pedido');
+        $query = Pedido::with(['user', 'itens.variacao.produto', 'devolucao', 'cupom', 'valeCompra'])->latest('data_pedido');
 
         if ($request->filled('status')) {
             $query->where('status', $request->query('status'));
@@ -1210,33 +1528,78 @@ class PedidoController extends Controller
             'codigo_rastreio' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $statusAnterior = $pedido->status;
-        $novoStatus = $validated['status'] ?? $pedido->status;
         $codigoRastreio = array_key_exists('codigo_rastreio', $validated)
             ? trim((string) $validated['codigo_rastreio'])
             : $pedido->codigo_rastreio;
 
-        // Se o Admin alterar o status para Cancelado (e antes não estava Cancelado), devolve o estoque e estorna se já estava pago
-        if ($novoStatus === 'Cancelado' && $statusAnterior !== 'Cancelado') {
-            $this->restaurarEstoquePedido($pedido);
+        $resultado = DB::transaction(function () use ($pedido, $validated, $codigoRastreio) {
+            $pedidoLocked = Pedido::lockForUpdate()->findOrFail($pedido->id);
+            $statusAnterior = $pedidoLocked->status;
+            $novoStatus = $validated['status'] ?? $pedidoLocked->status;
+            $restituicao = null;
 
-            // Se o pedido teve devolução concluída com CUPOM (vale-compras), NÃO estorna o pagamento no gateway
-            $temCupomTroca = $pedido->devolucoes()->where('tipo_solicitacao', 'cupom')->where('status', 'Concluida')->exists();
+            // Se o Admin alterar o status para Cancelado (e antes não estava Cancelado), aplica reembolso automático + restaura benefícios originais + devolve estoque
+            if ($novoStatus === 'Cancelado' && $statusAnterior !== 'Cancelado') {
+                $this->restaurarEstoquePedido($pedidoLocked);
+                $resumoBeneficios = $this->restaurarBeneficiosPedido(
+                    $pedidoLocked,
+                    'Cancelamento pelo administrador (reembolso automático)',
+                    true,
+                    true
+                );
 
-            if (! $temCupomTroca && (in_array($statusAnterior, ['Pago', 'Em separação', 'Em montagem', 'Enviado', 'Em transporte', 'Entregue'], true) || ! empty($pedido->pagamento_id))) {
-                $this->estornarPagamentoMercadoPago($pedido);
+                // Se o pedido já teve devolução concluída com vale-compra/cupom de troca, não estorna dinheiro novamente no gateway
+                $temCupomTroca = $pedidoLocked->devolucoes()
+                    ->whereIn('tipo_solicitacao', ['cupom', 'vale_compra'])
+                    ->where('status', 'Concluida')
+                    ->exists();
+
+                $valorDinheiro = round(max(0.0, (float) ($pedidoLocked->valor_pago_dinheiro ?? 0)), 2);
+                $estavaPago = in_array($statusAnterior, ['Pago', 'Em separação', 'Em montagem', 'Enviado', 'Em transporte', 'Entregue'], true);
+                $infoEstorno = null;
+                $valorReembolsado = 0.0;
+
+                if (! $temCupomTroca && $valorDinheiro > 0 && ($estavaPago || ! empty($pedidoLocked->pagamento_id))) {
+                    $infoEstorno = $this->estornarPagamentoMercadoPago($pedidoLocked, $valorDinheiro);
+                    $valorReembolsado = $valorDinheiro;
+                } elseif (! $estavaPago && ! empty($pedidoLocked->pagamento_id)) {
+                    $this->cancelarPagamentoMercadoPago($pedidoLocked);
+                }
+
+                $restituicao = [
+                    'tipo_restituicao'           => $valorDinheiro > 0 ? 'reembolso' : 'restauracao_beneficios',
+                    'valor_reembolsado_dinheiro' => $valorReembolsado,
+                    'valor_vale_restaurado'      => $resumoBeneficios['vale_restaurado'] ?? 0.0,
+                    'cupom_restaurado'           => $resumoBeneficios['cupom_restaurado'] ?? false,
+                    'estorno'                    => $infoEstorno,
+                ];
             }
+
+            $pedidoLocked->update([
+                'status'          => $novoStatus,
+                'codigo_rastreio' => $codigoRastreio ?: null,
+            ]);
+
+            return [
+                'status_anterior' => $statusAnterior,
+                'novo_status'     => $novoStatus,
+                'restituicao'     => $restituicao,
+                'pedido'          => $pedidoLocked->fresh(),
+            ];
+        });
+
+        $pedido = $resultado['pedido'];
+        $statusAnterior = $resultado['status_anterior'];
+        $novoStatus = $resultado['novo_status'];
+        $restituicao = $resultado['restituicao'];
+
+        if ($novoStatus === 'Cancelado' && $statusAnterior !== 'Cancelado') {
             try {
                 \Illuminate\Support\Facades\Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\PedidoCanceladoAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de cancelamento para o admin: ' . $e->getMessage());
             }
         }
-
-        $pedido->update([
-            'status'          => $novoStatus,
-            'codigo_rastreio' => $codigoRastreio ?: null,
-        ]);
 
         // Notifica o cliente por e-mail e na loja quando o status muda ou quando um código de rastreio é salvo
         if ($novoStatus !== $statusAnterior || (in_array($novoStatus, ['Enviado', 'Em transporte'], true) && ! empty($validated['codigo_rastreio']))) {
@@ -1247,6 +1610,27 @@ class PedidoController extends Controller
                 }
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::error('Erro ao enviar e-mail de status do pedido: ' . $e->getMessage());
+            }
+
+            // Notifica também o administrador por e-mail e no painel quando o pedido é Entregue
+            if ($novoStatus === 'Entregue' && $statusAnterior !== 'Entregue') {
+                try {
+                    Mail::to('salvsacra2@gmail.com')->send(new \App\Mail\PedidoEntregueAdminMail($pedido->load(['itens.variacao.produto', 'user'])));
+                } catch (\Throwable $e) {
+                    Log::error('Erro ao enviar e-mail de entrega para o admin: ' . $e->getMessage());
+                }
+
+                try {
+                    \App\Services\NotificacaoService::notificarAdmin(
+                        'pedido',
+                        "Pedido #{$pedido->id} Entregue!",
+                        "A entrega do pedido #{$pedido->id} para " . ($pedido->user?->name ?? 'Cliente') . " foi confirmada.",
+                        "/admin/pedidos?busca={$pedido->id}",
+                        $pedido->id
+                    );
+                } catch (\Throwable $e) {
+                    Log::error('Erro ao notificar entrega no painel admin: ' . $e->getMessage());
+                }
             }
 
             if ($pedido->user_id) {
@@ -1273,8 +1657,9 @@ class PedidoController extends Controller
         }
 
         return response()->json([
-            'mensagem' => 'Dados de envio/status do pedido atualizados com sucesso.',
-            'pedido'   => $pedido->load(['itens.variacao.produto', 'user']),
+            'mensagem'    => 'Dados de envio/status do pedido atualizados com sucesso.',
+            'restituicao' => $restituicao,
+            'pedido'      => $pedido->load(['itens.variacao.produto', 'user', 'cupom', 'valeCompra']),
         ]);
     }
 

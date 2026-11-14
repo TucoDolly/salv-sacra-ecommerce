@@ -47,8 +47,8 @@ export default function DevolucoesList() {
   const fimIdx = itensPorPagina === 'todos' ? totalDevolucoes : Math.min(inicioIdx + Number(itensPorPagina), totalDevolucoes);
   const devolucoesPaginadas = itensPorPagina === 'todos' ? devolucoes : devolucoes.slice(inicioIdx, fimIdx);
 
-  const carregarDevolucoes = async () => {
-    setLoading(true);
+  const carregarDevolucoes = async (silencioso = false) => {
+    if (!silencioso) setLoading(true);
     try {
       const params = {};
       if (filtroStatus) params.status = filtroStatus;
@@ -59,13 +59,38 @@ export default function DevolucoesList() {
     } catch {
       // silencia
     } finally {
-      setLoading(false);
+      if (!silencioso) setLoading(false);
     }
   };
 
   useEffect(() => {
     setPaginaAtual(1);
     carregarDevolucoes();
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') carregarDevolucoes(true);
+    }, 5000);
+
+    const handleSync = () => carregarDevolucoes(true);
+    const handleStorage = (e) => {
+      if (e.key === 'salv_sync_trigger') carregarDevolucoes(true);
+    };
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') carregarDevolucoes(true);
+    };
+
+    window.addEventListener('salv-pedidos-atualizados', handleSync);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('salv-pedidos-atualizados', handleSync);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
   }, [filtroStatus]);
 
   // Efeito rápido de foco e sombra temporária quando acessado a partir de um pedido específico
@@ -145,7 +170,8 @@ export default function DevolucoesList() {
       });
       setDevolucaoSelecionada(data.devolucao);
       setMensagemSucesso('✓ Devolução aprovada! E-mail com instruções e declaração de conteúdo enviado ao cliente.');
-      carregarDevolucoes();
+      carregarDevolucoes(true);
+      try { localStorage.setItem('salv_sync_trigger', String(Date.now())); } catch {}
       window.dispatchEvent(new Event('salv-pedidos-atualizados'));
     } catch (err) {
       setModalAlerta({ aberto: true, titulo: 'Erro', msg: err.response?.data?.message || 'Erro ao aprovar devolução.' });
@@ -169,7 +195,8 @@ export default function DevolucoesList() {
       setDevolucaoSelecionada(data.devolucao);
       setModoRecusa(false);
       setMensagemSucesso('Solicitação de devolução recusada.');
-      carregarDevolucoes();
+      carregarDevolucoes(true);
+      try { localStorage.setItem('salv_sync_trigger', String(Date.now())); } catch {}
       window.dispatchEvent(new Event('salv-pedidos-atualizados'));
     } catch (err) {
       setModalAlerta({ aberto: true, titulo: 'Erro', msg: err.response?.data?.message || 'Erro ao recusar devolução.' });
@@ -178,14 +205,48 @@ export default function DevolucoesList() {
     }
   };
 
+  const ehModalidadeVale = (tipo) => ['cupom', 'vale_compra'].includes(tipo);
+  const formatBRL = (v) =>
+    Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
   const executarConclusao = async () => {
     setConcluindo(true);
     try {
       const { data } = await api.put(`/admin/devolucoes/${devolucaoSelecionada.id}/concluir`);
-      setDevolucaoSelecionada(data.devolucao);
-      setMensagemSucesso('✓ Devolução concluída! Cliente notificado com sucesso.');
+      setDevolucaoSelecionada((prev) => ({
+        ...prev,
+        ...(data.devolucao || {}),
+        resumo_conclusao: {
+          valor_reembolsado_dinheiro: Number(data.valor_reembolsado_dinheiro || 0),
+          valor_vale_restaurado: Number(data.valor_vale_restaurado || 0),
+          cupom_restaurado: Boolean(data.cupom_restaurado),
+          novo_vale_codigo: data.novo_vale_compra?.codigo || data.devolucao?.cupom_gerado_codigo || null,
+          novo_vale_valor: Number(data.novo_vale_compra?.valor_inicial || data.devolucao?.valor_estorno || 0),
+        },
+      }));
+
+      const partes = ['✓ Devolução concluída!'];
+      if (data.novo_vale_compra?.codigo || data.devolucao?.cupom_gerado_codigo) {
+        partes.push(
+          `Vale-compra ${data.novo_vale_compra?.codigo || data.devolucao?.cupom_gerado_codigo} emitido (${formatBRL(
+            data.novo_vale_compra?.valor_inicial || data.devolucao?.valor_estorno
+          )}).`
+        );
+      }
+      if (Number(data.valor_vale_restaurado || 0) > 0) {
+        partes.push(`Vale original restaurado (${formatBRL(data.valor_vale_restaurado)}).`);
+      }
+      if (Number(data.valor_reembolsado_dinheiro || 0) > 0) {
+        partes.push(`Estorno de ${formatBRL(data.valor_reembolsado_dinheiro)} registrado.`);
+      }
+      if (data.cupom_restaurado) {
+        partes.push('Cupom promocional restaurado.');
+      }
+
+      setMensagemSucesso(partes.join(' '));
       setModalConcluirConfirm(false);
-      carregarDevolucoes();
+      carregarDevolucoes(true);
+      try { localStorage.setItem('salv_sync_trigger', String(Date.now())); } catch {}
       window.dispatchEvent(new Event('salv-pedidos-atualizados'));
     } catch (err) {
       setModalAlerta({ aberto: true, titulo: 'Erro', msg: err.response?.data?.message || 'Erro ao concluir devolução.' });
@@ -379,9 +440,9 @@ export default function DevolucoesList() {
                         {d.motivo}
                       </td>
                       <td style={{ padding: '14px 20px' }}>
-                        {d.tipo_solicitacao === 'cupom' ? (
+                        {ehModalidadeVale(d.tipo_solicitacao) ? (
                           <span style={{ fontSize: '11px', background: '#f3e8ff', color: '#7e22ce', padding: '3px 8px', borderRadius: '4px', fontWeight: 700 }}>
-                            🎟️ Vale-Compras
+                            🎟️ Vale-Compra
                           </span>
                         ) : (
                           <span style={{ fontSize: '11px', background: '#f1f5f9', color: '#475569', padding: '3px 8px', borderRadius: '4px', fontWeight: 700 }}>
@@ -597,8 +658,8 @@ export default function DevolucoesList() {
                 </div>
                 <div>
                   <span style={{ color: '#64748b', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Preferência do Cliente</span>
-                  <p style={{ margin: '2px 0 0', fontWeight: 700, color: devolucaoSelecionada.tipo_solicitacao === 'cupom' ? '#7e22ce' : '#0369a1' }}>
-                    {devolucaoSelecionada.tipo_solicitacao === 'cupom' ? '🎟️ Vale-Compras (Troca de Peça)' : '💳 Estorno / Reembolso'}
+                  <p style={{ margin: '2px 0 0', fontWeight: 700, color: ehModalidadeVale(devolucaoSelecionada.tipo_solicitacao) ? '#7e22ce' : '#0369a1' }}>
+                    {ehModalidadeVale(devolucaoSelecionada.tipo_solicitacao) ? '🎟️ Vale-Compra (Crédito na Loja)' : '💳 Estorno / Reembolso'}
                   </p>
                 </div>
               </div>
@@ -614,6 +675,75 @@ export default function DevolucoesList() {
                   </p>
                 )}
               </div>
+
+              {devolucaoSelecionada.pedido && (() => {
+                const ped = devolucaoSelecionada.pedido;
+                const valorDinheiro = Number(ped.valor_pago_dinheiro ?? ped.valor_total ?? 0);
+                const fretePago = Number(ped.valor_frete_pago ?? ped.valor_frete ?? 0);
+                const valorVale = Number(ped.valor_vale_compra || 0);
+                const descCupom = Number(ped.valor_desconto_cupom || 0);
+                const emVale = ehModalidadeVale(devolucaoSelecionada.tipo_solicitacao);
+                const valorEstorno = Number(devolucaoSelecionada.valor_estorno || 0);
+
+                return (
+                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0' }}>
+                    <span style={{ color: '#64748b', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '6px' }}>
+                      Composição Financeira do Pedido #{ped.id} & Regra de Restituição
+                    </span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', background: '#fff', padding: '10px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px' }}>
+                      <div>
+                        <span style={{ color: '#64748b', display: 'block' }}>Pago em dinheiro</span>
+                        <strong style={{ color: '#0f172a' }}>{formatBRL(valorDinheiro)}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#64748b', display: 'block' }}>Frete pago</span>
+                        <strong style={{ color: '#0f172a' }}>{formatBRL(fretePago)}</strong>
+                      </div>
+                      {ped.vale_compra_codigo && (
+                        <div>
+                          <span style={{ color: '#64748b', display: 'block' }}>Vale utilizado ({ped.vale_compra_codigo})</span>
+                          <strong style={{ color: '#7e22ce' }}>-{formatBRL(valorVale)}</strong>
+                        </div>
+                      )}
+                      {ped.cupom_codigo && (
+                        <div>
+                          <span style={{ color: '#64748b', display: 'block' }}>Cupom ({ped.cupom_codigo})</span>
+                          <strong style={{ color: '#15803d' }}>-{formatBRL(descCupom)}</strong>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ marginTop: '8px', padding: '8px 10px', borderRadius: '6px', background: emVale ? '#faf5ff' : '#f0f9ff', border: `1px solid ${emVale ? '#e9d5ff' : '#bae6fd'}`, fontSize: '12px', color: '#334155', lineHeight: 1.45 }}>
+                      {emVale ? (
+                        valorDinheiro <= 0 ? (
+                          <span>
+                            <strong>Regra automática:</strong> Como não houve pagamento em dinheiro (R$ 0,00), a conclusão <strong>restaurará os benefícios originais</strong>{' '}
+                            {ped.vale_compra_codigo ? `(vale ${ped.vale_compra_codigo}) ` : ''}
+                            {ped.cupom_codigo ? `e o cupom ${ped.cupom_codigo} ` : ''}sem gerar vale duplicado.
+                          </span>
+                        ) : (
+                          <span>
+                            <strong>Regra automática:</strong> Ao concluir, será emitido um <strong>novo Vale-Compra</strong> no valor de{' '}
+                            <strong>{formatBRL(Math.min(valorEstorno, valorDinheiro + valorVale))}</strong>{' '}
+                            (unificando o crédito de restituição{valorVale > 0 ? ' + saldo abatido do vale usado' : ''})
+                            {ped.cupom_codigo ? ` e restaurado o cupom ${ped.cupom_codigo}` : ''}.
+                          </span>
+                        )
+                      ) : valorDinheiro > 0 ? (
+                        <span>
+                          <strong>Regra automática:</strong> Ao concluir, será processado estorno de até{' '}
+                          <strong>{formatBRL(Math.min(valorEstorno, valorDinheiro))}</strong> em dinheiro
+                          {ped.vale_compra_codigo && valorVale > 0 ? `, restaurado o saldo de ${formatBRL(valorVale)} no vale ${ped.vale_compra_codigo}` : ''}
+                          {ped.cupom_codigo ? ` e restaurado o cupom ${ped.cupom_codigo}` : ''}.
+                        </span>
+                      ) : (
+                        <span>
+                          <strong>Regra automática:</strong> Não há valor pago em dinheiro a estornar (R$ 0,00); a conclusão restaurará os benefícios originais do pedido.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Peças Selecionadas para Devolução */}
@@ -637,7 +767,7 @@ export default function DevolucoesList() {
                 ))}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px', fontSize: '14px', fontWeight: 800, color: '#111' }}>
-                Total a ressarcir: {Number(devolucaoSelecionada.valor_estorno).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                Total líquido a ressarcir: {formatBRL(devolucaoSelecionada.valor_estorno)}
               </div>
             </div>
 
@@ -921,9 +1051,27 @@ export default function DevolucoesList() {
                     As peças já chegaram de volta e foram conferidas?
                   </p>
                   <span style={{ color: '#555', fontSize: '12px', display: 'block', lineHeight: 1.5 }}>
-                    {devolucaoSelecionada.tipo_solicitacao === 'cupom'
-                      ? `Ao concluir, o sistema gerará automaticamente um Vale-Compras de ${Number(devolucaoSelecionada.valor_estorno).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} e enviará por e-mail para o cliente realizar uma nova compra.`
-                      : `Ao concluir, confirme que realizou o estorno financeiro de ${Number(devolucaoSelecionada.valor_estorno).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} via Mercado Pago/PIX.`}
+                    {(() => {
+                      const ped = devolucaoSelecionada.pedido;
+                      const valorDinheiro = ped ? Number(ped.valor_pago_dinheiro ?? ped.valor_total ?? 0) : Number(devolucaoSelecionada.valor_estorno || 0);
+                      const valorVale = Number(ped?.valor_vale_compra || 0);
+                      const emVale = ehModalidadeVale(devolucaoSelecionada.tipo_solicitacao);
+                      const valorEstorno = Number(devolucaoSelecionada.valor_estorno || 0);
+
+                      if (emVale) {
+                        if (ped && valorDinheiro <= 0) {
+                          return `Ao concluir, o sistema restaurará os benefícios originais do pedido (${ped.vale_compra_codigo ? `vale ${ped.vale_compra_codigo}` : 'benefício'}${ped.cupom_codigo ? ` e cupom ${ped.cupom_codigo}` : ''}), sem emitir vale duplicado.`;
+                        }
+                        const valorPrevisto = ped ? Math.min(valorEstorno, valorDinheiro + valorVale) : valorEstorno;
+                        return `Ao concluir, o sistema gerará automaticamente um Vale-Compra de ${formatBRL(valorPrevisto)}${ped?.cupom_codigo ? `, restaurará o cupom ${ped.cupom_codigo}` : ''} e notificará o cliente por e-mail.`;
+                      }
+
+                      if (ped && valorDinheiro <= 0) {
+                        return 'Não há pagamento em dinheiro a estornar (R$ 0,00). Ao concluir, os benefícios originais aplicados no pedido serão restaurados automaticamente.';
+                      }
+                      const valorEstornoDinheiro = ped ? Math.min(valorEstorno, valorDinheiro) : valorEstorno;
+                      return `Ao concluir, o sistema solicitará o estorno de ${formatBRL(valorEstornoDinheiro)} via Mercado Pago/PIX${ped?.vale_compra_codigo && valorVale > 0 ? `, restaurará o saldo de ${formatBRL(valorVale)} do vale ${ped.vale_compra_codigo}` : ''}${ped?.cupom_codigo ? ` e restaurará o cupom ${ped.cupom_codigo}` : ''}.`;
+                    })()}
                   </span>
                 </div>
 
@@ -1011,13 +1159,40 @@ export default function DevolucoesList() {
                 <p style={{ margin: '0 0 6px', fontSize: '13px', color: '#166534' }}>
                   Data de conclusão: {devolucaoSelecionada.data_conclusao ? new Date(devolucaoSelecionada.data_conclusao).toLocaleDateString('pt-BR') : 'Hoje'}
                 </p>
-                {devolucaoSelecionada.cupom_gerado_codigo && (
+                {devolucaoSelecionada.cupom_gerado_codigo ? (
                   <div style={{ marginTop: '10px', padding: '10px 14px', background: '#fff', border: '1px dashed #22c55e', borderRadius: '6px' }}>
-                    <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#666', fontWeight: 700 }}>Cupom de Vale-Compras Emitido:</span>
+                    <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#666', fontWeight: 700 }}>Vale-Compra Emitido:</span>
                     <p style={{ margin: '2px 0 0', fontSize: '16px', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>
                       {devolucaoSelecionada.cupom_gerado_codigo}
                     </p>
                   </div>
+                ) : (
+                  (devolucaoSelecionada.resumo_conclusao || devolucaoSelecionada.pedido) && (
+                    <div style={{ marginTop: '10px', padding: '10px 14px', background: '#fff', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '12.5px', color: '#166534', lineHeight: 1.5 }}>
+                      {(() => {
+                        const res = devolucaoSelecionada.resumo_conclusao;
+                        const ped = devolucaoSelecionada.pedido;
+                        const valeRest = res ? res.valor_vale_restaurado : Number(ped?.valor_vale_compra || 0);
+                        const dinheiroReemb = res ? res.valor_reembolsado_dinheiro : (!ehModalidadeVale(devolucaoSelecionada.tipo_solicitacao) ? Number(ped?.valor_pago_dinheiro || 0) : 0);
+                        const cupomRest = res ? res.cupom_restaurado : Boolean(ped?.cupom_codigo);
+                        return (
+                          <div>
+                            {dinheiroReemb > 0 && (
+                              <div>• Reembolso financeiro registrado: <strong>{formatBRL(dinheiroReemb)}</strong></div>
+                            )}
+                            {valeRest > 0 && (
+                              <div>
+                                • Saldo do vale original{ped?.vale_compra_codigo ? ` (${ped.vale_compra_codigo})` : ''} restaurado: <strong>{formatBRL(valeRest)}</strong>
+                              </div>
+                            )}
+                            {cupomRest && (
+                              <div>• Cupom promocional{ped?.cupom_codigo ? ` (${ped.cupom_codigo})` : ''} restaurado para reutilização.</div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )
                 )}
               </div>
             )}
@@ -1090,16 +1265,50 @@ export default function DevolucoesList() {
               Confirma que as peças devolvidas foram <strong>recebidas na loja física e conferidas</strong>?
             </p>
 
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px', marginBottom: '20px', fontSize: '13px', color: '#475569', lineHeight: 1.45 }}>
-              {devolucaoSelecionada?.tipo_solicitacao === 'cupom' ? (
-                <>
-                  🎟️ Ao confirmar, o sistema gerará automaticamente um <strong>Vale-Compras de {Number(devolucaoSelecionada?.valor_estorno || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong> e enviará por e-mail para o cliente.
-                </>
-              ) : (
-                <>
-                  💳 Ao confirmar, o sistema registrará a conclusão e enviará um e-mail confirmando o <strong>estorno de {Number(devolucaoSelecionada?.valor_estorno || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>.
-                </>
-              )}
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px', marginBottom: '20px', fontSize: '13px', color: '#475569', lineHeight: 1.5 }}>
+              {(() => {
+                const ped = devolucaoSelecionada?.pedido;
+                const valorEstorno = Number(devolucaoSelecionada?.valor_estorno || 0);
+                const valorDinheiro = ped ? Number(ped.valor_pago_dinheiro ?? ped.valor_total ?? 0) : valorEstorno;
+                const valorVale = Number(ped?.valor_vale_compra || 0);
+                const emVale = ehModalidadeVale(devolucaoSelecionada?.tipo_solicitacao);
+
+                if (emVale) {
+                  if (ped && valorDinheiro <= 0) {
+                    return (
+                      <>
+                        🎟️ Ao confirmar, o sistema <strong>restaurará os benefícios originais do pedido</strong>{' '}
+                        {ped.vale_compra_codigo && valorVale > 0 ? `(saldo de ${formatBRL(valorVale)} no vale ${ped.vale_compra_codigo}) ` : ''}
+                        {ped.cupom_codigo ? `e o cupom ${ped.cupom_codigo} ` : ''}sem gerar vale duplicado.
+                      </>
+                    );
+                  }
+                  const valorValeNovo = ped ? Math.min(valorEstorno, valorDinheiro + valorVale) : valorEstorno;
+                  return (
+                    <>
+                      🎟️ Ao confirmar, o sistema gerará automaticamente um <strong>Vale-Compra de {formatBRL(valorValeNovo)}</strong>
+                      {ped?.cupom_codigo ? `, restaurará o cupom ${ped.cupom_codigo}` : ''} e notificará o cliente por e-mail.
+                    </>
+                  );
+                }
+
+                if (ped && valorDinheiro <= 0) {
+                  return (
+                    <>
+                      💳 Não há valor pago em dinheiro a estornar (<strong>R$ 0,00</strong>). Ao confirmar, os benefícios originais aplicados no pedido serão restaurados e o cliente será notificado.
+                    </>
+                  );
+                }
+
+                const valorReemb = ped ? Math.min(valorEstorno, valorDinheiro) : valorEstorno;
+                return (
+                  <>
+                    💳 Ao confirmar, o sistema processará o <strong>estorno de {formatBRL(valorReemb)}</strong>
+                    {ped?.vale_compra_codigo && valorVale > 0 ? `, restaurará o saldo de ${formatBRL(valorVale)} no vale ${ped.vale_compra_codigo}` : ''}
+                    {ped?.cupom_codigo ? `, restaurará o cupom ${ped.cupom_codigo}` : ''} e enviará confirmação por e-mail ao cliente.
+                  </>
+                );
+              })()}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>

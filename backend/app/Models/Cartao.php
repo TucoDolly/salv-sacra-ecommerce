@@ -13,6 +13,7 @@ class Cartao extends Model
         'user_id',
         'tipo',
         'titular',
+        'cpf',
         'numero',
         'ultimos_digitos',
         'bandeira',

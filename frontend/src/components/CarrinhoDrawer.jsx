@@ -65,13 +65,18 @@ export default function CarrinhoDrawer() {
     cidadeDestino,
     ufDestino,
     loadingFrete,
+    cupom,
+    valeCompra,
     descontoCupom,
+    descontoVale,
+    saldoRestanteVale,
   } = useCart();
 
   const [editandoCep, setEditandoCep] = useState(false);
   const [cepInput, setCepInput] = useState(cep);
   const [verificandoPendente, setVerificandoPendente] = useState(false);
   const [modalPedidoPendente, setModalPedidoPendente] = useState(null);
+  const [avisoEnvio, setAvisoEnvio] = useState('');
 
   useEffect(() => {
     setCepInput(cep || '');
@@ -108,8 +113,10 @@ export default function CarrinhoDrawer() {
       const formatado = `${limpo.slice(0, 5)}-${limpo.slice(5)}`;
       setCep(formatado);
       setEditandoCep(false);
+      setAvisoEnvio('');
     } else {
-      alert('Digite um CEP válido com 8 dígitos.');
+      setAvisoEnvio('Digite um CEP válido com 8 dígitos.');
+      setTimeout(() => setAvisoEnvio(''), 3500);
     }
   };
 
@@ -340,10 +347,19 @@ export default function CarrinhoDrawer() {
                   <button
                     type="button"
                     className="cart-more-shipping-btn"
-                    onClick={() => alert('Todas as opções disponíveis já estão visíveis.')}
+                    onClick={() => {
+                      setAvisoEnvio('Todas as opções de frete disponíveis para o seu CEP já estão listadas acima.');
+                      setTimeout(() => setAvisoEnvio(''), 4000);
+                    }}
                   >
                     Ver mais opções de envio
                   </button>
+
+                  {avisoEnvio && (
+                    <div style={{ fontSize: '11px', color: '#0369a1', background: '#e0f2fe', padding: '6px 10px', borderRadius: '4px', marginTop: '6px' }}>
+                      ℹ️ {avisoEnvio}
+                    </div>
+                  )}
 
                   <p className="cart-shipping-note">
                     O prazo de entrega <strong>não contabiliza feriados</strong>.
@@ -365,14 +381,30 @@ export default function CarrinhoDrawer() {
           <div className="cart-footer">
             {descontoCupom > 0 && (
               <div className="cart-total-row" style={{ fontSize: '13px', color: '#1e8449', fontWeight: 700 }}>
-                <span>Desconto do cupom:</span>
+                <span>Cupom {cupom?.codigo ? `(${cupom.codigo})` : ''}:</span>
                 <span>− {descontoCupom.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
               </div>
             )}
+            {descontoVale > 0 && (
+              <div className="cart-total-row" style={{ fontSize: '13px', color: '#6b21a8', fontWeight: 700 }}>
+                <span>Vale-compra {valeCompra?.codigo ? `(${valeCompra.codigo})` : ''}:</span>
+                <span>− {descontoVale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+              </div>
+            )}
+            {valeCompra && saldoRestanteVale > 0 && (
+              <div style={{ fontSize: '11px', color: '#5b21b6', background: '#f3e8ff', padding: '5px 8px', borderRadius: '6px', marginBottom: '6px', textAlign: 'center', fontWeight: 600 }}>
+                Restarão {saldoRestanteVale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} de saldo ativo no vale após esta compra
+              </div>
+            )}
             <div className="cart-total-row">
-              <span className="cart-total-label">Total:</span>
+              <span className="cart-total-label">Total a pagar:</span>
               <span className="cart-total-value">
                 {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {total <= 0 && (descontoCupom > 0 || descontoVale > 0) && (
+                  <small style={{ display: 'block', fontSize: '10px', color: '#1e8449', fontWeight: 700 }}>
+                    Coberto por benefícios
+                  </small>
+                )}
               </span>
             </div>
 
@@ -394,7 +426,8 @@ export default function CarrinhoDrawer() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0, 0, 0, 0.65)',
+            background: 'rgba(15, 23, 42, 0.58)',
+            backdropFilter: 'blur(3px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -406,37 +439,42 @@ export default function CarrinhoDrawer() {
           <div
             style={{
               background: '#fff',
-              borderRadius: '12px',
-              padding: '28px 24px',
+              borderRadius: '14px',
+              padding: '28px 24px 24px',
               maxWidth: '430px',
               width: '100%',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.3)',
+              boxShadow: '0 24px 48px -12px rgba(15, 23, 42, 0.3)',
+              border: '1px solid #e2e8f0',
               textAlign: 'center',
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <div
               style={{
-                width: '54px',
-                height: '54px',
+                width: '52px',
+                height: '52px',
                 borderRadius: '50%',
                 background: '#fef3c7',
+                border: '1px solid #fde68a',
                 color: '#b45309',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 margin: '0 auto 14px',
-                fontSize: '26px',
               }}
             >
-              ⚠️
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
             </div>
-            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#111', margin: '0 0 10px' }}>
-              Pedido Pendente via PIX
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', margin: '0 0 10px' }}>
+              Pedido Pendente em Aberto
             </h3>
-            <p style={{ fontSize: '14px', color: '#4b5563', lineHeight: 1.6, margin: '0 0 22px' }}>
-              Você já possui um pedido aguardando pagamento via PIX
-              {typeof modalPedidoPendente === 'number' ? ` (Pedido #${modalPedidoPendente})` : ''} em aberto. Conclua o pagamento via PIX ou cancele o pedido em <strong>Meus Pedidos</strong> antes de iniciar uma nova compra.
+            <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, margin: '0 0 22px' }}>
+              Você já possui um pedido pendente de pagamento
+              {typeof modalPedidoPendente === 'number' ? ` (Pedido #${modalPedidoPendente})` : ''} em aberto. Conclua o pagamento ou cancele o pedido em <strong>Meus Pedidos</strong> antes de iniciar uma nova compra.
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
@@ -445,10 +483,10 @@ export default function CarrinhoDrawer() {
                 style={{
                   flex: 1,
                   padding: '10px 14px',
-                  borderRadius: '6px',
-                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
                   background: '#fff',
-                  color: '#374151',
+                  color: '#334155',
                   fontSize: '13px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -467,9 +505,9 @@ export default function CarrinhoDrawer() {
                 style={{
                   flex: 1.4,
                   padding: '10px 14px',
-                  borderRadius: '6px',
+                  borderRadius: '8px',
                   border: 'none',
-                  background: '#111',
+                  background: '#0f172a',
                   color: '#fff',
                   fontSize: '13px',
                   fontWeight: 700,

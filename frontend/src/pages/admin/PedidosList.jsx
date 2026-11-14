@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   getPedidosAdmin,
@@ -8,6 +8,7 @@ import {
   sincronizarTodosRastreiosAdmin,
   excluirPedidoAdmin,
   limparFinalizadosAdmin,
+  bloquearValesPedidoAdmin,
 } from '../../services/adminPedidoService';
 import { imprimirReciboPedido } from '../../utils/imprimirRecibo';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -23,6 +24,9 @@ const STATUS_OPCOES = [
   'Entregue',
   'Cancelado',
 ];
+
+// Status selecionáveis pela setinha rápida (Cancelado é feito via botão em Gerenciar Entrega + modal de confirmação)
+const STATUS_OPCOES_ALTERACAO = STATUS_OPCOES.filter((st) => st !== 'Cancelado');
 
 const STATUS_BADGE_CLASS = {
   Pendente: 'pendente',
@@ -149,6 +153,8 @@ export default function PedidosList() {
   // Filtros
   const [statusFiltro, setStatusFiltro] = useState('');
   const [busca, setBusca] = useState(buscaUrl);
+  const buscaRef = useRef(busca);
+  buscaRef.current = busca;
 
   useEffect(() => {
     if (buscaUrl !== undefined) {
@@ -174,6 +180,19 @@ export default function PedidosList() {
   const [enviandoMelhorEnvio, setEnviandoMelhorEnvio] = useState(false);
   const [cpfManual, setCpfManual] = useState('');
   const [rastreioFeedback, setRastreioFeedback] = useState(null);
+
+  // Cancelamento com modal de confirmação de reembolso pelo Admin
+  const [pedidoParaCancelarAdmin, setPedidoParaCancelarAdmin] = useState(null);
+  const [cancelandoAdmin, setCancelandoAdmin] = useState(false);
+
+  // Bloqueio / revogação de vales por contestação bancária (Chargeback / MED)
+  const [modalBloquearVales, setModalBloquearVales] = useState({
+    aberto: false,
+    pedido: null,
+    tipo: 'revogado',
+    motivo: '',
+    enviando: false,
+  });
 
   // Exclusão de pedidos finalizados / cancelados
   const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
@@ -205,20 +224,26 @@ export default function PedidosList() {
     });
   };
 
-  const carregarPedidos = async () => {
-    setLoading(true);
-    setError('');
+  const carregarPedidos = async (silencioso = false) => {
+    if (!silencioso) setLoading(true);
+    if (!silencioso) setError('');
     try {
       const params = {};
       if (statusFiltro) params.status = statusFiltro;
-      if (busca.trim()) params.busca = busca.trim();
+      if (buscaRef.current.trim()) params.busca = buscaRef.current.trim();
 
       const { data } = await getPedidosAdmin(params);
-      setPedidos(data.data || data);
+      const lista = data.data || data;
+      setPedidos(lista);
+      setPedidoSelecionado((prev) => {
+        if (!prev) return null;
+        const atualizado = lista.find((item) => item.id === prev.id);
+        return atualizado || prev;
+      });
     } catch {
-      setError('Não foi possível carregar os pedidos.');
+      if (!silencioso) setError('Não foi possível carregar os pedidos.');
     } finally {
-      setLoading(false);
+      if (!silencioso) setLoading(false);
     }
   };
 
@@ -226,11 +251,33 @@ export default function PedidosList() {
     setPaginaAtual(1);
     carregarPedidos();
 
-    // Verificação periódica automática de status e entregas no Melhor Envio (a cada 90s)
+    // Atualização rápida em segundo plano sem necessidade de F5 (a cada 5s quando a aba está visível)
     const interval = setInterval(() => {
-      carregarPedidos();
-    }, 90000);
-    return () => clearInterval(interval);
+      if (document.visibilityState === 'visible') {
+        carregarPedidos(true);
+      }
+    }, 5000);
+
+    const handleSync = () => carregarPedidos(true);
+    const handleStorage = (e) => {
+      if (e.key === 'salv_sync_trigger') carregarPedidos(true);
+    };
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') carregarPedidos(true);
+    };
+
+    window.addEventListener('salv-pedidos-atualizados', handleSync);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('salv-pedidos-atualizados', handleSync);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
   }, [statusFiltro]);
 
   const handleBuscar = (e) => {
@@ -248,6 +295,9 @@ export default function PedidosList() {
       setSuccess(data.message);
       setModalLimpeza(false);
       carregarPedidos();
+      try {
+        localStorage.setItem('salv_sync_trigger', String(Date.now()));
+      } catch {}
     } catch (err) {
       setError(err.response?.data?.message || 'Erro ao limpar pedidos finalizados.');
     } finally {
@@ -280,11 +330,104 @@ export default function PedidosList() {
       }
       setSuccess(`Status do Pedido #${id} alterado para "${novoStatus}".`);
       window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+      try {
+        localStorage.setItem('salv_sync_trigger', String(Date.now()));
+      } catch {}
       setTimeout(() => setSuccess(''), 4000);
     } catch {
       setError('Erro ao atualizar o status do pedido.');
     } finally {
       setAtualizandoStatusId(null);
+    }
+  };
+
+  const handleConfirmarCancelamentoAdmin = async () => {
+    if (!pedidoParaCancelarAdmin) return;
+    const ped = pedidoParaCancelarAdmin;
+    setCancelandoAdmin(true);
+    setError('');
+    try {
+      const { data } = await updateStatusPedidoAdmin(ped.id, 'Cancelado');
+      const pedidoAtualizado = data.pedido || { status: 'Cancelado' };
+
+      setPedidos((prev) =>
+        prev.map((p) => (p.id === ped.id ? { ...p, ...pedidoAtualizado } : p))
+      );
+      if (pedidoSelecionado && pedidoSelecionado.id === ped.id) {
+        setPedidoSelecionado((prev) => ({ ...prev, ...pedidoAtualizado }));
+      }
+      setPedidoParaCancelarAdmin(null);
+
+      const valorDinheiro = Number(ped.valor_pago_dinheiro ?? ped.valor_total ?? 0);
+      const detalhes = [];
+      if (ped.status !== 'Pendente' && valorDinheiro > 0) {
+        detalhes.push(`reembolso de ${formatMoeda(valorDinheiro)}`);
+      }
+      if (Number(ped.valor_vale_compra || 0) > 0 && ped.vale_compra_codigo) {
+        detalhes.push(`vale ${ped.vale_compra_codigo} restaurado (${formatMoeda(ped.valor_vale_compra)})`);
+      }
+      if (ped.cupom_codigo) {
+        detalhes.push(`cupom ${ped.cupom_codigo} restaurado`);
+      }
+
+      setSuccess(
+        data?.message ||
+          `Pedido #${ped.id} cancelado${
+            detalhes.length > 0 ? ` (${detalhes.join(' · ')})` : ''
+          } e estoque restaurado.`
+      );
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+      try {
+        localStorage.setItem('salv_sync_trigger', String(Date.now()));
+      } catch {}
+      setTimeout(() => setSuccess(''), 6000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Erro ao cancelar o pedido.');
+      setPedidoParaCancelarAdmin(null);
+    } finally {
+      setCancelandoAdmin(false);
+    }
+  };
+
+  const abrirModalBloquearVales = (pedido) => {
+    setModalBloquearVales({
+      aberto: true,
+      pedido,
+      tipo: 'revogado',
+      motivo: '',
+      enviando: false,
+    });
+  };
+
+  const handleConfirmarBloquearVales = async (e) => {
+    if (e) e.preventDefault();
+    if (!modalBloquearVales.pedido) return;
+    const pedidoId = modalBloquearVales.pedido.id;
+    setModalBloquearVales((prev) => ({ ...prev, enviando: true }));
+    setError('');
+    try {
+      const payload = {
+        tipo: modalBloquearVales.tipo,
+        motivo:
+          modalBloquearVales.motivo.trim() ||
+          'Contestação bancária (Chargeback / MED) registrada no pedido de origem.',
+      };
+      const { data } = await bloquearValesPedidoAdmin(pedidoId, payload);
+      setModalBloquearVales({
+        aberto: false,
+        pedido: null,
+        tipo: 'revogado',
+        motivo: '',
+        enviando: false,
+      });
+      setSuccess(
+        data?.message ||
+          `Vales vinculados ao Pedido #${pedidoId} processados (${data?.total_afetados ?? 0} afetado(s)).`
+      );
+      setTimeout(() => setSuccess(''), 6000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Erro ao bloquear/revogar vales do pedido.');
+      setModalBloquearVales((prev) => ({ ...prev, enviando: false }));
     }
   };
 
@@ -301,6 +444,9 @@ export default function PedidosList() {
       }
       setPedidoParaExcluir(null);
       window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+      try {
+        localStorage.setItem('salv_sync_trigger', String(Date.now()));
+      } catch {}
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
       setError(err.response?.data?.message || 'Erro ao excluir o pedido.');
@@ -610,16 +756,16 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
         </div>
       ) : (
         <div className="admin-table-wrapper">
-          <table className="admin-table" style={{ minWidth: '1050px' }}>
+          <table className="admin-table" style={{ width: '100%', minWidth: '860px' }}>
             <thead>
               <tr>
-                <th>Pedido</th>
-                <th>Data</th>
-                <th>Cliente</th>
-                <th>Envio / Rastreio</th>
-                <th>Total</th>
-                <th>Status Atual</th>
-                <th style={{ minWidth: '250px' }}>Ações</th>
+                <th style={{ width: '80px' }}>Pedido</th>
+                <th style={{ width: '105px' }}>Data</th>
+                <th style={{ minWidth: '140px' }}>Cliente</th>
+                <th style={{ width: '125px' }}>Envio / Rastreio</th>
+                <th style={{ width: '90px' }}>Total</th>
+                <th style={{ width: '110px' }}>Status Atual</th>
+                <th style={{ width: '230px', paddingRight: '32px' }}>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -747,29 +893,33 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                   <td>
                     <strong>{formatMoeda(p.valor_total)}</strong>
                     <div style={{ fontSize: '11px', color: '#777', textTransform: 'uppercase' }}>
-                      {p.metodo_pagamento === 'cartao_credito'
-                        ? 'Cartão de Crédito'
+                      {p.metodo_pagamento === 'cartao_credito' || p.metodo_pagamento === 'cartao'
+                        ? `Cartão de Crédito${p.cartao_parcelas > 1 ? ` (${p.cartao_parcelas}x${p.cartao_valor_parcela ? ` de ${formatMoeda(p.cartao_valor_parcela)}` : ''})` : ' (À vista)'}`
                         : p.metodo_pagamento === 'cartao_debito'
-                        ? 'Cartão de Débito'
+                        ? 'Cartão de Débito (À vista)'
                         : p.metodo_pagamento}
                     </div>
                   </td>
                   <td>
-                    <select
-                      className="admin-status-select"
-                      value={p.status}
-                      disabled={atualizandoStatusId === p.id}
-                      onChange={(e) => handleAlterarStatus(p.id, e.target.value)}
-                    >
-                      {STATUS_OPCOES.map((st) => (
-                        <option key={st} value={st}>
-                          {st}
-                        </option>
-                      ))}
-                    </select>
+                    {p.status === 'Cancelado' ? (
+                      <span className="admin-status-badge cancelado">Cancelado</span>
+                    ) : (
+                      <select
+                        className="admin-status-select"
+                        value={p.status}
+                        disabled={atualizandoStatusId === p.id}
+                        onChange={(e) => handleAlterarStatus(p.id, e.target.value)}
+                      >
+                        {STATUS_OPCOES_ALTERACAO.map((st) => (
+                          <option key={st} value={st}>
+                            {st}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </td>
-                  <td style={{ minWidth: '220px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
+                  <td style={{ width: '230px', paddingRight: '32px' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
                       <button
                         type="button"
                         className="admin-btn admin-btn-secondary admin-btn-sm"
@@ -940,17 +1090,19 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                     <span className={`admin-status-badge ${STATUS_BADGE_CLASS[pedidoSelecionado.status] ?? 'pendente'}`}>
                       {pedidoSelecionado.status}
                     </span>
-                    <select
-                      className="admin-status-select"
-                      value={pedidoSelecionado.status}
-                      onChange={(e) => handleAlterarStatus(pedidoSelecionado.id, e.target.value)}
-                    >
-                      {STATUS_OPCOES.map((st) => (
-                        <option key={st} value={st}>
-                          Mudar para: {st}
-                        </option>
-                      ))}
-                    </select>
+                    {pedidoSelecionado.status !== 'Cancelado' && (
+                      <select
+                        className="admin-status-select"
+                        value={pedidoSelecionado.status}
+                        onChange={(e) => handleAlterarStatus(pedidoSelecionado.id, e.target.value)}
+                      >
+                        {STATUS_OPCOES_ALTERACAO.map((st) => (
+                          <option key={st} value={st}>
+                            Mudar para: {st}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -982,6 +1134,17 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                         onClick={() => handleAlterarStatus(pedidoSelecionado.id, 'Entregue')}
                       >
                         ✅ Confirmar Entrega
+                      </button>
+                    )}
+
+                    {pedidoSelecionado.status !== 'Cancelado' && (
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn-secondary"
+                        style={{ fontSize: '12px', padding: '8px 12px', background: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5', fontWeight: 700 }}
+                        onClick={() => setPedidoParaCancelarAdmin(pedidoSelecionado)}
+                      >
+                        ✕ Cancelar Pedido
                       </button>
                     )}
 
@@ -1268,26 +1431,115 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
 
               {/* Resumo Financeiro */}
               <div className="admin-drawer-section">
-                <h4>Resumo Financeiro</h4>
-                <div className="admin-pedido-info-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span>Frete:</span>
-                    <span>{formatMoeda(pedidoSelecionado.valor_frete)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span>Forma de Pagamento:</span>
-                    <span style={{ textTransform: 'uppercase', fontWeight: 600 }}>
-                      {pedidoSelecionado.metodo_pagamento === 'cartao_credito'
-                        ? 'Cartão de Crédito'
-                        : pedidoSelecionado.metodo_pagamento === 'cartao_debito'
-                        ? 'Cartão de Débito'
-                        : pedidoSelecionado.metodo_pagamento}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <h4 style={{ margin: 0 }}>Resumo Financeiro</h4>
+                  {pedidoSelecionado.beneficios_restaurados && (
+                    <span style={{ fontSize: '11px', fontWeight: 700, background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '999px' }}>
+                      ✓ Benefícios Restaurados
                     </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 700, borderTop: '1px solid #ddd', paddingTop: '8px' }}>
-                    <span>Valor Total:</span>
-                    <span>{formatMoeda(pedidoSelecionado.valor_total)}</span>
-                  </div>
+                  )}
+                </div>
+                {(() => {
+                  const subtotalPecas = (pedidoSelecionado.itens || []).reduce(
+                    (acc, item) => acc + Number(item.preco_unitario || 0) * Number(item.quantidade || 1),
+                    0
+                  );
+                  const freteOriginal = Number(pedidoSelecionado.valor_frete || 0);
+                  const descProd = Number(pedidoSelecionado.valor_desconto_produto || 0);
+                  const descFrete = Number(pedidoSelecionado.valor_desconto_frete || 0);
+                  const descCupomTotal = Number(pedidoSelecionado.valor_desconto_cupom || descProd + descFrete || 0);
+                  const fretePago = Number(
+                    pedidoSelecionado.valor_frete_pago ?? Math.max(0, freteOriginal - descFrete)
+                  );
+                  const valorVale = Number(pedidoSelecionado.valor_vale_compra || 0);
+                  const valorDinheiro = Number(
+                    pedidoSelecionado.valor_pago_dinheiro ?? pedidoSelecionado.valor_total ?? 0
+                  );
+
+                  return (
+                    <div className="admin-pedido-info-card">
+                      {subtotalPecas > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <span>Subtotal das Peças:</span>
+                          <span>{formatMoeda(subtotalPecas)}</span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span>Frete Original:</span>
+                        <span>{freteOriginal > 0 ? formatMoeda(freteOriginal) : 'Grátis'}</span>
+                      </div>
+                      {descFrete > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#15803d' }}>
+                          <span>Desconto no Frete ({pedidoSelecionado.cupom_codigo || 'Cupom'}):</span>
+                          <span>-{formatMoeda(descFrete)}</span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span>Frete Pago pelo Cliente:</span>
+                        <span style={{ fontWeight: 600 }}>{fretePago > 0 ? formatMoeda(fretePago) : 'R$ 0,00'}</span>
+                      </div>
+                      {pedidoSelecionado.cupom_codigo && descCupomTotal > 0 && descProd > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#15803d' }}>
+                          <span>Cupom Promocional ({pedidoSelecionado.cupom_codigo}):</span>
+                          <span>-{formatMoeda(descProd)}</span>
+                        </div>
+                      )}
+                      {pedidoSelecionado.cupom_codigo && descCupomTotal > 0 && descProd === 0 && descFrete === 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#15803d' }}>
+                          <span>Cupom ({pedidoSelecionado.cupom_codigo}):</span>
+                          <span>-{formatMoeda(descCupomTotal)}</span>
+                        </div>
+                      )}
+                      {pedidoSelecionado.vale_compra_codigo && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', color: '#7e22ce', fontWeight: 600 }}>
+                          <span>Vale-Compra ({pedidoSelecionado.vale_compra_codigo}):</span>
+                          <span>-{formatMoeda(valorVale)}</span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span>Forma de Pagamento:</span>
+                        <span style={{ textTransform: 'uppercase', fontWeight: 600 }}>
+                          {pedidoSelecionado.metodo_pagamento === 'cartao_credito' || pedidoSelecionado.metodo_pagamento === 'cartao'
+                            ? `Cartão de Crédito${pedidoSelecionado.cartao_parcelas > 1 ? ` (${pedidoSelecionado.cartao_parcelas}x${pedidoSelecionado.cartao_valor_parcela ? ` de ${formatMoeda(pedidoSelecionado.cartao_valor_parcela)}` : ''})` : ' (À vista)'}`
+                            : pedidoSelecionado.metodo_pagamento === 'cartao_debito'
+                            ? 'Cartão de Débito (À vista)'
+                            : pedidoSelecionado.metodo_pagamento === 'vale_compra'
+                            ? '100% Benefícios / Vale-Compra'
+                            : pedidoSelecionado.metodo_pagamento}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 700, borderTop: '1px solid #ddd', paddingTop: '8px', marginTop: '4px' }}>
+                        <span>Valor Pago em Dinheiro:</span>
+                        <span>{formatMoeda(valorDinheiro)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                        <span>Valor Total Registrado no Pedido:</span>
+                        <span>{formatMoeda(pedidoSelecionado.valor_total)}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Segurança / Contestação Bancária (Chargeback / MED) */}
+                <div style={{ marginTop: '10px', padding: '10px 12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px' }}>
+                  <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#9a3412', lineHeight: 1.45 }}>
+                    <strong>Segurança Financeira:</strong> Em caso de contestação bancária (Chargeback / MED PIX) neste pedido, bloqueie ou revogue imediatamente os vales-compra originados a partir dele.
+                  </p>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn-sm"
+                    style={{
+                      background: '#fff',
+                      color: '#b91c1c',
+                      border: '1px solid #fca5a5',
+                      fontWeight: 700,
+                      fontSize: '12px',
+                      width: '100%',
+                    }}
+                    onClick={() => abrirModalBloquearVales(pedidoSelecionado)}
+                  >
+                    🛡️ Chargeback / MED — Bloquear ou Revogar Vales deste Pedido
+                  </button>
                 </div>
               </div>
 
@@ -1347,6 +1599,134 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                 disabled={limpandoLote}
               >
                 {limpandoLote ? 'Limpando...' : 'Confirmar Limpeza em Lote'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de confirmação de cancelamento e reembolso (Admin) ── */}
+      {pedidoParaCancelarAdmin && (
+        <div
+          className="admin-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          style={{ zIndex: 99999 }}
+          onClick={() => !cancelandoAdmin && setPedidoParaCancelarAdmin(null)}
+        >
+          <div className="admin-modal" style={{ maxWidth: '470px', textAlign: 'left' }} onClick={(e) => e.stopPropagation()}>
+            <h3 id="modal-cancel-title" style={{ color: '#b91c1c', marginTop: 0 }}>
+              Confirmar Cancelamento — Pedido #{pedidoParaCancelarAdmin.id}
+            </h3>
+            <p style={{ fontSize: '14px', lineHeight: 1.6, color: '#475569', margin: '0 0 14px' }}>
+              Tem certeza que deseja cancelar o <strong>Pedido #{pedidoParaCancelarAdmin.id}</strong> do(a) cliente{' '}
+              <strong>{pedidoParaCancelarAdmin.user?.name || 'Cliente'}</strong>?
+            </p>
+            {(() => {
+              const pedCancel = pedidoParaCancelarAdmin;
+              const estaPago =
+                ['Pago', 'Em separação', 'Em montagem', 'Enviado', 'Em transporte', 'Entregue'].includes(pedCancel.status) ||
+                Boolean(pedCancel.pagamento_id);
+              const valorDinheiro = Number(pedCancel.valor_pago_dinheiro ?? pedCancel.valor_total ?? 0);
+              const valorVale = Number(pedCancel.valor_vale_compra || 0);
+              const temVale = Boolean(pedCancel.vale_compra_codigo && valorVale > 0);
+              const temCupom = Boolean(pedCancel.cupom_codigo);
+
+              if (estaPago) {
+                return (
+                  <div
+                    style={{
+                      background: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      borderRadius: '8px',
+                      padding: '12px 14px',
+                      marginBottom: '18px',
+                      fontSize: '13.5px',
+                      color: '#7f1d1d',
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    <p style={{ margin: '0 0 8px' }}>
+                      💳 <strong>Modalidade Automática (Admin): Reembolso Integral</strong>
+                    </p>
+                    <ul style={{ margin: 0, paddingLeft: '18px' }}>
+                      {valorDinheiro > 0 ? (
+                        <li>
+                          O valor efetivamente pago em dinheiro de <strong>{formatMoeda(valorDinheiro)}</strong> será reembolsado automaticamente via{' '}
+                          <strong>
+                            {pedCancel.metodo_pagamento === 'pix'
+                              ? 'PIX'
+                              : pedCancel.metodo_pagamento === 'boleto'
+                              ? 'Boleto'
+                              : 'Cartão'}
+                          </strong>{' '}
+                          (Mercado Pago).
+                        </li>
+                      ) : (
+                        <li>
+                          Não há valor financeiro a reembolsar (<strong>R$ 0,00 pagos em dinheiro</strong> — pedido coberto por benefícios).
+                        </li>
+                      )}
+                      {temVale && (
+                        <li>
+                          O saldo abatido pelo vale-compra <strong>{pedCancel.vale_compra_codigo}</strong> ({formatMoeda(valorVale)}) será <strong>restaurado ao vale original</strong> e reativado.
+                        </li>
+                      )}
+                      {temCupom && (
+                        <li>
+                          O cupom promocional <strong>{pedCancel.cupom_codigo}</strong> será <strong>restaurado</strong> para reutilização pelo cliente.
+                        </li>
+                      )}
+                      <li>Os itens retornarão automaticamente ao estoque.</li>
+                    </ul>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  style={{
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    padding: '12px 14px',
+                    marginBottom: '18px',
+                    fontSize: '13.5px',
+                    color: '#334155',
+                    lineHeight: 1.55,
+                  }}
+                >
+                  <p style={{ margin: '0 0 6px' }}>
+                    📦 <strong>Pedido Pendente ({formatMoeda(pedCancel.valor_total)}):</strong> Como o pagamento ainda não foi concluído, não haverá reembolso financeiro; os itens retornarão automaticamente ao estoque.
+                  </p>
+                  {(temVale || temCupom) && (
+                    <p style={{ margin: 0, fontSize: '12.5px', color: '#475569' }}>
+                      {temVale && `O vale-compra ${pedCancel.vale_compra_codigo} (${formatMoeda(valorVale)})`}
+                      {temVale && temCupom && ' e '}
+                      {temCupom && `o cupom ${pedCancel.cupom_codigo}`}
+                      {' '}será(ão) restaurado(s) automaticamente.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+            <div className="admin-modal-actions">
+              <button
+                type="button"
+                className="admin-btn admin-btn-secondary"
+                onClick={() => setPedidoParaCancelarAdmin(null)}
+                disabled={cancelandoAdmin}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                className="admin-btn admin-btn-primary"
+                style={{ background: '#dc2626', borderColor: '#dc2626' }}
+                onClick={handleConfirmarCancelamentoAdmin}
+                disabled={cancelandoAdmin}
+              >
+                {cancelandoAdmin ? 'Cancelando…' : 'Sim, cancelar pedido'}
               </button>
             </div>
           </div>
@@ -1416,6 +1796,86 @@ Valor Declarado: ${formatMoeda(pedido.valor_total)}`;
                 Entendi
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal de Bloqueio / Revogação de Vales por Chargeback / MED ── */}
+      {modalBloquearVales.aberto && modalBloquearVales.pedido && (
+        <div
+          className="admin-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          style={{ zIndex: 99999 }}
+          onClick={() =>
+            !modalBloquearVales.enviando &&
+            setModalBloquearVales({ aberto: false, pedido: null, tipo: 'revogado', motivo: '', enviando: false })
+          }
+        >
+          <div className="admin-modal" style={{ maxWidth: '490px', textAlign: 'left' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              <span style={{ fontSize: '22px' }}>🛡️</span>
+              <h3 style={{ margin: 0, fontSize: '17px', color: '#991b1b' }}>
+                Contestação Bancária (Chargeback / MED) — Pedido #{modalBloquearVales.pedido.id}
+              </h3>
+            </div>
+            <p style={{ fontSize: '13.5px', color: '#475569', lineHeight: 1.55, margin: '0 0 14px' }}>
+              Esta ação bloqueia ou revoga imediatamente quaisquer <strong>vales-compra originados deste pedido</strong> para{' '}
+              <strong>{modalBloquearVales.pedido.user?.name || 'o cliente'}</strong>, impedindo novas compras com crédito contestado e registrando a ocorrência no histórico de auditoria.
+            </p>
+            <form onSubmit={handleConfirmarBloquearVales}>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                  Tipo de Restrição
+                </label>
+                <select
+                  value={modalBloquearVales.tipo}
+                  onChange={(e) => setModalBloquearVales((prev) => ({ ...prev, tipo: e.target.value }))}
+                  disabled={modalBloquearVales.enviando}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13.5px' }}
+                >
+                  <option value="revogado">Revogar definitivamente (Chargeback / MED confirmado)</option>
+                  <option value="bloqueado">Bloquear temporariamente (Contestação em análise)</option>
+                </select>
+              </div>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                  Motivo / Protocolo da Contestação
+                </label>
+                <textarea
+                  rows={3}
+                  value={modalBloquearVales.motivo}
+                  onChange={(e) => setModalBloquearVales((prev) => ({ ...prev, motivo: e.target.value }))}
+                  disabled={modalBloquearVales.enviando}
+                  placeholder="Ex: Chargeback aberto no Mercado Pago / Protocolo MED PIX #..."
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13.5px', resize: 'vertical' }}
+                />
+              </div>
+              <div className="admin-modal-actions" style={{ justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary"
+                  disabled={modalBloquearVales.enviando}
+                  onClick={() =>
+                    setModalBloquearVales({ aberto: false, pedido: null, tipo: 'revogado', motivo: '', enviando: false })
+                  }
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="admin-btn admin-btn-primary"
+                  style={{ background: '#b91c1c', borderColor: '#b91c1c' }}
+                  disabled={modalBloquearVales.enviando}
+                >
+                  {modalBloquearVales.enviando
+                    ? 'Processando…'
+                    : modalBloquearVales.tipo === 'revogado'
+                    ? 'Confirmar Revogação'
+                    : 'Confirmar Bloqueio'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

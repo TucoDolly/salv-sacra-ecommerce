@@ -184,17 +184,20 @@ class ContaController extends Controller
         $dados = $request->validate([
             'tipo'     => ['required', 'in:credito,debito'],
             'titular'  => ['required', 'string', 'max:255'],
+            'cpf'      => ['required', 'string', 'max:20'],
             'numero'   => ['required', 'string', 'min:12', 'max:25'],
             'validade' => ['required', 'string', 'regex:/^(0[1-9]|1[0-2])\/?([0-9]{2}|[0-9]{4})$/'],
             'bandeira' => ['nullable', 'string', 'max:50'],
         ]);
 
         $limpo = preg_replace('/\D/', '', $dados['numero']);
+        $cpfLimpo = preg_replace('/\D/', '', $dados['cpf']);
         $ultimos = substr($limpo, -4);
 
         $cartao = $request->user()->cartoes()->create([
             'tipo'            => $dados['tipo'],
             'titular'         => mb_strtoupper($dados['titular']),
+            'cpf'             => $cpfLimpo,
             'numero'          => $limpo,
             'ultimos_digitos' => $ultimos,
             'bandeira'        => $dados['bandeira'] ?? $this->identificarBandeira($limpo),

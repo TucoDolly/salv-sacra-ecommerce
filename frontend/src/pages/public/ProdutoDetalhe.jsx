@@ -341,6 +341,39 @@ export default function ProdutoDetalhe() {
     carregarAvaliacoes(id);
   }, [id]);
 
+  // Sincroniza estoque e variações em tempo real sem refresh da página
+  useEffect(() => {
+    if (!id) return;
+    const sincronizarEstoque = () => {
+      if (document.visibilityState === 'visible') {
+        api.get(`/produtos/${id}`)
+          .then((res) => {
+            const prod = res.data;
+            if (prod && Array.isArray(prod.variacoes)) {
+              setVariacoes(prod.variacoes);
+            }
+          })
+          .catch(() => {});
+      }
+    };
+
+    const handleStorage = (e) => {
+      if (e.key === 'salv_sync_trigger') sincronizarEstoque();
+    };
+
+    const interval = setInterval(sincronizarEstoque, 5000);
+    window.addEventListener('focus', sincronizarEstoque);
+    window.addEventListener('storage', handleStorage);
+    document.addEventListener('visibilitychange', sincronizarEstoque);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', sincronizarEstoque);
+      window.removeEventListener('storage', handleStorage);
+      document.removeEventListener('visibilitychange', sincronizarEstoque);
+    };
+  }, [id]);
+
   // Sincroniza CEP com endereço do cliente / carrinho e calcula o frete automaticamente
   useEffect(() => {
     const cepAlvo = cep || globalCep;
@@ -512,13 +545,15 @@ export default function ProdutoDetalhe() {
 
     const estoqueDisponivel = getEstoqueTamanho(tamanhoSelecionado);
     if (estoqueDisponivel <= 0) {
-      alert(`O tamanho ${tamanhoSelecionado} (${modeloSelecionado}) para a cor ${corSelecionada} não está disponível no estoque.`);
+      setToastMessage(`O tamanho ${tamanhoSelecionado} (${modeloSelecionado}) para a cor ${corSelecionada} não está disponível no estoque.`);
+      setTimeout(() => setToastMessage(null), 4500);
       return;
     }
 
     if (quantidade > estoqueDisponivel) {
-      alert(`Você selecionou ${quantidade} unidades, mas restam apenas ${estoqueDisponivel} un no estoque. Ajustamos a quantidade para o limite disponível.`);
+      setToastMessage(`Você selecionou ${quantidade} unidades, mas restam apenas ${estoqueDisponivel} un no estoque. Ajustamos a quantidade para o limite disponível.`);
       setQuantidade(estoqueDisponivel);
+      setTimeout(() => setToastMessage(null), 4500);
       return;
     }
 
@@ -1368,7 +1403,8 @@ export default function ProdutoDetalhe() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.55)',
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(3px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1380,50 +1416,57 @@ export default function ProdutoDetalhe() {
           <div
             style={{
               backgroundColor: '#fff',
-              borderRadius: '12px',
+              borderRadius: '14px',
               maxWidth: '430px',
               width: '100%',
-              padding: '28px',
-              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.25)',
+              padding: '28px 24px 24px',
+              boxShadow: '0 24px 48px -12px rgba(15, 23, 42, 0.28)',
+              border: '1px solid #e2e8f0',
               textAlign: 'center',
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <div
               style={{
-                width: '52px',
-                height: '52px',
+                width: '50px',
+                height: '50px',
                 borderRadius: '50%',
-                backgroundColor: '#fee2e2',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
                 color: '#dc2626',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                margin: '0 auto 16px',
-                fontSize: '24px',
+                margin: '0 auto 14px',
               }}
             >
-              ⚠️
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6" />
+                <path d="M14 11v6" />
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+              </svg>
             </div>
-            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#111', margin: '0 0 8px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', margin: '0 0 8px' }}>
               Confirmar exclusão de avaliação
             </h3>
-            <p style={{ fontSize: '14px', color: '#666', lineHeight: 1.5, margin: '0 0 24px' }}>
+            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: 1.5, margin: '0 0 24px' }}>
               Tem certeza de que deseja excluir esta avaliação? Esta ação não poderá ser desfeita.
             </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
               <button
                 type="button"
                 onClick={() => setAvaliacaoParaExcluir(null)}
                 disabled={excluindoAvaliacao}
                 style={{
                   flex: 1,
-                  padding: '11px 18px',
-                  borderRadius: '6px',
-                  border: '1px solid #d1d5db',
+                  padding: '10px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
                   background: '#fff',
-                  color: '#374151',
-                  fontSize: '14px',
+                  color: '#334155',
+                  fontSize: '13.5px',
                   fontWeight: 600,
                   cursor: 'pointer',
                 }}
@@ -1436,13 +1479,13 @@ export default function ProdutoDetalhe() {
                 disabled={excluindoAvaliacao}
                 style={{
                   flex: 1,
-                  padding: '11px 18px',
-                  borderRadius: '6px',
+                  padding: '10px 16px',
+                  borderRadius: '8px',
                   border: 'none',
                   background: '#dc2626',
                   color: '#fff',
-                  fontSize: '14px',
-                  fontWeight: 600,
+                  fontSize: '13.5px',
+                  fontWeight: 700,
                   cursor: 'pointer',
                 }}
               >
@@ -1461,7 +1504,8 @@ export default function ProdutoDetalhe() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(3px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1473,49 +1517,54 @@ export default function ProdutoDetalhe() {
           <div
             style={{
               backgroundColor: '#fff',
-              borderRadius: '12px',
+              borderRadius: '14px',
               maxWidth: '430px',
               width: '100%',
-              padding: '28px',
-              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.25)',
+              padding: '28px 24px 24px',
+              boxShadow: '0 24px 48px -12px rgba(15, 23, 42, 0.28)',
+              border: '1px solid #e2e8f0',
               textAlign: 'center',
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <div
               style={{
-                width: '56px',
-                height: '56px',
+                width: '52px',
+                height: '52px',
                 borderRadius: '50%',
                 backgroundColor: '#fef3c7',
+                border: '1px solid #fde68a',
                 color: '#b45309',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                margin: '0 auto 16px',
-                fontSize: '26px',
+                margin: '0 auto 14px',
               }}
             >
-              🛍️
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <path d="M16 10a4 4 0 0 1-8 0" />
+              </svg>
             </div>
-            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#111', margin: '0 0 8px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', margin: '0 0 8px' }}>
               Faça login para continuar
             </h3>
-            <p style={{ fontSize: '14px', color: '#666', lineHeight: 1.5, margin: '0 0 24px' }}>
+            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: 1.5, margin: '0 0 24px' }}>
               Para adicionar peças à sua sacola de compras e finalizar pedidos, é necessário entrar na sua conta.
             </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
               <button
                 type="button"
                 onClick={() => setModalLoginNecessario(false)}
                 style={{
                   flex: 1,
-                  padding: '11px 18px',
-                  borderRadius: '6px',
-                  border: '1px solid #d1d5db',
+                  padding: '10px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
                   background: '#fff',
-                  color: '#374151',
-                  fontSize: '14px',
+                  color: '#334155',
+                  fontSize: '13.5px',
                   fontWeight: 600,
                   cursor: 'pointer',
                 }}
@@ -1533,13 +1582,13 @@ export default function ProdutoDetalhe() {
                 }}
                 style={{
                   flex: 1,
-                  padding: '11px 18px',
-                  borderRadius: '6px',
+                  padding: '10px 16px',
+                  borderRadius: '8px',
                   border: 'none',
-                  background: '#1e1e1e',
+                  background: '#0f172a',
                   color: '#fff',
-                  fontSize: '14px',
-                  fontWeight: 600,
+                  fontSize: '13.5px',
+                  fontWeight: 700,
                   cursor: 'pointer',
                 }}
               >

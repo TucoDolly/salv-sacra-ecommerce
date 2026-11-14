@@ -73,6 +73,58 @@ export default function EstoqueList() {
     return () => clearTimeout(timer);
   }, [busca, filtro]);
 
+  // Sincronização automática em segundo plano sem refresh (a cada 5 segundos e ao focar na janela)
+  useEffect(() => {
+    const carregarSilencioso = () => {
+      if (!salvandoId && document.visibilityState === 'visible') {
+        const params = {};
+        if (busca.trim()) params.busca = busca.trim();
+        if (filtro) params.filtro = filtro;
+
+        getEstoqueAdmin(params)
+          .then(({ data }) => {
+            setProdutos(data.produtos || []);
+            if (data.resumo) setResumo(data.resumo);
+            setEdicoes((prev) => {
+              const novosValores = { ...prev };
+              (data.produtos || []).forEach((prod) => {
+                (prod.variacoes || []).forEach((v) => {
+                  if (novosValores[v.id] === undefined) {
+                    novosValores[v.id] = v.estoque;
+                  }
+                });
+              });
+              return novosValores;
+            });
+          })
+          .catch(() => {});
+      }
+    };
+
+    const interval = setInterval(carregarSilencioso, 5000);
+
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') {
+        carregarDados();
+      }
+    };
+    const handleStorage = (e) => {
+      if (e.key === 'salv_sync_trigger') {
+        carregarDados();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('storage', handleStorage);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('storage', handleStorage);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [busca, filtro, salvandoId]);
+
   const handleInputChange = (variacaoId, valorStr) => {
     const val = valorStr === '' ? '' : Math.max(0, parseInt(valorStr, 10) || 0);
     setEdicoes((prev) => ({ ...prev, [variacaoId]: val }));
@@ -107,6 +159,10 @@ export default function EstoqueList() {
 
       // Recalcula resumo rapidamente
       carregarDados();
+      try {
+        localStorage.setItem('salv_sync_trigger', String(Date.now()));
+      } catch {}
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
       setTimeout(() => setFeedback({ tipo: '', texto: '' }), 3000);
     } catch {
       setFeedback({ tipo: 'erro', texto: 'Erro ao salvar o estoque.' });

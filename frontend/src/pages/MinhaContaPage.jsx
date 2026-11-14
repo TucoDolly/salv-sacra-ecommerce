@@ -7,6 +7,7 @@ import MainLayout from '../layouts/MainLayout';
 import api from '../services/api';
 import IconPix from '../components/IconPix';
 import CardBrandIcon, { detectarBandeira } from '../components/CardBrandIcon';
+import LoadingSpinner from '../components/LoadingSpinner';
 import { imprimirReciboPedido } from '../utils/imprimirRecibo';
 import {
   alterarSenha,
@@ -20,10 +21,13 @@ import {
   listarCartoes,
   listarEnderecos,
   listarPedidos,
+  listarValesCompraConta,
+  obterOpcoesRestituicaoPedido,
   obterResumoConta,
   removerCartao,
   removerEndereco,
 } from '../services/contaService';
+import { listarCuponsDisponiveis } from '../services/cupomService';
 import '../styles/auth.css';
 import '../styles/minha-conta.css';
 
@@ -35,6 +39,7 @@ const BREADCRUMBS = [
 const TABS = [
   { id: 'resumo',     label: 'Resumo' },
   { id: 'pedidos',    label: 'Meus pedidos' },
+  { id: 'cupons',     label: 'Cupons e Vales-Compra' },
   { id: 'favoritos',  label: 'Lista de desejos' },
   { id: 'dados',      label: 'Informações pessoais' },
   { id: 'enderecos',  label: 'Endereços' },
@@ -46,6 +51,84 @@ const moeda = (v) =>
   Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 const dataBR = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '—');
+
+const construirOpcoesRestituicao = (pedido, apiOpcoes = null) => {
+  if (apiOpcoes && typeof apiOpcoes === 'object' && 'permite_reembolso_dinheiro' in apiOpcoes) {
+    return apiOpcoes;
+  }
+  if (pedido?.opcoes_restituicao && typeof pedido.opcoes_restituicao === 'object') {
+    return pedido.opcoes_restituicao;
+  }
+
+  const valorDinheiro = Math.round(
+    Math.max(0, Number(pedido?.valor_pago_dinheiro ?? pedido?.valor_total ?? 0)) * 100
+  ) / 100;
+  const valorVale = Math.round(Math.max(0, Number(pedido?.valor_vale_compra ?? 0)) * 100) / 100;
+  const valorFretePago = Math.round(
+    Math.max(0, Number(pedido?.valor_frete_pago ?? pedido?.valor_frete ?? 0)) * 100
+  ) / 100;
+  const valorDescontoCupom = Math.round(
+    Math.max(0, Number(pedido?.valor_desconto_cupom ?? 0)) * 100
+  ) / 100;
+
+  const permiteReembolso = valorDinheiro > 0;
+  const motivoBloqueio = permiteReembolso
+    ? null
+    : valorVale > 0
+      ? 'Este pedido foi pago integralmente com vale-compra (valor em dinheiro: R$ 0,00). O reembolso em dinheiro está indisponível; o saldo utilizado no vale-compra original será restaurado.'
+      : 'Não houve pagamento em dinheiro neste pedido (valor pago em dinheiro: R$ 0,00). Apenas os benefícios promocionais elegíveis serão restaurados.';
+
+  const cupomRestaurar =
+    pedido?.cupom_id || pedido?.cupom_codigo
+      ? {
+          id: pedido.cupom_id || null,
+          codigo: pedido.cupom?.codigo || pedido.cupom_codigo,
+          tipo: pedido.cupom?.tipo || pedido.cupom_tipo || 'produto',
+          valor_desconto: valorDescontoCupom,
+        }
+      : null;
+
+  const valeCodigo = pedido?.vale_compra?.codigo || pedido?.vale_compra_codigo || null;
+  const valorNovoVale = Math.round((valorDinheiro + valorVale) * 100) / 100;
+  const parcelas = Number(pedido?.cartao_parcelas || 1);
+  const ehCartao =
+    String(pedido?.metodo_pagamento || '').toLowerCase().includes('cartao') && valorDinheiro > 0;
+  const valorParcela = Number(pedido?.cartao_valor_parcela || 0);
+
+  return {
+    pedido_id: pedido?.id,
+    permite_reembolso_dinheiro: permiteReembolso,
+    motivo_bloqueio_reembolso: motivoBloqueio,
+    valor_pago_dinheiro: valorDinheiro,
+    valor_frete_pago: valorFretePago,
+    valor_vale_compra: valorVale,
+    valor_desconto_cupom: valorDescontoCupom,
+    beneficios_restaurados: Boolean(pedido?.beneficios_restaurados),
+    opcao_reembolso: {
+      disponivel: permiteReembolso,
+      valor_reembolso_dinheiro: valorDinheiro,
+      valor_vale_restaurar: valorVale,
+      vale_codigo: valeCodigo,
+      cupom_restaurar: cupomRestaurar,
+    },
+    opcao_vale_compra: {
+      disponivel: permiteReembolso && valorNovoVale > 0,
+      valor_novo_vale: permiteReembolso ? valorNovoVale : 0,
+      restaura_vale_original: !permiteReembolso && valorVale > 0,
+      valor_vale_restaurar: !permiteReembolso ? valorVale : 0,
+      vale_codigo: valeCodigo,
+      cupom_restaurar: cupomRestaurar,
+    },
+    parcelamento_cartao: {
+      aplicavel: ehCartao,
+      parcelas: ehCartao ? Math.max(1, parcelas) : null,
+      valor_parcela: ehCartao
+        ? Math.round((valorParcela > 0 ? valorParcela : valorDinheiro / Math.max(1, parcelas)) * 100) / 100
+        : null,
+      valor_total: ehCartao ? valorDinheiro : null,
+    },
+  };
+};
 
 const STATUS_CLASS = {
   Pendente: 'pendente',
@@ -94,10 +177,50 @@ const primeiroErro = (err) => {
 /* ───────────────────────── Resumo ───────────────────────── */
 function Resumo({ user, pedidos, enderecos, cartoes, totalFavoritos, resumo, irPara, carregando }) {
   const ultimo = resumo?.ultimo_pedido !== undefined ? resumo.ultimo_pedido : pedidos?.[0];
-  const numPedidos = resumo?.total_pedidos !== undefined ? resumo.total_pedidos : (pedidos?.length || 0);
-  const numEnderecos = resumo?.total_enderecos !== undefined ? resumo.total_enderecos : (enderecos?.length || 0);
-  const numCartoes = resumo?.total_cartoes !== undefined ? resumo.total_cartoes : (cartoes?.length || 0);
+  const pedidoCompleto = pedidos?.find((p) => p.id === ultimo?.id) || ultimo;
+  const carregandoResumo = !resumo && carregando;
+  const numPedidos = carregandoResumo ? '—' : (resumo?.total_pedidos !== undefined ? resumo.total_pedidos : (pedidos?.length || 0));
+  const numEnderecos = carregandoResumo ? '—' : (resumo?.total_enderecos !== undefined ? resumo.total_enderecos : (enderecos?.length || 0));
+  const numCartoes = carregandoResumo ? '—' : (resumo?.total_cartoes !== undefined ? resumo.total_cartoes : (cartoes?.length || 0));
   const numFavoritos = totalFavoritos ?? resumo?.total_favoritos ?? 0;
+  const [ultimoAberto, setUltimoAberto] = useState(false);
+  const { addMultipleItems, addItem, openCart } = useCart();
+
+  const etapaRastreio = pedidoCompleto ? obterEtapaRastreio(pedidoCompleto.status) : 0;
+  const ehCancelado = pedidoCompleto?.status === 'Cancelado';
+  const ehCartao = (pedidoCompleto?.metodo_pagamento || '').includes('cartao');
+  const previsaoEntrega = pedidoCompleto ? calcularPrevisaoEntrega(pedidoCompleto.data_pedido, pedidoCompleto.tipo_frete) : '';
+
+  const handleComprarUltimo = () => {
+    if (!pedidoCompleto?.itens?.length) return;
+    const listaFormatada = pedidoCompleto.itens.map((it) => {
+      const prod = it.variacao?.produto || it.produto;
+      const fotoProd =
+        (Array.isArray(prod?.imagens_vitrine) && prod.imagens_vitrine[0]) ||
+        (Array.isArray(prod?.imagens) && prod.imagens[0]) ||
+        prod?.imagem_url ||
+        '';
+
+      return {
+        produtoId: it.variacao?.produto_id || it.produto_id || prod?.id,
+        variacaoId: it.variacao_produto_id || it.variacao?.id,
+        nome: prod?.nome || 'Camiseta Salv Sacra',
+        preco: Number(it.preco_unitario || it.preco || prod?.preco_base || 0),
+        imagem: fotoProd,
+        modelo: prod?.modelo || 'Regular Fit',
+        tamanho: it.variacao?.tamanho || 'M',
+        cor: it.variacao?.cor || 'Padrão',
+        quantidade: Number(it.quantidade) || 1,
+      };
+    });
+
+    if (addMultipleItems) {
+      addMultipleItems(listaFormatada);
+    } else {
+      listaFormatada.forEach((it) => addItem(it));
+    }
+    openCart();
+  };
 
   return (
     <>
@@ -126,54 +249,237 @@ function Resumo({ user, pedidos, enderecos, cartoes, totalFavoritos, resumo, irP
       </div>
 
       <div className="conta-box">
-        <h3>Último pedido</h3>
-        {ultimo ? (
-          <div className="conta-pedido-resumo">
-            <div>
-              <strong>Pedido #{ultimo.id}</strong>
-              <span> · {dataBR(ultimo.data_pedido)}</span>
-            </div>
-            <div>
-              {ultimo.devolucao && ['Pendente', 'Aprovada', 'Concluida'].includes(ultimo.devolucao.status) ? (
-                <span
-                  style={{
-                    padding: '3px 8px',
-                    borderRadius: '999px',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    marginRight: '6px',
-                    background:
-                      ultimo.devolucao.status === 'Pendente'
-                        ? '#fef3c7'
-                        : ultimo.devolucao.status === 'Aprovada'
-                        ? '#e0f2fe'
-                        : '#dcfce7',
-                    color:
-                      ultimo.devolucao.status === 'Pendente'
-                        ? '#b45309'
-                        : ultimo.devolucao.status === 'Aprovada'
-                        ? '#0369a1'
-                        : '#15803d',
-                    border: `1px solid ${
-                      ultimo.devolucao.status === 'Pendente'
-                        ? '#fde68a'
-                        : ultimo.devolucao.status === 'Aprovada'
-                        ? '#7dd3fc'
-                        : '#86efac'
-                    }`,
-                  }}
-                >
-                  {ultimo.devolucao.status === 'Pendente' && 'Devolução Solicitada'}
-                  {ultimo.devolucao.status === 'Aprovada' && 'Em Devolução'}
-                  {ultimo.devolucao.status === 'Concluida' && 'Devolução Concluída'}
+        <h3 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Último pedido</span>
+          {ultimo && (
+            <button
+              type="button"
+              className="conta-link"
+              style={{ fontSize: '13px', fontWeight: 600 }}
+              onClick={() => irPara('pedidos')}
+            >
+              Ver todos os pedidos &rarr;
+            </button>
+          )}
+        </h3>
+
+        {pedidoCompleto ? (
+          <div>
+            <button
+              type="button"
+              onClick={() => setUltimoAberto(!ultimoAberto)}
+              style={{
+                width: '100%',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '8px 0',
+                textAlign: 'left',
+              }}
+              title="Clique para ver os detalhes deste pedido"
+            >
+              <div>
+                <strong>Pedido #{pedidoCompleto.id}</strong>
+                <span> · {dataBR(pedidoCompleto.data_pedido)}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {pedidoCompleto.devolucao && ['Pendente', 'Aprovada', 'Concluida'].includes(pedidoCompleto.devolucao.status) ? (
+                  <span
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: '999px',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      background:
+                        pedidoCompleto.devolucao.status === 'Pendente'
+                          ? '#fef3c7'
+                          : pedidoCompleto.devolucao.status === 'Aprovada'
+                          ? '#e0f2fe'
+                          : '#dcfce7',
+                      color:
+                        pedidoCompleto.devolucao.status === 'Pendente'
+                          ? '#b45309'
+                          : pedidoCompleto.devolucao.status === 'Aprovada'
+                          ? '#0369a1'
+                          : '#15803d',
+                      border: `1px solid ${
+                        pedidoCompleto.devolucao.status === 'Pendente'
+                          ? '#fde68a'
+                          : pedidoCompleto.devolucao.status === 'Aprovada'
+                          ? '#7dd3fc'
+                          : '#86efac'
+                      }`,
+                    }}
+                  >
+                    {pedidoCompleto.devolucao.status === 'Pendente' && 'Devolução Solicitada'}
+                    {pedidoCompleto.devolucao.status === 'Aprovada' && 'Em Devolução'}
+                    {pedidoCompleto.devolucao.status === 'Concluida' && 'Devolução Concluída'}
+                  </span>
+                ) : (
+                  <span className={`conta-status ${STATUS_CLASS[pedidoCompleto.status] ?? 'pendente'}`}>
+                    {pedidoCompleto.status}
+                  </span>
+                )}
+                <strong>{moeda(pedidoCompleto.valor_total)}</strong>
+                <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 'bold' }}>
+                  {ultimoAberto ? '▲' : '▼'}
                 </span>
-              ) : (
-                <span className={`conta-status ${STATUS_CLASS[ultimo.status] ?? 'pendente'}`}>
-                  {ultimo.status}
-                </span>
-              )}
-              <strong> {moeda(ultimo.valor_total)}</strong>
-            </div>
+              </div>
+            </button>
+
+            {/* Dados expandidos do Último Pedido */}
+            {ultimoAberto && (
+              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #f1f5f9' }}>
+                {/* Linha do tempo / Rastreio */}
+                <div className="conta-rastreio-container" style={{ margin: '0 0 18px 0' }}>
+                  <div className="conta-previsao-banner">
+                    <div className="conta-previsao-left">
+                      <span className="conta-previsao-icon">📦</span>
+                      <div className="conta-previsao-text">
+                        <strong>
+                          {ehCancelado
+                            ? 'Pedido Cancelado'
+                            : `Previsão de entrega: ${previsaoEntrega}`}
+                        </strong>
+                        <span>Modalidade de envio: {pedidoCompleto.tipo_frete || 'Correios SEDEX'}</span>
+                      </div>
+                    </div>
+                    <div>
+                      {pedidoCompleto.codigo_rastreio ? (
+                        <a
+                          href={`https://rastreamento.correios.com.br/app/index.php?codigo=${encodeURIComponent(pedidoCompleto.codigo_rastreio)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="conta-codigo-rastreio"
+                          style={{
+                            textDecoration: 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            cursor: 'pointer',
+                          }}
+                          title="Clique para rastrear a encomenda nos Correios"
+                        >
+                          📦 Rastreio: {pedidoCompleto.codigo_rastreio} ↗
+                        </a>
+                      ) : (
+                        <span className="conta-codigo-rastreio" title="Código de rastreamento">
+                          {ehCancelado ? 'Envio cancelado' : 'Rastreio: Aguardando postagem'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {!ehCancelado && (() => {
+                    const etapaAtual = etapaRastreio;
+                    const steps = [
+                      { num: 1, label: 'Pendente', sub: etapaAtual > 1 ? 'Concluído' : (ehCartao ? 'Em análise' : 'Aguardando pagamento') },
+                      { num: 2, label: 'Pago', sub: etapaAtual >= 2 ? 'Confirmado' : 'Aguardando' },
+                      { num: 3, label: 'Em separação', sub: etapaAtual > 3 ? 'Concluído' : (etapaAtual === 3 ? 'Separando peças' : 'Pendente') },
+                      { num: 4, label: 'Enviado', sub: etapaAtual >= 4 ? 'Postado na agência' : 'Pendente' },
+                      { num: 5, label: 'Em transporte', sub: etapaAtual >= 5 ? 'A caminho' : 'Pendente' },
+                      { num: 6, label: 'Entregue', sub: etapaAtual >= 6 ? 'Pacote recebido' : 'Pendente' },
+                    ];
+
+                    return (
+                      <div className="conta-timeline">
+                        {steps.map((st) => {
+                          const isCompleted = etapaAtual > st.num || (etapaAtual === 6 && st.num === 6);
+                          const isActive = etapaAtual === st.num && etapaAtual !== 6;
+                          return (
+                            <div
+                              key={st.num}
+                              className={`conta-timeline-step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}`}
+                            >
+                              <div className="conta-timeline-circle">
+                                {isCompleted ? '✓' : st.num}
+                              </div>
+                              <span className="conta-timeline-label">{st.label}</span>
+                              <span className="conta-timeline-sub">{st.sub}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Tabela de Produtos */}
+                {pedidoCompleto.itens && pedidoCompleto.itens.length > 0 && (
+                  <table className="conta-tabela" style={{ marginBottom: '16px' }}>
+                    <thead>
+                      <tr>
+                        <th>Produto</th>
+                        <th>Qtd</th>
+                        <th>Preço</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pedidoCompleto.itens.map((it) => {
+                        const prod = it.variacao?.produto || it.produto;
+                        return (
+                          <tr key={it.id}>
+                            <td>
+                              <strong>{prod?.nome || 'Camiseta Salv Sacra'}</strong>
+                              <p className="conta-muted" style={{ margin: '2px 0 0' }}>
+                                Tamanho: {it.variacao?.tamanho || 'M'} · Cor: {it.variacao?.cor || 'Padrão'}
+                              </p>
+                            </td>
+                            <td>{it.quantidade}</td>
+                            <td>{moeda(it.preco_unitario || it.preco || prod?.preco_base || 0)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+
+                {/* Informações de Pagamento e Entrega */}
+                <div className="conta-pedido-info" style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px' }}>
+                  <p>
+                    <strong>Pagamento:</strong>{' '}
+                    {pedidoCompleto.metodo_pagamento === 'cartao_credito' || pedidoCompleto.metodo_pagamento === 'cartao'
+                      ? `CARTÃO DE CRÉDITO${pedidoCompleto.cartao_parcelas > 1 ? ` (${pedidoCompleto.cartao_parcelas}x${pedidoCompleto.cartao_valor_parcela ? ` de ${moeda(pedidoCompleto.cartao_valor_parcela)}` : ''})` : ' (À vista)'}`
+                      : pedidoCompleto.metodo_pagamento === 'cartao_debito'
+                      ? 'CARTÃO DE DÉBITO (À vista)'
+                      : pedidoCompleto.metodo_pagamento?.toUpperCase()}
+                  </p>
+                  <p><strong>Frete ({pedidoCompleto.tipo_frete || 'Correios SEDEX'}):</strong> {moeda(pedidoCompleto.valor_frete)}</p>
+                  <p>
+                    <strong>Entrega:</strong> {pedidoCompleto.logradouro}, {pedidoCompleto.numero}
+                    {pedidoCompleto.complemento ? ` - ${pedidoCompleto.complemento}` : ''} — {pedidoCompleto.bairro}, {pedidoCompleto.cidade}/{pedidoCompleto.estado} · CEP {pedidoCompleto.cep}
+                  </p>
+                </div>
+
+                {/* Ações */}
+                {!ehCancelado && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+                    <button
+                      type="button"
+                      onClick={handleComprarUltimo}
+                      style={{
+                        background: '#0f172a',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '8px 18px',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      🛒 Comprar Novamente
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : carregando ? (
           <div className="conta-skeleton-linha" />
@@ -200,8 +506,17 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
   const [agoraMs, setAgoraMs] = useState(() => Date.now());
   const [pedidoParaCancelar, setPedidoParaCancelar] = useState(null);
   const [cancelando, setCancelando] = useState(false);
+  const [opcoesRestituicaoModal, setOpcoesRestituicaoModal] = useState(null);
+  const [carregandoOpcoesRestituicao, setCarregandoOpcoesRestituicao] = useState(false);
+  const [tipoRestituicaoCancelamento, setTipoRestituicaoCancelamento] = useState('reembolso');
+  const [modalExplicativoReembolso, setModalExplicativoReembolso] = useState({
+    aberto: false,
+    motivo: '',
+  });
+  const [pedidoParaExcluir, setPedidoParaExcluir] = useState(null);
+  const [excluindoPedido, setExcluindoPedido] = useState(false);
   const [msgCancelamento, setMsgCancelamento] = useState({ tipo: '', texto: '', pedidoId: null });
-  const { addItem, openCart } = useCart();
+  const { addItem, addMultipleItems, openCart } = useCart();
   const [produtoParaAvaliar, setProdutoParaAvaliar] = useState(null);
   const [formAvaliacao, setFormAvaliacao] = useState({ nota: 5, comentario: '' });
   const [enviandoAvaliacao, setEnviandoAvaliacao] = useState(false);
@@ -212,7 +527,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
   const [pedidoParaDevolucao, setPedidoParaDevolucao] = useState(null);
   const [itensDevolucaoSelecionados, setItensDevolucaoSelecionados] = useState({});
   const [motivoDevolucao, setMotivoDevolucao] = useState('Tamanho não serviu / Troca de tamanho');
-  const [tipoDevolucao, setTipoDevolucao] = useState('cupom');
+  const [tipoDevolucao, setTipoDevolucao] = useState('vale_compra');
   const [descricaoDevolucao, setDescricaoDevolucao] = useState('');
   const [fotosDevolucao, setFotosDevolucao] = useState([]);
   const [fotosPreviews, setFotosPreviews] = useState([]);
@@ -222,6 +537,28 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
   // Modal customizado para avisos (substitui alerts do navegador)
   const [modalAviso, setModalAviso] = useState({ aberto: false, titulo: '', mensagem: '', icon: '✓' });
 
+  const carregarOpcoesRestituicaoPara = async (ped) => {
+    const fallback = construirOpcoesRestituicao(ped);
+    setOpcoesRestituicaoModal(fallback);
+    setCarregandoOpcoesRestituicao(true);
+    try {
+      const { data } = await obterOpcoesRestituicaoPedido(ped.id);
+      if (data) setOpcoesRestituicaoModal(data);
+    } catch {
+      // Mantém fallback calculado localmente a partir dos dados do pedido
+    } finally {
+      setCarregandoOpcoesRestituicao(false);
+    }
+    return fallback;
+  };
+
+  const abrirModalCancelamento = (ped) => {
+    setPedidoParaCancelar(ped);
+    const fallback = construirOpcoesRestituicao(ped);
+    setTipoRestituicaoCancelamento(fallback.permite_reembolso_dinheiro ? 'reembolso' : 'vale_compra');
+    carregarOpcoesRestituicaoPara(ped);
+  };
+
   const abrirModalDevolucao = (ped) => {
     setPedidoParaDevolucao(ped);
     const selecionadosInit = {};
@@ -230,12 +567,13 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
     });
     setItensDevolucaoSelecionados(selecionadosInit);
     setMotivoDevolucao('Tamanho não serviu / Troca de tamanho');
-    setTipoDevolucao('cupom');
+    setTipoDevolucao('vale_compra');
     setDescricaoDevolucao('');
     setDevolucaoSucessoMsg('');
     fotosPreviews.forEach((url) => URL.revokeObjectURL(url));
     setFotosDevolucao([]);
     setFotosPreviews([]);
+    carregarOpcoesRestituicaoPara(ped);
   };
 
   const handleAdicionarFotos = (e) => {
@@ -289,8 +627,11 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
 
     setEnviandoDevolucao(true);
     try {
+      const opcoesAtual = construirOpcoesRestituicao(pedidoParaDevolucao, opcoesRestituicaoModal);
+      const tipoFinal = opcoesAtual.permite_reembolso_dinheiro ? tipoDevolucao : 'vale_compra';
+
       const formData = new FormData();
-      formData.append('tipo_solicitacao', tipoDevolucao);
+      formData.append('tipo_solicitacao', tipoFinal);
       formData.append('motivo', motivoDevolucao);
       if (descricaoDevolucao) {
         formData.append('descricao', descricaoDevolucao);
@@ -308,6 +649,10 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
       });
 
       setDevolucaoSucessoMsg('✓ Solicitação de devolução enviada com sucesso! Você receberá atualizações por e-mail.');
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+      try {
+        localStorage.setItem('salv_sync_trigger', String(Date.now()));
+      } catch {}
       setTimeout(() => {
         setPedidoParaDevolucao(null);
         recarregar();
@@ -326,7 +671,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
 
   const handleComprarNovamente = (pedido) => {
     if (!pedido?.itens?.length) return;
-    pedido.itens.forEach((it) => {
+    const listaFormatada = pedido.itens.map((it) => {
       const prod = it.variacao?.produto || it.produto;
       const fotoProd =
         (Array.isArray(prod?.imagens_vitrine) && prod.imagens_vitrine[0]) ||
@@ -334,7 +679,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
         prod?.imagem_url ||
         '';
 
-      addItem({
+      return {
         produtoId: it.variacao?.produto_id || it.produto_id || prod?.id,
         variacaoId: it.variacao_produto_id || it.variacao?.id,
         nome: prod?.nome || 'Camiseta Salv Sacra',
@@ -344,8 +689,15 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
         tamanho: it.variacao?.tamanho || 'M',
         cor: it.variacao?.cor || 'Padrão',
         quantidade: Number(it.quantidade) || 1,
-      });
+      };
     });
+
+    if (addMultipleItems) {
+      addMultipleItems(listaFormatada);
+    } else {
+      listaFormatada.forEach((it) => addItem(it));
+    }
+
     setMsgCancelamento({
       tipo: 'ok',
       texto: `Os itens do Pedido #${pedido.id} foram adicionados à sua sacola de compras!`,
@@ -439,14 +791,18 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
     if (!pedidoAberto) return;
 
     const poll = setInterval(async () => {
+      if (document.visibilityState !== 'visible') return;
       try {
         const { data } = await api.get(`/pedidos/${pedidoAberto.id}`);
         if (data && data.status && data.status !== 'Pendente') {
           window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+          try {
+            localStorage.setItem('salv_sync_trigger', String(Date.now()));
+          } catch {}
           if (recarregar) recarregar();
         }
       } catch {}
-    }, 6000);
+    }, 5000);
 
     return () => clearInterval(poll);
   }, [pixAbertoId, pedidos, recarregar]);
@@ -461,6 +817,9 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
         pedidoId,
       });
       window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+      try {
+        localStorage.setItem('salv_sync_trigger', String(Date.now()));
+      } catch {}
       if (recarregar) recarregar();
     } catch (err) {
       setMsgCancelamento({
@@ -478,14 +837,44 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
     setCancelando(true);
     setMsgCancelamento({ tipo: '', texto: '', pedidoId: null });
     try {
-      const { data } = await cancelarPedido(pedidoParaCancelar.id);
+      const opcoes = construirOpcoesRestituicao(pedidoParaCancelar, opcoesRestituicaoModal);
+      const estavaPago = ['Pago', 'Em separação', 'Em montagem'].includes(pedidoParaCancelar.status);
+      const payload = estavaPago
+        ? {
+            tipo_restituicao: opcoes.permite_reembolso_dinheiro
+              ? tipoRestituicaoCancelamento
+              : 'vale_compra',
+          }
+        : {};
+
+      const { data } = await cancelarPedido(pedidoParaCancelar.id, payload);
+      const textoRetorno =
+        data?.message ||
+        data?.mensagem ||
+        `Pedido #${pedidoParaCancelar.id} cancelado com sucesso!`;
+
       setMsgCancelamento({
         tipo: 'ok',
-        texto: data.mensagem || `Pedido #${pedidoParaCancelar.id} cancelado com sucesso!`,
+        texto: textoRetorno,
         pedidoId: pedidoParaCancelar.id,
       });
+
+      if (data?.vale_gerado?.codigo) {
+        setModalAviso({
+          aberto: true,
+          titulo: 'Vale-Compra Gerado com Sucesso!',
+          mensagem: `O código do seu vale-compra é ${data.vale_gerado.codigo} no valor de ${moeda(
+            data.vale_gerado.saldo_atual ?? data.vale_gerado.valor_inicial
+          )}. Ele já está disponível na aba "Cupons e Vales-Compra" e no seu carrinho!`,
+          icon: '🎟️',
+        });
+      }
+
       setPedidoParaCancelar(null);
       window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+      try {
+        localStorage.setItem('salv_sync_trigger', String(Date.now()));
+      } catch {}
       if (recarregar) recarregar();
     } catch (err) {
       setMsgCancelamento({
@@ -496,6 +885,35 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
       setPedidoParaCancelar(null);
     } finally {
       setCancelando(false);
+    }
+  };
+
+  const confirmarExclusaoPedido = async () => {
+    if (!pedidoParaExcluir) return;
+    setExcluindoPedido(true);
+    setMsgCancelamento({ tipo: '', texto: '', pedidoId: null });
+    try {
+      await excluirPedido(pedidoParaExcluir.id);
+      setMsgCancelamento({
+        tipo: 'ok',
+        texto: `Pedido #${pedidoParaExcluir.id} removido do seu histórico com sucesso.`,
+        pedidoId: null,
+      });
+      setPedidoParaExcluir(null);
+      window.dispatchEvent(new Event('salv-pedidos-atualizados'));
+      try {
+        localStorage.setItem('salv_sync_trigger', String(Date.now()));
+      } catch {}
+      if (recarregar) recarregar();
+    } catch (err) {
+      setMsgCancelamento({
+        tipo: 'erro',
+        texto: err.response?.data?.message || primeiroErro(err),
+        pedidoId: pedidoParaExcluir.id,
+      });
+      setPedidoParaExcluir(null);
+    } finally {
+      setExcluindoPedido(false);
     }
   };
 
@@ -701,7 +1119,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                         </button>
                         <button
                           type="button"
-                          onClick={() => setPedidoParaCancelar(p)}
+                          onClick={() => abrirModalCancelamento(p)}
                           style={{
                             background: '#fff',
                             color: '#dc2626',
@@ -838,7 +1256,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                       <div>
                         <button
                           type="button"
-                          onClick={() => setPedidoParaCancelar(p)}
+                          onClick={() => abrirModalCancelamento(p)}
                           style={{
                             background: '#fff',
                             color: '#dc2626',
@@ -997,13 +1415,42 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                 <div className="conta-pedido-info">
                   <p>
                     <strong>Pagamento:</strong>{' '}
-                    {p.metodo_pagamento === 'cartao_credito'
-                      ? 'CARTÃO DE CRÉDITO'
-                      : p.metodo_pagamento === 'cartao_debito'
-                      ? 'CARTÃO DE DÉBITO'
-                      : p.metodo_pagamento?.toUpperCase()}
+                    {p.metodo_pagamento === 'vale_compra'
+                      ? 'COBERTO 100% POR VALE-COMPRA'
+                      : p.metodo_pagamento === 'cartao_credito' || p.metodo_pagamento === 'cartao'
+                        ? `CARTÃO DE CRÉDITO${p.cartao_parcelas > 1 ? ` (${p.cartao_parcelas}x${p.cartao_valor_parcela ? ` de ${moeda(p.cartao_valor_parcela)}` : ''})` : ' (À vista)'}`
+                        : p.metodo_pagamento === 'cartao_debito'
+                          ? 'CARTÃO DE DÉBITO (À vista)'
+                          : p.metodo_pagamento?.toUpperCase()}
                   </p>
-                  <p><strong>Frete ({p.tipo_frete}):</strong> {moeda(p.valor_frete)}</p>
+                  <p>
+                    <strong>Frete ({p.tipo_frete}):</strong>{' '}
+                    {moeda(p.valor_frete_pago ?? p.valor_frete)}
+                    {Number(p.valor_desconto_frete || 0) > 0 && (
+                      <span style={{ color: '#15803d', fontSize: '12px', marginLeft: '6px' }}>
+                        (Original: {moeda(p.valor_frete)} · Desconto frete: −{moeda(p.valor_desconto_frete)})
+                      </span>
+                    )}
+                  </p>
+                  {(p.cupom_codigo || Number(p.valor_desconto_cupom || 0) > 0) && (
+                    <p style={{ color: '#15803d' }}>
+                      <strong>Cupom ({p.cupom_codigo}):</strong> −{moeda(p.valor_desconto_cupom)}
+                      {Number(p.valor_desconto_produto || 0) > 0 && Number(p.valor_desconto_frete || 0) === 0
+                        ? ' em produtos'
+                        : Number(p.valor_desconto_frete || 0) > 0
+                          ? ' no frete'
+                          : ''}
+                    </p>
+                  )}
+                  {(p.vale_compra_codigo || Number(p.valor_vale_compra || 0) > 0) && (
+                    <p style={{ color: '#6b21a8' }}>
+                      <strong>Vale-Compra ({p.vale_compra_codigo}):</strong> −{moeda(p.valor_vale_compra)} abatido
+                    </p>
+                  )}
+                  <p>
+                    <strong>Valor efetivamente pago em dinheiro:</strong>{' '}
+                    <strong>{moeda(p.valor_pago_dinheiro ?? p.valor_total)}</strong>
+                  </p>
                   <p>
                     <strong>Entrega:</strong> {p.logradouro}, {p.numero}
                     {p.complemento ? ` - ${p.complemento}` : ''} — {p.bairro}, {p.cidade}/{p.estado} · CEP {p.cep}
@@ -1071,7 +1518,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                     </span>
                     <button
                       type="button"
-                      onClick={() => setPedidoParaCancelar(p)}
+                      onClick={() => abrirModalCancelamento(p)}
                       style={{
                         background: '#fff',
                         color: '#dc2626',
@@ -1133,7 +1580,13 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                             {p.devolucao.status === 'Recusada' && '✕ Devolução Não Aprovada'}
                           </span>
                           <span style={{ fontSize: '12px', color: '#666' }}>
-                            Opção: <strong>{p.devolucao.tipo_solicitacao === 'cupom' ? 'Vale-Compras (Troca)' : 'Estorno / Reembolso'}</strong> &bull; R$ {Number(p.devolucao.valor_estorno).toFixed(2).replace('.', ',')}
+                            Opção:{' '}
+                            <strong>
+                              {['cupom', 'vale_compra'].includes(p.devolucao.tipo_solicitacao)
+                                ? 'Vale-Compras'
+                                : 'Estorno / Reembolso'}
+                            </strong>{' '}
+                            &bull; {moeda(p.devolucao.valor_estorno)}
                           </span>
                         </div>
 
@@ -1295,7 +1748,7 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
 
                         {p.devolucao.status === 'Concluida' && (
                           <div>
-                            {p.devolucao.tipo_solicitacao === 'cupom' && p.devolucao.cupom_gerado_codigo ? (
+                            {['cupom', 'vale_compra'].includes(p.devolucao.tipo_solicitacao) && p.devolucao.cupom_gerado_codigo ? (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: '#fff', padding: '10px 14px', borderRadius: '6px', border: '1.5px dashed #9333ea', width: 'fit-content' }}>
                                 <span style={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 700, color: '#7e22ce' }}>SEU VALE-COMPRAS:</span>
                                 <strong style={{ fontFamily: 'monospace', fontSize: '18px', color: '#6b21a8', letterSpacing: '1px' }}>
@@ -1307,19 +1760,23 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                                     navigator.clipboard.writeText(p.devolucao.cupom_gerado_codigo);
                                     setModalAviso({
                                       aberto: true,
-                                      titulo: 'Cupom Copiado com Sucesso!',
+                                      titulo: 'Código Copiado com Sucesso!',
                                       mensagem: 'O código do seu Vale-Compras foi copiado. Cole no carrinho ou no checkout da sua próxima compra para resgatar seus créditos!',
                                       icon: '🎟️',
                                     });
                                   }}
                                   style={{ background: '#7e22ce', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
                                 >
-                                  Copiar Cupom
+                                  Copiar Vale
                                 </button>
                                 <span style={{ fontSize: '12px', color: '#15803d', fontWeight: 700 }}>
                                   (Crédito de R$ {Number(p.devolucao.valor_estorno).toFixed(2).replace('.', ',')})
                                 </span>
                               </div>
+                            ) : ['cupom', 'vale_compra'].includes(p.devolucao.tipo_solicitacao) ? (
+                              <p style={{ margin: 0, fontSize: '13px', color: '#5b21b6', lineHeight: 1.5 }}>
+                                O valor de <strong>{moeda(p.devolucao.valor_estorno)}</strong> foi restaurado integralmente ao saldo do seu vale-compra original na aba <strong>Cupons e Vales-Compra</strong>.
+                              </p>
                             ) : (
                               <p style={{ margin: 0, fontSize: '13px', color: '#166534', lineHeight: 1.5 }}>
                                 O estorno no valor de <strong>R$ {Number(p.devolucao.valor_estorno).toFixed(2).replace('.', ',')}</strong> foi concluído com sucesso na mesma forma de pagamento da sua compra.
@@ -1381,6 +1838,45 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                     </span>
                   </div>
                 )}
+
+                {/* Pedidos cancelados — excluir do histórico */}
+                {p.status === 'Cancelado' && (
+                  <div
+                    style={{
+                      marginTop: '16px',
+                      paddingTop: '14px',
+                      borderTop: '1px solid #eee',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                    }}
+                  >
+                    <span style={{ fontSize: '13px', color: '#64748b' }}>
+                      Este pedido foi cancelado. Você pode removê-lo permanentemente do seu histórico.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPedidoParaExcluir(p)}
+                      style={{
+                        background: '#fff',
+                        color: '#dc2626',
+                        border: '1px solid #fca5a5',
+                        borderRadius: '6px',
+                        padding: '8px 14px',
+                        fontSize: '12.5px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      🗑 Excluir do Histórico
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1388,91 +1884,263 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
         })}
       </div>
 
-      {/* Modal de Confirmação de Cancelamento de Pedido */}
-      {pedidoParaCancelar && (
+      {/* Modal de Confirmação de Exclusão de Pedido Cancelado */}
+      {pedidoParaExcluir && (
         <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.55)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1200,
-            padding: '20px',
-          }}
-          onClick={() => !cancelando && setPedidoParaCancelar(null)}
+          className="conta-modal-overlay"
+          onClick={() => !excluindoPedido && setPedidoParaExcluir(null)}
         >
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: '12px',
-              padding: '28px',
-              maxWidth: '460px',
-              width: '100%',
-              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.25)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#b91c1c', margin: '0 0 12px 0' }}>
-              Cancelar Pedido #{pedidoParaCancelar.id}?
+          <div className="conta-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="conta-modal-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6" />
+                <path d="M14 11v6" />
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+              </svg>
+            </div>
+            <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: '#0f172a', textAlign: 'center' }}>
+              Excluir Pedido #{pedidoParaExcluir.id}?
             </h3>
-            <p style={{ fontSize: '14px', color: '#444', lineHeight: 1.6, margin: '0 0 16px 0' }}>
-              Tem certeza de que deseja cancelar o <strong>Pedido #{pedidoParaCancelar.id}</strong> no valor de{' '}
-              <strong>{moeda(pedidoParaCancelar.valor_total)}</strong>?
+            <p style={{ margin: 0, fontSize: '14px', color: '#64748b', textAlign: 'center', lineHeight: 1.55 }}>
+              Tem certeza de que deseja remover permanentemente este pedido cancelado do seu histórico? Esta ação não poderá ser desfeita.
             </p>
-            {['Pago', 'Em separação', 'Em montagem'].includes(pedidoParaCancelar.status) && (
-              <div
-                style={{
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  padding: '12px 14px',
-                  fontSize: '13px',
-                  color: '#334155',
-                  lineHeight: 1.5,
-                  marginBottom: '20px',
-                }}
-              >
-                💳 <strong>Estorno Automático:</strong> Como o pagamento já foi aprovado via{' '}
-                <strong>
-                  {pedidoParaCancelar.metodo_pagamento === 'pix' ? 'PIX' : 'Cartão'}
-                </strong>
-                , o reembolso integral será processado automaticamente pelo Mercado Pago assim que você confirmar.
-              </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <div className="conta-modal-preview">
+              <strong>Pedido #{pedidoParaExcluir.id}</strong> · {dataBR(pedidoParaExcluir.data_pedido)} · {moeda(pedidoParaExcluir.valor_total)}
+            </div>
+            <div className="conta-modal-actions">
               <button
                 type="button"
-                className="conta-btn-sec"
-                onClick={() => setPedidoParaCancelar(null)}
-                disabled={cancelando}
+                className="conta-modal-btn-cancel"
+                onClick={() => setPedidoParaExcluir(null)}
+                disabled={excluindoPedido}
               >
-                Voltar
+                Cancelar
               </button>
               <button
                 type="button"
-                onClick={confirmarCancelamento}
-                disabled={cancelando}
-                style={{
-                  background: '#dc2626',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '10px 18px',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  cursor: cancelando ? 'not-allowed' : 'pointer',
-                }}
+                className="conta-modal-btn-danger"
+                onClick={confirmarExclusaoPedido}
+                disabled={excluindoPedido}
               >
-                {cancelando
-                  ? (pedidoParaCancelar.status === 'Pendente' ? 'Cancelando...' : 'Cancelando e estornando...')
-                  : 'Sim, cancelar pedido'}
+                {excluindoPedido ? 'Excluindo...' : 'Sim, excluir pedido'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Modal de Confirmação de Cancelamento de Pedido */}
+      {pedidoParaCancelar && (() => {
+        const estavaPago = ['Pago', 'Em separação', 'Em montagem'].includes(pedidoParaCancelar.status);
+        const opcoes = construirOpcoesRestituicao(pedidoParaCancelar, opcoesRestituicaoModal);
+        const permiteReembolso = opcoes.permite_reembolso_dinheiro;
+        const opcReembolso = opcoes.opcao_reembolso || {};
+        const opcVale = opcoes.opcao_vale_compra || {};
+        const cupomRest = opcReembolso.cupom_restaurar || opcVale.cupom_restaurar;
+        const parcCartao = opcoes.parcelamento_cartao;
+
+        return (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0, 0, 0, 0.55)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1200,
+              padding: '20px',
+            }}
+            onClick={() => !cancelando && setPedidoParaCancelar(null)}
+          >
+            <div
+              style={{
+                background: '#fff',
+                borderRadius: '12px',
+                padding: '26px',
+                maxWidth: '540px',
+                width: '100%',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.25)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#b91c1c', margin: '0 0 10px 0' }}>
+                Cancelar Pedido #{pedidoParaCancelar.id}?
+              </h3>
+              <p style={{ fontSize: '14px', color: '#444', lineHeight: 1.55, margin: '0 0 14px 0' }}>
+                Tem certeza de que deseja cancelar o <strong>Pedido #{pedidoParaCancelar.id}</strong>?
+                {!estavaPago && ' Os eventuais cupons ou vales reservados serão restaurados automaticamente.'}
+              </p>
+
+              {estavaPago && (
+                <div style={{ marginBottom: '18px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#475569', marginBottom: '8px' }}>
+                    Como prefere receber a restituição? {carregandoOpcoesRestituicao ? '(atualizando...)' : ''}
+                  </div>
+
+                  {permiteReembolso ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {/* Opção 1: Solicitar Reembolso em dinheiro */}
+                      <label
+                        className={`conta-restituicao-opcao ${tipoRestituicaoCancelamento === 'reembolso' ? 'ativo-reembolso' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="tipo_restituicao_cancelamento"
+                          checked={tipoRestituicaoCancelamento === 'reembolso'}
+                          onChange={() => setTipoRestituicaoCancelamento('reembolso')}
+                          style={{ marginTop: '3px' }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <strong style={{ fontSize: '13.5px', color: '#0c4a6e', display: 'block' }}>
+                            💳 Solicitar Reembolso em Dinheiro ({moeda(opcReembolso.valor_reembolso_dinheiro)})
+                          </strong>
+                          <span style={{ fontSize: '12px', color: '#334155', display: 'block', marginTop: '3px', lineHeight: 1.45 }}>
+                            Reembolso em dinheiro de <strong>{moeda(opcReembolso.valor_reembolso_dinheiro)}</strong> (incluindo frete pago de {moeda(opcoes.valor_frete_pago)}) na mesma forma de pagamento.
+                          </span>
+                          {Number(opcReembolso.valor_vale_restaurar || 0) > 0 && (
+                            <span style={{ fontSize: '12px', color: '#6b21a8', display: 'block', marginTop: '3px', fontWeight: 600 }}>
+                              + Restauração do vale-compra ({opcReembolso.vale_codigo}): +{moeda(opcReembolso.valor_vale_restaurar)} de volta ao saldo original.
+                            </span>
+                          )}
+                          {cupomRest && (
+                            <span style={{ fontSize: '12px', color: '#15803d', display: 'block', marginTop: '3px', fontWeight: 600 }}>
+                              + Restauração do cupom promocional {cupomRest.codigo} para reutilização.
+                            </span>
+                          )}
+                          {parcCartao?.aplicavel && tipoRestituicaoCancelamento === 'reembolso' && (
+                            <div className="conta-parcelamento-aviso">
+                              💳 Compra em <strong>{parcCartao.parcelas}x</strong> no cartão: o estorno do valor pago no cartão ({moeda(parcCartao.valor_total)}) será processado integralmente na fatura pela operadora do cartão.
+                            </div>
+                          )}
+                        </div>
+                      </label>
+
+                      {/* Opção 2: Solicitar Vale-Compra */}
+                      <label
+                        className={`conta-restituicao-opcao ${tipoRestituicaoCancelamento === 'vale_compra' ? 'ativo-vale' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="tipo_restituicao_cancelamento"
+                          checked={tipoRestituicaoCancelamento === 'vale_compra'}
+                          onChange={() => setTipoRestituicaoCancelamento('vale_compra')}
+                          style={{ marginTop: '3px' }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <strong style={{ fontSize: '13.5px', color: '#581c87', display: 'block' }}>
+                            🎟️ Solicitar Vale-Compra ({moeda(opcVale.valor_novo_vale)})
+                          </strong>
+                          <span style={{ fontSize: '12px', color: '#334155', display: 'block', marginTop: '3px', lineHeight: 1.45 }}>
+                            Gera um novo vale-compra no valor total de <strong>{moeda(opcVale.valor_novo_vale)}</strong>
+                            {Number(opcoes.valor_vale_compra || 0) > 0
+                              ? ` (unificando ${moeda(opcoes.valor_pago_dinheiro)} pagos em dinheiro + ${moeda(opcoes.valor_vale_compra)} do vale utilizado, substituindo a restauração separada do vale original)`
+                              : ' para usar quando quiser sem expirar suas vantagens'}
+                            .
+                          </span>
+                          {cupomRest && (
+                            <span style={{ fontSize: '12px', color: '#15803d', display: 'block', marginTop: '3px', fontWeight: 600 }}>
+                              + Cupom promocional {cupomRest.codigo} também é restaurado para reutilização (o desconto promocional não se converte em saldo em dinheiro, mas você não perde o cupom).
+                            </span>
+                          )}
+                          {parcCartao?.aplicavel && tipoRestituicaoCancelamento === 'vale_compra' && (
+                            <div className="conta-parcelamento-aviso">
+                              💳 Compra em <strong>{parcCartao.parcelas}x</strong> no cartão: o crédito do vale-compra ({moeda(opcVale.valor_novo_vale)}) será liberado integralmente e de imediato na sua conta, mantendo-se o fluxo normal das parcelas na fatura do cartão.
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                    </div>
+                  ) : (
+                    /* Cenário B: valor_pago_dinheiro == 0 (100% vale-compra ou cupom 100%) */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div className="conta-restituicao-opcao ativo-vale" style={{ cursor: 'default' }}>
+                        <span style={{ fontSize: '18px' }}>🎟️</span>
+                        <div>
+                          <strong style={{ fontSize: '13.5px', color: '#581c87', display: 'block' }}>
+                            Restauração Integral dos Benefícios Originais
+                          </strong>
+                          <span style={{ fontSize: '12px', color: '#334155', display: 'block', marginTop: '3px', lineHeight: 1.45 }}>
+                            Como não houve pagamento em dinheiro (<strong>R$ 0,00</strong>), ao confirmar o cancelamento:
+                            {Number(opcVale.valor_vale_restaurar || opcoes.valor_vale_compra || 0) > 0 && (
+                              <> o saldo de <strong>{moeda(opcVale.valor_vale_restaurar || opcoes.valor_vale_compra)}</strong> retorna integralmente ao seu vale-compra original ({opcVale.vale_codigo})</>
+                            )}
+                            {cupomRest && (
+                              <>
+                                {Number(opcoes.valor_vale_compra || 0) > 0 ? ' e o' : ' o'} cupom promocional <strong>{cupomRest.codigo}</strong> será restaurado e reativado para reutilização
+                              </>
+                            )}
+                            .
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Botão visível de Solicitar Reembolso em Dinheiro (estilo bloqueado + modal explicativo ao clicar) */}
+                      <button
+                        type="button"
+                        className="conta-restituicao-opcao bloqueada"
+                        style={{ textAlign: 'left', width: '100%' }}
+                        onClick={() =>
+                          setModalExplicativoReembolso({
+                            aberto: true,
+                            motivo: opcoes.motivo_bloqueio_reembolso,
+                          })
+                        }
+                      >
+                        <span style={{ fontSize: '18px' }}>🔒</span>
+                        <div style={{ flex: 1 }}>
+                          <strong style={{ fontSize: '13px', color: '#64748b', display: 'block' }}>
+                            Solicitar Reembolso em Dinheiro (Indisponível)
+                          </strong>
+                          <span style={{ fontSize: '11.5px', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                            Não aplicável a compras sem desembolso em dinheiro · <u>Clique aqui para entender o motivo</u>
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="conta-btn-sec"
+                  onClick={() => setPedidoParaCancelar(null)}
+                  disabled={cancelando}
+                >
+                  Voltar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmarCancelamento}
+                  disabled={cancelando}
+                  style={{
+                    background: '#dc2626',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '10px 18px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: cancelando ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {cancelando
+                    ? (pedidoParaCancelar.status === 'Pendente' ? 'Cancelando...' : 'Processando cancelamento...')
+                    : 'Sim, cancelar pedido'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Modal de Avaliação Rápida de Produto ── */}
       {produtoParaAvaliar && (
@@ -1816,72 +2484,117 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
               </div>
 
               {/* 3. O que prefere (Vale-Compras vs Estorno) */}
-              <div style={{ marginBottom: '18px' }}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#475569', marginBottom: '8px', letterSpacing: '0.5px' }}>
-                  3. Como prefere receber o ressarcimento? *
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '10px',
-                      padding: '12px 14px',
-                      borderRadius: '8px',
-                      border: tipoDevolucao === 'cupom' ? '1.5px solid #9333ea' : '1px solid #e2e8f0',
-                      background: tipoDevolucao === 'cupom' ? '#faf5ff' : '#fff',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="tipo_devolucao"
-                      value="cupom"
-                      checked={tipoDevolucao === 'cupom'}
-                      onChange={() => setTipoDevolucao('cupom')}
-                      style={{ marginTop: '2px' }}
-                    />
-                    <div>
-                      <strong style={{ fontSize: '13px', color: '#111' }}>
-                        🎟️ Vale-Compras / Troca (Recomendado)
-                      </strong>
-                      <span style={{ display: 'block', fontSize: '12px', color: '#64748b', marginTop: '2px', lineHeight: 1.4 }}>
-                        Receba um cupom de 100% do valor para adquirir outro tamanho ou modelo imediatamente sem taxas de envio.
-                      </span>
-                    </div>
-                  </label>
+              {(() => {
+                const opcoes = construirOpcoesRestituicao(pedidoParaDevolucao, opcoesRestituicaoModal);
+                const permiteReembolso = opcoes.permite_reembolso_dinheiro;
+                const opcReembolso = opcoes.opcao_reembolso || {};
+                const opcVale = opcoes.opcao_vale_compra || {};
+                const cupomRest = opcReembolso.cupom_restaurar || opcVale.cupom_restaurar;
+                const parcCartao = opcoes.parcelamento_cartao;
+                const ehValeSel = tipoDevolucao === 'vale_compra' || tipoDevolucao === 'cupom';
 
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '10px',
-                      padding: '12px 14px',
-                      borderRadius: '8px',
-                      border: tipoDevolucao === 'reembolso' ? '1.5px solid #0284c7' : '1px solid #e2e8f0',
-                      background: tipoDevolucao === 'reembolso' ? '#f0f9ff' : '#fff',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="tipo_devolucao"
-                      value="reembolso"
-                      checked={tipoDevolucao === 'reembolso'}
-                      onChange={() => setTipoDevolucao('reembolso')}
-                      style={{ marginTop: '2px' }}
-                    />
-                    <div>
-                      <strong style={{ fontSize: '13px', color: '#111' }}>
-                        💳 Estorno / Reembolso Integral
-                      </strong>
-                      <span style={{ display: 'block', fontSize: '12px', color: '#64748b', marginTop: '2px', lineHeight: 1.4 }}>
-                        Ressarcimento na mesma forma de pagamento utilizada (estorno na fatura do cartão ou PIX).
-                      </span>
+                return (
+                  <div style={{ marginBottom: '18px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#475569', marginBottom: '8px', letterSpacing: '0.5px' }}>
+                      3. Como prefere receber o ressarcimento? *
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
+                      <label
+                        className={`conta-restituicao-opcao ${ehValeSel || !permiteReembolso ? 'ativo-vale' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="tipo_devolucao"
+                          value="vale_compra"
+                          checked={!permiteReembolso || ehValeSel}
+                          onChange={() => setTipoDevolucao('vale_compra')}
+                          style={{ marginTop: '2px' }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <strong style={{ fontSize: '13px', color: '#581c87' }}>
+                            🎟️ {permiteReembolso ? 'Solicitar Vale-Compra (Recomendado)' : 'Restauração do Vale-Compra / Benefícios Originais'}
+                          </strong>
+                          <span style={{ display: 'block', fontSize: '12px', color: '#475569', marginTop: '2px', lineHeight: 1.45 }}>
+                            {permiteReembolso
+                              ? `Receba crédito em Vale-Compra (unificando o dinheiro pago + vale utilizado no pedido, até ${moeda(opcVale.valor_novo_vale)}) para comprar novamente.`
+                              : `Como o pedido foi pago sem dinheiro (R$ 0,00), o saldo de ${moeda(opcVale.valor_vale_restaurar || opcoes.valor_vale_compra)} será restaurado no seu vale-compra original (${opcVale.vale_codigo || 'benefício'}).`}
+                          </span>
+                          {cupomRest && (
+                            <span style={{ display: 'block', fontSize: '12px', color: '#15803d', marginTop: '3px', fontWeight: 600 }}>
+                              + Cupom promocional {cupomRest.codigo} será restaurado para reutilização (desconto promocional não vira saldo em dinheiro).
+                            </span>
+                          )}
+                          {permiteReembolso && parcCartao?.aplicavel && ehValeSel && (
+                            <div className="conta-parcelamento-aviso">
+                              💳 Compra em <strong>{parcCartao.parcelas}x</strong> no cartão: o crédito do vale-compra será liberado integralmente e de imediato após a conclusão, mantendo-se o fluxo normal das parcelas na fatura do cartão.
+                            </div>
+                          )}
+                        </div>
+                      </label>
+
+                      {permiteReembolso ? (
+                        <label
+                          className={`conta-restituicao-opcao ${tipoDevolucao === 'reembolso' ? 'ativo-reembolso' : ''}`}
+                        >
+                          <input
+                            type="radio"
+                            name="tipo_devolucao"
+                            value="reembolso"
+                            checked={tipoDevolucao === 'reembolso'}
+                            onChange={() => setTipoDevolucao('reembolso')}
+                            style={{ marginTop: '2px' }}
+                          />
+                          <div style={{ flex: 1 }}>
+                            <strong style={{ fontSize: '13px', color: '#0c4a6e' }}>
+                              💳 Solicitar Reembolso em Dinheiro (até {moeda(opcReembolso.valor_reembolso_dinheiro)})
+                            </strong>
+                            <span style={{ display: 'block', fontSize: '12px', color: '#475569', marginTop: '2px', lineHeight: 1.45 }}>
+                              Ressarcimento do valor efetivamente pago em dinheiro na mesma forma de pagamento (estorno no cartão ou PIX).
+                            </span>
+                            {Number(opcReembolso.valor_vale_restaurar || 0) > 0 && (
+                              <span style={{ display: 'block', fontSize: '12px', color: '#6b21a8', marginTop: '3px', fontWeight: 600 }}>
+                                + Vale-compra original ({opcReembolso.vale_codigo}) também terá +{moeda(opcReembolso.valor_vale_restaurar)} restaurado.
+                              </span>
+                            )}
+                            {cupomRest && (
+                              <span style={{ display: 'block', fontSize: '12px', color: '#15803d', marginTop: '3px', fontWeight: 600 }}>
+                                + Cupom promocional {cupomRest.codigo} será restaurado para reutilização.
+                              </span>
+                            )}
+                            {parcCartao?.aplicavel && tipoDevolucao === 'reembolso' && (
+                              <div className="conta-parcelamento-aviso">
+                                💳 Compra em <strong>{parcCartao.parcelas}x</strong> no cartão: o estorno do valor pago no cartão será processado integralmente na fatura pela operadora do cartão.
+                              </div>
+                            )}
+                          </div>
+                        </label>
+                      ) : (
+                        <button
+                          type="button"
+                          className="conta-restituicao-opcao bloqueada"
+                          style={{ textAlign: 'left', width: '100%' }}
+                          onClick={() =>
+                            setModalExplicativoReembolso({
+                              aberto: true,
+                              motivo: opcoes.motivo_bloqueio_reembolso,
+                            })
+                          }
+                        >
+                          <span style={{ fontSize: '18px' }}>🔒</span>
+                          <div style={{ flex: 1 }}>
+                            <strong style={{ fontSize: '13px', color: '#64748b', display: 'block' }}>
+                              Solicitar Reembolso em Dinheiro (Indisponível)
+                            </strong>
+                            <span style={{ fontSize: '11.5px', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                              Compra sem pagamento em dinheiro · <u>Clique para entender o motivo</u>
+                            </span>
+                          </div>
+                        </button>
+                      )}
                     </div>
-                  </label>
-                </div>
-              </div>
+                  </div>
+                );
+              })()}
 
               {/* 4. Comentários adicionais */}
               <div style={{ marginBottom: '18px' }}>
@@ -1988,6 +2701,148 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
                 )}
               </div>
 
+              {/* Resumo dinâmico do valor a receber e forma (Vale-Compras ou Reembolso) */}
+              {(() => {
+                const opcoes = construirOpcoesRestituicao(pedidoParaDevolucao, opcoesRestituicaoModal);
+                const permiteReembolso = opcoes.permite_reembolso_dinheiro;
+                const ehTrocaCupom = !permiteReembolso || tipoDevolucao === 'vale_compra' || tipoDevolucao === 'cupom';
+                const itensPedido = pedidoParaDevolucao.itens || [];
+                const selecionados = itensPedido.filter((it) => itensDevolucaoSelecionados[it.id]?.selecionado);
+                const ehCartaoPed = (pedidoParaDevolucao.metodo_pagamento || '').includes('cartao');
+                const fretePagoPedido = Number(
+                  pedidoParaDevolucao.valor_frete_pago ?? pedidoParaDevolucao.valor_frete ?? 0
+                );
+
+                // Calcula exatamente como DevolucaoController::store: usa preco_unitario real (sem inflar com preco_base) e abate desconto proporcional
+                let somaBrutaPedido = 0;
+                itensPedido.forEach((it) => {
+                  somaBrutaPedido += Number(it.preco_unitario || 0) * (Number(it.quantidade) || 1);
+                });
+
+                let valorBrutoSelecionado = 0;
+                selecionados.forEach((it) => {
+                  const qtd = Math.min(
+                    Number(itensDevolucaoSelecionados[it.id]?.quantidade) || 1,
+                    Number(it.quantidade) || 1
+                  );
+                  valorBrutoSelecionado += qtd * Number(it.preco_unitario || 0);
+                });
+                valorBrutoSelecionado = Math.round(valorBrutoSelecionado * 100) / 100;
+
+                let descontoProdPedido = Number(pedidoParaDevolucao.valor_desconto_produto || 0);
+                if (
+                  descontoProdPedido <= 0 &&
+                  pedidoParaDevolucao.cupom_tipo !== 'frete' &&
+                  Number(pedidoParaDevolucao.valor_desconto_cupom || 0) > 0
+                ) {
+                  descontoProdPedido = Number(pedidoParaDevolucao.valor_desconto_cupom || 0);
+                }
+
+                const proporcao = somaBrutaPedido > 0 ? Math.min(1, valorBrutoSelecionado / somaBrutaPedido) : 1;
+                const descontoProporcional = Math.round(descontoProdPedido * proporcao * 100) / 100;
+                const valorProdutosLiquido = Math.max(0, Math.round((valorBrutoSelecionado - descontoProporcional) * 100) / 100);
+
+                const valorFrete = selecionados.length > 0 ? fretePagoPedido : 0;
+                let valorTotal = Math.round((valorProdutosLiquido + valorFrete) * 100) / 100;
+
+                const valorDinheiroPedido = Number(opcoes.valor_pago_dinheiro || 0);
+                const valorValePedido = Number(opcoes.valor_vale_compra || 0);
+
+                if (ehTrocaCupom) {
+                  const tetoVale = Math.round((valorDinheiroPedido + valorValePedido) * 100) / 100;
+                  if (tetoVale > 0 || valorDinheiroPedido > 0 || valorValePedido > 0) {
+                    valorTotal = Math.min(valorTotal, tetoVale);
+                  }
+                } else {
+                  valorTotal = Math.min(valorTotal, valorDinheiroPedido);
+                }
+                valorTotal = Math.max(0, Math.round(valorTotal * 100) / 100);
+
+                return (
+                  <div
+                    style={{
+                      marginBottom: '20px',
+                      padding: '14px 16px',
+                      borderRadius: '10px',
+                      border: `1.5px solid ${ehTrocaCupom ? '#d8b4fe' : '#bae6fd'}`,
+                      background: ehTrocaCupom ? '#faf5ff' : '#f0f9ff',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '10px',
+                    }}
+                  >
+                    <div style={{ flex: '1 1 240px' }}>
+                      <strong
+                        style={{
+                          display: 'block',
+                          fontSize: '13px',
+                          color: ehTrocaCupom ? '#6b21a8' : '#075985',
+                          marginBottom: '3px',
+                        }}
+                      >
+                        {ehTrocaCupom
+                          ? (!permiteReembolso
+                              ? '🎟️ Valor a restaurar no seu Vale-Compra original'
+                              : '🎟️ Valor a receber em Vale-Compra')
+                          : '💳 Valor a receber por Reembolso (Dinheiro)'}
+                      </strong>
+                      <span
+                        style={{
+                          display: 'block',
+                          fontSize: '12px',
+                          color: ehTrocaCupom ? '#7e22ce' : '#0369a1',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {selecionados.length === 0
+                          ? 'Selecione ao menos uma peça acima para calcular o valor.'
+                          : ehTrocaCupom
+                            ? `Restituição em crédito de ${moeda(valorTotal)} (${moeda(valorProdutosLiquido)} líquido dos itens${valorFrete > 0 ? ` + ${moeda(valorFrete)} de frete pago` : ''}).`
+                            : `Estorno em dinheiro de ${moeda(valorTotal)} (${moeda(valorProdutosLiquido)} líquido dos itens${valorFrete > 0 ? ` + ${moeda(valorFrete)} de frete pago` : ''}) via ${ehCartaoPed ? 'Cartão de Crédito' : 'PIX'}.`}
+                      </span>
+                    </div>
+                    <div style={{ textAlign: 'right', minWidth: '160px' }}>
+                      <span
+                        style={{
+                          display: 'block',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          color: ehTrocaCupom ? '#7e22ce' : '#0369a1',
+                          letterSpacing: '0.4px',
+                          marginBottom: '2px',
+                        }}
+                      >
+                        {ehTrocaCupom ? 'Crédito em Vale' : 'Reembolso em Dinheiro'}
+                      </span>
+                      <strong
+                        style={{
+                          display: 'block',
+                          fontSize: '22px',
+                          fontWeight: 800,
+                          color: ehTrocaCupom ? '#581c87' : '#0c4a6e',
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {moeda(valorTotal)}
+                      </strong>
+                      {selecionados.length > 0 && (
+                        <div style={{ marginTop: '4px', lineHeight: 1.35 }}>
+                          <span style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: ehTrocaCupom ? '#7e22ce' : '#0369a1' }}>
+                            Itens (líquido): {moeda(valorProdutosLiquido)}
+                          </span>
+                          <span style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: ehTrocaCupom ? '#7e22ce' : '#0369a1' }}>
+                            {valorFrete > 0 ? `+ ${moeda(valorFrete)} de frete pago` : 'Frete pago: R$ 0,00'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button
                   type="button"
@@ -2075,6 +2930,93 @@ function Pedidos({ pedidos, pedidoSelecionadoInicial, autoAvaliar, recarregar, c
               }}
             >
               OK, Entendi
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Explicativo Dedicado: Por que o Reembolso em Dinheiro não está disponível ── */}
+      {modalExplicativoReembolso.aberto && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.62)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1500,
+            padding: '20px',
+          }}
+          onClick={() => setModalExplicativoReembolso({ aberto: false, motivo: '' })}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '14px',
+              padding: '28px 24px',
+              maxWidth: '460px',
+              width: '100%',
+              boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.32)',
+              border: '1px solid #e2e8f0',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                width: '54px',
+                height: '54px',
+                borderRadius: '50%',
+                background: '#f3e8ff',
+                color: '#6b21a8',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '24px',
+                margin: '0 auto 14px',
+              }}
+            >
+              🔒
+            </div>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 10px 0', textAlign: 'center' }}>
+              Reembolso em Dinheiro Indisponível
+            </h3>
+            <p style={{ fontSize: '14px', color: '#334155', lineHeight: 1.6, margin: '0 0 16px 0', textAlign: 'center' }}>
+              {modalExplicativoReembolso.motivo ||
+                'Este pedido foi pago integralmente com Vale-Compra ou Cupom de 100%, sem desembolso em dinheiro (R$ 0,00). Por isso, não há valor financeiro a estornar, ocorrendo apenas a restauração integral do saldo do vale-compra e/ou do cupom utilizado.'}
+            </p>
+            <div
+              style={{
+                background: '#faf5ff',
+                border: '1px solid #e9d5ff',
+                borderRadius: '8px',
+                padding: '10px 12px',
+                fontSize: '12.5px',
+                color: '#5b21b6',
+                lineHeight: 1.5,
+                marginBottom: '18px',
+              }}
+            >
+              💡 Você não perde nenhum valor: o crédito utilizado retorna integralmente para o seu vale-compra original e eventuais cupons promocionais voltam a ficar ativos para reutilização.
+            </div>
+            <button
+              type="button"
+              onClick={() => setModalExplicativoReembolso({ aberto: false, motivo: '' })}
+              style={{
+                background: '#0f172a',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '11px 24px',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                width: '100%',
+              }}
+            >
+              Entendi
             </button>
           </div>
         </div>
@@ -2190,11 +3132,13 @@ const ENDERECO_VAZIO = {
   cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '',
 };
 
-function Enderecos({ enderecos, recarregar }) {
+function Enderecos({ enderecos, recarregar, carregando }) {
   const [form, setForm] = useState(null); // null = fechado
   const [editId, setEditId] = useState(null);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [enderecoParaRemover, setEnderecoParaRemover] = useState(null);
+  const [removendoEndereco, setRemovendoEndereco] = useState(false);
 
   const change = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
@@ -2242,11 +3186,13 @@ function Enderecos({ enderecos, recarregar }) {
     }
   };
 
-  const remover = async (id) => {
-    if (!window.confirm('Remover este endereço?')) return;
-    await removerEndereco(id);
-    recarregar();
-  };
+  if (carregando) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '260px' }}>
+        <LoadingSpinner />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -2320,11 +3266,66 @@ function Enderecos({ enderecos, recarregar }) {
             </div>
             <div className="conta-actions">
               <button type="button" className="conta-link" onClick={() => editar(end)}>Editar</button>
-              <button type="button" className="conta-link perigo" onClick={() => remover(end.id)}>Excluir</button>
+              <button type="button" className="conta-link perigo" onClick={() => setEnderecoParaRemover(end)}>Excluir</button>
             </div>
           </div>
         ))}
       </div>
+
+      {/* Modal de confirmação para remoção de endereço (sem alerta do localhost) */}
+      {enderecoParaRemover && (
+        <div className="conta-modal-overlay" onClick={() => !removendoEndereco && setEnderecoParaRemover(null)}>
+          <div className="conta-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="conta-modal-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+            </div>
+            <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: '#0f172a', textAlign: 'center' }}>
+              Remover Endereço?
+            </h3>
+            <p style={{ margin: 0, fontSize: '14px', color: '#64748b', textAlign: 'center', lineHeight: 1.55 }}>
+              Tem certeza de que deseja remover este endereço salvo da sua conta?
+            </p>
+            <div className="conta-modal-preview">
+              <strong>{enderecoParaRemover.logradouro}, {enderecoParaRemover.numero}</strong>
+              {enderecoParaRemover.complemento ? ` · ${enderecoParaRemover.complemento}` : ''}
+              <br />
+              <span style={{ color: '#64748b', fontSize: '12.5px' }}>
+                {enderecoParaRemover.bairro} — {enderecoParaRemover.cidade}/{enderecoParaRemover.estado} · CEP {enderecoParaRemover.cep}
+              </span>
+            </div>
+            <div className="conta-modal-actions">
+              <button
+                type="button"
+                className="conta-modal-btn-cancel"
+                onClick={() => setEnderecoParaRemover(null)}
+                disabled={removendoEndereco}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="conta-modal-btn-danger"
+                onClick={async () => {
+                  setRemovendoEndereco(true);
+                  try {
+                    await removerEndereco(enderecoParaRemover.id);
+                    setEnderecoParaRemover(null);
+                    await recarregar();
+                  } finally {
+                    setRemovendoEndereco(false);
+                  }
+                }}
+                disabled={removendoEndereco}
+              >
+                {removendoEndereco ? 'Removendo...' : 'Sim, remover'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -2333,16 +3334,28 @@ function Enderecos({ enderecos, recarregar }) {
 const CARTAO_VAZIO = {
   tipo: 'credito',
   titular: '',
+  cpf: '',
   numero: '',
   validade: '',
 };
 
-function FormasPagamento({ cartoes, recarregar }) {
+function FormasPagamento({ cartoes, recarregar, carregando }) {
   const [form, setForm] = useState(null);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [cardParaRemover, setCardParaRemover] = useState(null);
+  const [removendoCard, setRemovendoCard] = useState(false);
 
   const change = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+
+  // Formatação amigável do CPF
+  const handleCpfChange = (e) => {
+    let v = e.target.value.replace(/\D/g, '').slice(0, 11);
+    v = v.replace(/(\d{3})(\d)/, '$1.$2');
+    v = v.replace(/(\d{3})(\d)/, '$1.$2');
+    v = v.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+    setForm((f) => ({ ...f, cpf: v }));
+  };
 
   // Formatação amigável do número do cartão (grupos de 4 dígitos)
   const handleNumeroChange = (e) => {
@@ -2363,12 +3376,19 @@ function FormasPagamento({ cartoes, recarregar }) {
   const submit = async (e) => {
     e.preventDefault();
     setErro('');
+    const cpfLimpo = (form.cpf || '').replace(/\D/g, '');
+    if (cpfLimpo.length !== 11) {
+      setErro('Informe um CPF válido com 11 dígitos para o titular do cartão.');
+      return;
+    }
+
     setSalvando(true);
     try {
       const bandeiraCard = detectarBandeira(form.numero) || 'Cartão';
       await criarCartao({
         tipo: form.tipo,
         titular: form.titular,
+        cpf: cpfLimpo,
         numero: form.numero.replace(/\s+/g, ''),
         validade: form.validade,
         bandeira: bandeiraCard,
@@ -2382,11 +3402,13 @@ function FormasPagamento({ cartoes, recarregar }) {
     }
   };
 
-  const remover = async (id) => {
-    if (!window.confirm('Deseja remover este cartão salvo?')) return;
-    await removerCartao(id);
-    recarregar();
-  };
+  if (carregando) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '260px' }}>
+        <LoadingSpinner />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -2410,7 +3432,7 @@ function FormasPagamento({ cartoes, recarregar }) {
           {erro && <p className="auth-error">{erro}</p>}
 
           <div className="auth-field">
-            <label htmlFor="card-titular">Nome impresso no Cartão</label>
+            <label htmlFor="card-titular">Nome impresso no Cartão *</label>
             <input
               id="card-titular"
               name="titular"
@@ -2421,10 +3443,23 @@ function FormasPagamento({ cartoes, recarregar }) {
             />
           </div>
 
+          <div className="auth-field">
+            <label htmlFor="card-cpf">CPF do Titular do Cartão *</label>
+            <input
+              id="card-cpf"
+              name="cpf"
+              placeholder="000.000.000-00"
+              maxLength={14}
+              value={form.cpf}
+              onChange={handleCpfChange}
+              required
+            />
+          </div>
+
           <div className="conta-grid-2">
             <div className="auth-field">
               <label htmlFor="card-num" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Número do Cartão</span>
+                <span>Número do Cartão *</span>
                 {detectarBandeira(form.numero) && (
                   <CardBrandIcon brand={detectarBandeira(form.numero)} height={20} withBackground />
                 )}
@@ -2439,7 +3474,7 @@ function FormasPagamento({ cartoes, recarregar }) {
               />
             </div>
             <div className="auth-field">
-              <label htmlFor="card-val">Validade (MM/AA)</label>
+              <label htmlFor="card-val">Validade (MM/AA) *</label>
               <input
                 id="card-val"
                 name="validade"
@@ -2490,7 +3525,7 @@ function FormasPagamento({ cartoes, recarregar }) {
                   <span className="conta-cartao-tag">Crédito</span>
                 </strong>
                 <p className="conta-muted" style={{ margin: '2px 0 0' }}>
-                  {card.titular} · Validade: {card.validade}
+                  {card.titular} {card.cpf ? `· CPF: ${card.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '***.$2.$3-**')}` : ''} · Validade: {card.validade}
                 </p>
               </div>
             </div>
@@ -2498,7 +3533,7 @@ function FormasPagamento({ cartoes, recarregar }) {
               <button
                 type="button"
                 className="conta-link perigo"
-                onClick={() => remover(card.id)}
+                onClick={() => setCardParaRemover(card)}
               >
                 Excluir
               </button>
@@ -2506,6 +3541,61 @@ function FormasPagamento({ cartoes, recarregar }) {
           </div>
         ))}
       </div>
+
+      {/* Modal de confirmação para remoção de cartão (sem alerta do localhost) */}
+      {cardParaRemover && (
+        <div className="conta-modal-overlay" onClick={() => !removendoCard && setCardParaRemover(null)}>
+          <div className="conta-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="conta-modal-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
+                <line x1="1" y1="10" x2="23" y2="10" />
+              </svg>
+            </div>
+            <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: '#0f172a', textAlign: 'center' }}>
+              Remover Cartão Salvo?
+            </h3>
+            <p style={{ margin: 0, fontSize: '14px', color: '#64748b', textAlign: 'center', lineHeight: 1.55 }}>
+              Tem certeza de que deseja remover este cartão da sua lista de formas de pagamento?
+            </p>
+            <div className="conta-modal-preview">
+              <strong>{cardParaRemover.bandeira || 'Cartão'} · Final {cardParaRemover.ultimos_digitos}</strong>
+              <br />
+              <span style={{ color: '#64748b', fontSize: '12.5px' }}>
+                {cardParaRemover.titular}
+                {cardParaRemover.validade ? ` · Validade: ${cardParaRemover.validade}` : ''}
+              </span>
+            </div>
+            <div className="conta-modal-actions">
+              <button
+                type="button"
+                className="conta-modal-btn-cancel"
+                onClick={() => setCardParaRemover(null)}
+                disabled={removendoCard}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="conta-modal-btn-danger"
+                onClick={async () => {
+                  setRemovendoCard(true);
+                  try {
+                    await removerCartao(cardParaRemover.id);
+                    setCardParaRemover(null);
+                    await recarregar();
+                  } finally {
+                    setRemovendoCard(false);
+                  }
+                }}
+                disabled={removendoCard}
+              >
+                {removendoCard ? 'Removendo...' : 'Sim, remover'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Orientações sobre Pix e Boleto */}
       <div className="conta-payment-info-box">
@@ -2753,13 +3843,347 @@ function Favoritos({ favoritos, onRemover, carregando }) {
   );
 }
 
+/* ───────────────────────── Meus Cupons e Vales-Compra ───────────────────────── */
+const STATUS_VALE_BADGE = {
+  ativo: { bg: '#dcfce7', color: '#15803d', label: 'Ativo' },
+  inativo: { bg: '#f1f5f9', color: '#475569', label: 'Inativo' },
+  esgotado: { bg: '#ede9fe', color: '#6b21a8', label: 'Utilizado' },
+  expirado: { bg: '#ffedd5', color: '#c2410c', label: 'Expirado' },
+  bloqueado: { bg: '#fee2e2', color: '#b91c1c', label: 'Bloqueado' },
+  revogado: { bg: '#991b1b', color: '#fff', label: 'Revogado' },
+};
+
+function CuponsEVales({ irPara }) {
+  const { aplicarCupom, aplicarValeCompra, openCart } = useCart();
+  const [vales, setVales] = useState([]);
+  const [promocionais, setPromocionais] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [copiadoCodigo, setCopiadoCodigo] = useState('');
+  const [historicoAbertoId, setHistoricoAbertoId] = useState(null);
+
+  useEffect(() => {
+    let ativo = true;
+    setCarregando(true);
+    Promise.all([
+      listarValesCompraConta().catch(() => ({ data: [] })),
+      listarCuponsDisponiveis().catch(() => ({ data: [] })),
+    ])
+      .then(([resVales, resDisp]) => {
+        if (!ativo) return;
+        setVales(Array.isArray(resVales?.data) ? resVales.data : []);
+        const todosDisp = Array.isArray(resDisp?.data) ? resDisp.data : [];
+        setPromocionais(
+          todosDisp.filter(
+            (b) =>
+              !b.eh_vale_compra &&
+              b.tipo !== 'vale_compra' &&
+              b.tipo !== 'troca' &&
+              !String(b.codigo || '').startsWith('VALE-') &&
+              !String(b.codigo || '').startsWith('TROCA-')
+          )
+        );
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  const copiarCodigo = (codigo) => {
+    navigator.clipboard.writeText(codigo);
+    setCopiadoCodigo(codigo);
+    setTimeout(() => setCopiadoCodigo(''), 2500);
+  };
+
+  if (carregando) {
+    return (
+      <div style={{ padding: '40px 0', textAlign: 'center' }}>
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  const saldoTotalAtivo = vales
+    .filter((v) => v.ativo && v.status === 'ativo')
+    .reduce((acc, v) => acc + Number(v.saldo_atual ?? v.valor_fixo ?? 0), 0);
+
+  return (
+    <>
+      <h2 className="conta-section-title">Cupons e Vales-Compra</h2>
+      <p className="conta-section-sub">
+        Gerencie seus créditos em vales-compra (combináveis com 1 cupom promocional e com saldo parcial preservado) e aproveite os cupons disponíveis.
+      </p>
+
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%)',
+          border: '1px solid #d8b4fe',
+          borderRadius: '10px',
+          padding: '16px 20px',
+          marginBottom: '22px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
+        }}
+      >
+        <div>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: '#6b21a8', textTransform: 'uppercase' }}>
+            Saldo Total Ativo em Vales-Compra
+          </span>
+          <strong style={{ display: 'block', fontSize: '26px', color: '#4c1d95', marginTop: '2px' }}>
+            {moeda(saldoTotalAtivo)}
+          </strong>
+        </div>
+        <button
+          type="button"
+          className="conta-btn-sec"
+          onClick={() => irPara('pedidos')}
+          style={{ background: '#fff', borderColor: '#d8b4fe', color: '#5b21b6' }}
+        >
+          Acompanhar Meus Pedidos
+        </button>
+      </div>
+
+      {/* ── Seção 1: Meus Vales-Compra ── */}
+      <h3 style={{ fontSize: '16px', margin: '0 0 12px', color: '#111' }}>
+        🎟️ Meus Vales-Compra
+      </h3>
+      {vales.length === 0 ? (
+        <div className="conta-box" style={{ textAlign: 'center', padding: '24px' }}>
+          <p style={{ margin: 0, color: '#64748b', fontSize: '14px' }}>
+            Você ainda não possui vales-compra vinculados à sua conta. Quando cancelar um pedido pago ou solicitar devolução em vale-compra, seus créditos aparecerão aqui!
+          </p>
+        </div>
+      ) : (
+        <div className="conta-beneficios-grid">
+          {vales.map((v) => {
+            const st = v.status || (v.ativo ? 'ativo' : 'inativo');
+            const badge = STATUS_VALE_BADGE[st] || STATUS_VALE_BADGE.inativo;
+            const saldoAtual = Number(v.saldo_atual ?? v.valor_fixo ?? 0);
+            const valorInicial = Number(v.valor_inicial ?? v.valor_fixo ?? saldoAtual);
+            const disponivel = v.ativo && st === 'ativo' && saldoAtual > 0;
+            const histAberto = historicoAbertoId === v.id;
+
+            return (
+              <div
+                key={v.id}
+                className={`conta-beneficio-card vale ${disponivel ? '' : 'inativo'}`}
+              >
+                <div className="conta-beneficio-top">
+                  <span className="conta-beneficio-codigo">{v.codigo}</span>
+                  <span
+                    style={{
+                      background: badge.bg,
+                      color: badge.color,
+                      padding: '3px 10px',
+                      borderRadius: '999px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {badge.label}
+                  </span>
+                </div>
+
+                <div className="conta-vale-saldos">
+                  <div className="conta-vale-saldo-item">
+                    <span>Valor Inicial</span>
+                    <strong>{moeda(valorInicial)}</strong>
+                  </div>
+                  <div className="conta-vale-saldo-item destaque">
+                    <span>Saldo Atual</span>
+                    <strong>{moeda(saldoAtual)}</strong>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.45 }}>
+                  <div>
+                    <strong>Validade:</strong> {v.validade ? dataBR(v.validade) : 'Sem data de expiração'}
+                  </div>
+                  {v.pedido_origem_id && (
+                    <div>
+                      <strong>Origem:</strong> Pedido #{v.pedido_origem_id}
+                    </div>
+                  )}
+                  {v.condicoes_utilizacao && (
+                    <div>
+                      <strong>Condições:</strong> {v.condicoes_utilizacao}
+                    </div>
+                  )}
+                  {(st === 'bloqueado' || st === 'revogado') && v.motivo_bloqueio && (
+                    <div style={{ color: '#b91c1c', marginTop: '4px', fontWeight: 600 }}>
+                      Motivo: {v.motivo_bloqueio}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 'auto' }}>
+                  <button
+                    type="button"
+                    className="conta-btn-sec"
+                    style={{ flex: 1, fontSize: '12px', padding: '7px 10px' }}
+                    onClick={() => copiarCodigo(v.codigo)}
+                  >
+                    {copiadoCodigo === v.codigo ? '✓ Copiado!' : 'Copiar Código'}
+                  </button>
+                  {disponivel && (
+                    <button
+                      type="button"
+                      style={{
+                        flex: 1.2,
+                        background: '#6b21a8',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '7px 12px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => {
+                        aplicarValeCompra({ ...v, eh_vale_compra: true, tipo: 'vale_compra' });
+                        openCart();
+                      }}
+                    >
+                      Usar no Carrinho
+                    </button>
+                  )}
+                </div>
+
+                {Array.isArray(v.historicos) && v.historicos.length > 0 && (
+                  <div style={{ borderTop: '1px dashed #e2e8f0', paddingTop: '8px' }}>
+                    <button
+                      type="button"
+                      className="conta-link"
+                      style={{ fontSize: '11.5px', color: '#5b21b6' }}
+                      onClick={() => setHistoricoAbertoId(histAberto ? null : v.id)}
+                    >
+                      {histAberto
+                        ? 'Ocultar histórico ▲'
+                        : `Ver histórico de movimentações (${v.historicos.length}) ▼`}
+                    </button>
+                    {histAberto && (
+                      <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {v.historicos.map((h) => (
+                          <div
+                            key={h.id}
+                            style={{
+                              fontSize: '11px',
+                              background: '#fff',
+                              border: '1px solid #ede9fe',
+                              borderRadius: '6px',
+                              padding: '6px 8px',
+                              color: '#334155',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                              <span>{h.pedido_id ? `Pedido #${h.pedido_id}` : 'Movimentação'}</span>
+                              <span>{dataBR(h.created_at)}</span>
+                            </div>
+                            <div>{h.descricao}</div>
+                            {h.saldo_anterior !== null && h.saldo_posterior !== null && (
+                              <div style={{ color: '#6b21a8', fontWeight: 600 }}>
+                                Saldo: {moeda(h.saldo_anterior)} → {moeda(h.saldo_posterior)}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Seção 2: Cupons Promocionais Disponíveis ── */}
+      <h3 style={{ fontSize: '16px', margin: '10px 0 12px', color: '#111' }}>
+        🏷️ Cupons Promocionais Disponíveis
+      </h3>
+      {promocionais.length === 0 ? (
+        <div className="conta-box">
+          <p style={{ margin: 0, color: '#64748b', fontSize: '14px' }}>
+            Nenhum cupom promocional ativo no momento.
+          </p>
+        </div>
+      ) : (
+        <div className="conta-beneficios-grid">
+          {promocionais.map((c) => (
+            <div key={c.id} className="conta-beneficio-card">
+              <div className="conta-beneficio-top">
+                <span className="conta-beneficio-codigo">{c.codigo}</span>
+                <span
+                  style={{
+                    background: c.tipo === 'frete' ? '#e0f2fe' : '#fef3c7',
+                    color: c.tipo === 'frete' ? '#0369a1' : '#92400e',
+                    padding: '3px 9px',
+                    borderRadius: '999px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                  }}
+                >
+                  {c.tipo === 'frete' ? `${Number(c.percentual)}% OFF Frete` : `${Number(c.percentual)}% OFF Produtos`}
+                </span>
+              </div>
+              <div style={{ fontSize: '12.5px', color: '#475569', lineHeight: 1.45 }}>
+                {c.descricao && <div style={{ marginBottom: '4px' }}>{c.descricao}</div>}
+                <div>Validade: {c.validade ? dataBR(c.validade) : 'Por tempo indeterminado'}</div>
+                {Number(c.valor_minimo_pedido || 0) > 0 && (
+                  <div>Pedido mínimo: {moeda(c.valor_minimo_pedido)}</div>
+                )}
+                {c.condicoes_utilizacao && <div>{c.condicoes_utilizacao}</div>}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
+                <button
+                  type="button"
+                  className="conta-btn-sec"
+                  style={{ flex: 1, fontSize: '12px', padding: '7px 10px' }}
+                  onClick={() => copiarCodigo(c.codigo)}
+                >
+                  {copiadoCodigo === c.codigo ? '✓ Copiado!' : 'Copiar'}
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    flex: 1.2,
+                    background: '#1e1e1e',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '7px 12px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => {
+                    aplicarCupom(c);
+                    openCart();
+                  }}
+                >
+                  Aplicar Cupom
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ───────────────────────── Página ───────────────────────── */
 export default function MinhaContaPage() {
   const { user, isAuthenticated, loading, signOut, updateUser, setSession } = useAuth();
   const { favoritosProdutos, totalFavoritos, toggleFavorite, loadingWishlist, carregarFavoritos } = useWishlist();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const urlAba = searchParams.get('aba');
+  const urlAba = searchParams.get('aba') || searchParams.get('tab');
   const urlPedido = searchParams.get('pedido');
   const urlEmail = searchParams.get('email');
   const urlAvaliar = searchParams.get('avaliar');
@@ -2825,12 +4249,27 @@ export default function MinhaContaPage() {
         .finally(() => setCarregandoPedidos(false)),
     [],
   );
+  const [carregandoEnderecos, setCarregandoEnderecos] = useState(true);
+  const [carregandoCartoes, setCarregandoCartoes] = useState(true);
+
   const carregarEnderecos = useCallback(
-    () => listarEnderecos().then(({ data }) => setEnderecos(data)).catch(() => {}),
+    () => {
+      setCarregandoEnderecos(true);
+      return listarEnderecos()
+        .then(({ data }) => setEnderecos(data))
+        .catch(() => {})
+        .finally(() => setCarregandoEnderecos(false));
+    },
     [],
   );
   const carregarCartoes = useCallback(
-    () => listarCartoes().then(({ data }) => setCartoes(data)).catch(() => {}),
+    () => {
+      setCarregandoCartoes(true);
+      return listarCartoes()
+        .then(({ data }) => setCartoes(data))
+        .catch(() => {})
+        .finally(() => setCarregandoCartoes(false));
+    },
     [],
   );
 
@@ -2844,15 +4283,23 @@ export default function MinhaContaPage() {
   }, []);
 
   useEffect(() => {
+    let ativo = true;
     if (isAuthenticated) {
-      // 1. Atualiza imediatamente o resumo leve com os contadores
-      carregarResumo().finally(() => setCarregandoDados(false));
-
-      // 2. Busca os dados completos para as abas secundárias
-      carregarPedidos();
-      carregarEnderecos();
-      carregarCartoes();
+      // 1. Atualiza primeiro o resumo leve para exibir os contadores sem concorrência de requests
+      carregarResumo()
+        .catch(() => {})
+        .finally(() => {
+          if (!ativo) return;
+          setCarregandoDados(false);
+          // 2. Busca os dados completos para as abas secundárias após liberar o resumo
+          carregarPedidos();
+          carregarEnderecos();
+          carregarCartoes();
+        });
     }
+    return () => {
+      ativo = false;
+    };
   }, [isAuthenticated, carregarResumo, carregarPedidos, carregarEnderecos, carregarCartoes]);
 
   useEffect(() => {
@@ -2863,6 +4310,11 @@ export default function MinhaContaPage() {
 
     window.addEventListener('salv-pedidos-atualizados', handleAtualizados);
 
+    const handleStorage = (e) => {
+      if (e.key === 'salv_sync_trigger') handleAtualizados();
+    };
+    window.addEventListener('storage', handleStorage);
+
     const handleFocus = () => handleAtualizados();
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') handleAtualizados();
@@ -2870,10 +4322,13 @@ export default function MinhaContaPage() {
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibility);
 
-    const interval = setInterval(handleAtualizados, 15000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') handleAtualizados();
+    }, 5000);
 
     return () => {
       window.removeEventListener('salv-pedidos-atualizados', handleAtualizados);
+      window.removeEventListener('storage', handleStorage);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
       clearInterval(interval);
@@ -2903,6 +4358,7 @@ export default function MinhaContaPage() {
       localStorage.removeItem('minha_conta_pedidos');
       localStorage.removeItem('@SalvSacra:carrinho');
       localStorage.removeItem('@SalvSacra:cupom');
+      localStorage.removeItem('@SalvSacra:vale_compra');
       // Limpa a sessão diretamente sem chamar signOut() na API (pois a conta e tokens foram excluídos)
       setSession('', null);
       navigate('/login');
@@ -2913,7 +4369,12 @@ export default function MinhaContaPage() {
         navigate('/login');
         return;
       }
-      alert(primeiroErro(err));
+      setModalAviso({
+        aberto: true,
+        titulo: 'Erro ao excluir conta',
+        mensagem: primeiroErro(err),
+        icon: '✕',
+      });
     } finally {
       setExcluindoConta(false);
       setModalExcluirConta(false);
@@ -2996,6 +4457,7 @@ export default function MinhaContaPage() {
                 }}
               />
             )}
+            {aba === 'cupons' && <CuponsEVales irPara={setAba} />}
             {aba === 'favoritos' && (
               <Favoritos
                 favoritos={favoritosProdutos}
@@ -3017,6 +4479,7 @@ export default function MinhaContaPage() {
             {aba === 'enderecos' && (
               <Enderecos
                 enderecos={enderecos}
+                carregando={carregandoEnderecos}
                 recarregar={() => {
                   carregarEnderecos();
                   carregarResumo();
@@ -3026,6 +4489,7 @@ export default function MinhaContaPage() {
             {aba === 'pagamentos' && (
               <FormasPagamento
                 cartoes={cartoes}
+                carregando={carregandoCartoes}
                 recarregar={() => {
                   carregarCartoes();
                   carregarResumo();

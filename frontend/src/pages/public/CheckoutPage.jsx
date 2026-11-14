@@ -98,12 +98,21 @@ export default function CheckoutPage() {
     openCart,
     clearCart,
     cupom,
+    valeCompra,
     descontoCupom,
+    descontoProduto,
+    descontoFrete,
+    descontoVale,
+    saldoDisponivelVale,
+    saldoRestanteVale,
     removerCupom,
+    removerValeCompra,
+    removerTodosBeneficios,
   } = useCart();
 
   // Etapa atual do checkout: 'entrega' | 'pagamento'
   const [etapa, setEtapa] = useState('entrega');
+  const [resumoBeneficiosConcluido, setResumoBeneficiosConcluido] = useState(null);
 
   const dadosSalvos = getDadosCheckoutSalvos();
 
@@ -456,6 +465,9 @@ export default function CheckoutPage() {
               validade: primeiro.validade,
               cvv: '',
             });
+            if (primeiro.cpf) {
+              setCpfTitular(formatarCpfInput(primeiro.cpf));
+            }
           }
         })
         .catch(() => {});
@@ -469,12 +481,30 @@ export default function CheckoutPage() {
     }
   }, [authLoading, isAuthenticated, navigate]);
 
-  // Cálculos de valor
+  // Cálculos de valor combinados (1 Cupom Promocional + 1 Vale-Compra)
   const freteAtual = selectedShipping || (opcoesFrete.length > 0 ? opcoesFrete[0] : null);
   const freteValor = freteAtual ? Number(freteAtual.preco) : 0;
   const tipoFreteNome = freteAtual ? freteAtual.nome : 'A calcular';
-  const totalFinal = Math.max(0, (subtotal || 79.9) + freteValor - (descontoCupom || 0));
+  const subtotalBase = Number(subtotal || 0);
+  const descontoFreteEfetivo =
+    cupom?.tipo === 'frete' ? Math.min(freteValor, Number(descontoFrete || 0)) : 0;
+  const descontoProdutoEfetivo =
+    cupom && cupom.tipo !== 'frete' ? Math.min(subtotalBase, Number(descontoProduto || 0)) : 0;
+  const fretePago = Math.max(0, Number((freteValor - descontoFreteEfetivo).toFixed(2)));
+  const totalAposCupom = Math.max(
+    0,
+    Number(((subtotalBase - descontoProdutoEfetivo) + fretePago).toFixed(2))
+  );
+  const abatimentoVale = valeCompra
+    ? Math.min(totalAposCupom, Number(saldoDisponivelVale || descontoVale || 0))
+    : 0;
+  const saldoRestanteNoVale = valeCompra
+    ? Math.max(0, Number((saldoDisponivelVale - abatimentoVale).toFixed(2)))
+    : 0;
+  const totalFinal = Math.max(0, Number((totalAposCupom - abatimentoVale).toFixed(2)));
   const totalBase = totalFinal;
+  const cobertoPorBeneficios =
+    totalFinal <= 0.009 && (abatimentoVale > 0 || descontoProdutoEfetivo > 0);
 
   // Calcula o número máximo de parcelas permitidas (parcela mínima configurada, padrão R$ 50,00, máximo 12x)
   const maxParcelasDisponiveis = Math.max(1, Math.min(12, Math.floor(totalFinal / (parcelaMinima || 50.00))));
@@ -569,7 +599,7 @@ export default function CheckoutPage() {
       navigate('/');
       return;
     }
-    if (metodoPagamento === 'cartao') {
+    if (!cobertoPorBeneficios && metodoPagamento === 'cartao') {
       if (totalFinal < 1.00) {
         abrirModalAviso({
           titulo: 'Valor Mínimo para Cartão',
@@ -601,7 +631,20 @@ export default function CheckoutPage() {
 
     setLoading(true);
 
-    const metodoEnvio = metodoPagamento === 'cartao' ? 'cartao_credito' : metodoPagamento;
+    const metodoEnvio = cobertoPorBeneficios
+      ? (valeCompra ? 'vale_compra' : 'pix')
+      : (metodoPagamento === 'cartao' ? 'cartao_credito' : metodoPagamento);
+
+    const snapshotBeneficios = {
+      cupomCodigo: cupom?.codigo || null,
+      descontoCupom: descontoProdutoEfetivo + descontoFreteEfetivo,
+      descontoProduto: descontoProdutoEfetivo,
+      descontoFrete: descontoFreteEfetivo,
+      valeCodigo: valeCompra?.codigo || null,
+      abatimentoVale,
+      saldoAnteriorVale: saldoDisponivelVale,
+      saldoRestanteNoVale,
+    };
 
     const payload = {
       email_contato: email,
@@ -618,21 +661,29 @@ export default function CheckoutPage() {
       valor_frete: freteValor,
       metodo_pagamento: metodoEnvio,
       observacoes: observacoes,
-      cupom_codigo: descontoCupom > 0 ? cupom?.codigo : null,
+      cupom_codigo:
+        (descontoProdutoEfetivo > 0 || descontoFreteEfetivo > 0) ? cupom?.codigo : null,
+      vale_compra_codigo: abatimentoVale > 0 ? valeCompra?.codigo : null,
       salvar_dados: salvarDadosCompra,
-      salvar_cartao: salvarDadosCompra,
+      salvar_cartao: !cobertoPorBeneficios && salvarDadosCompra,
       cartao_dados:
-        metodoPagamento === 'cartao'
-          ? {
-              tipo: 'credito',
-              numero: cartao.numero,
-              titular: cartao.titular,
-              validade: cartao.validade,
-              cvv: cartao.cvv,
-              cpf: cpfTitular,
-              parcelas: Number(parcelasCartao) || 1,
-              bandeira: detectarBandeiraCartao(cartao.numero) || 'Cartão',
-            }
+        !cobertoPorBeneficios && metodoPagamento === 'cartao'
+          ? (() => {
+              const cartaoSalvo =
+                cartaoSelecionadoId !== 'novo'
+                  ? cartoesSalvos.find((c) => c.id === cartaoSelecionadoId)
+                  : null;
+              return {
+                tipo: 'credito',
+                numero: cartao.numero,
+                titular: cartao.titular,
+                validade: cartao.validade,
+                cvv: cartao.cvv,
+                cpf: cartaoSalvo ? (cartaoSalvo.cpf || cpfTitular || cpf) : cpfTitular,
+                parcelas: Number(parcelasCartao) || 1,
+                bandeira: detectarBandeiraCartao(cartao.numero) || 'Cartão',
+              };
+            })()
           : null,
       itens: items.map((i) => ({
         produto_id: i.produtoId,
@@ -644,6 +695,11 @@ export default function CheckoutPage() {
 
     try {
       const res = await api.post('/pedidos', payload);
+      setResumoBeneficiosConcluido({
+        ...snapshotBeneficios,
+        saldoRestanteNoVale:
+          res.data?.saldo_restante_vale ?? snapshotBeneficios.saldoRestanteNoVale,
+      });
       setPedidoConcluido(res.data.pedido);
 
       // Salva os dados de entrega localmente para próximas compras
@@ -663,14 +719,31 @@ export default function CheckoutPage() {
         updateUser(res.data.user);
       }
 
-      // Limpa o carrinho e cupons pois o pedido já foi criado no sistema (mesmo se pendente de pagamento PIX)
+      // Limpa o carrinho, cupom promocional e vale-compra pois o pedido já foi criado
       if (res.data.pedido) {
         clearCart();
-        removerCupom();
+        if (removerTodosBeneficios) {
+          removerTodosBeneficios();
+        } else {
+          removerCupom();
+          if (removerValeCompra) removerValeCompra();
+        }
       }
       try {
         localStorage.removeItem('minha_conta_pedidos');
-        localStorage.removeItem('minha_conta_resumo');
+        const resumoSalvo = localStorage.getItem('minha_conta_resumo');
+        if (resumoSalvo && res.data?.pedido) {
+          const parsed = JSON.parse(resumoSalvo);
+          localStorage.setItem(
+            'minha_conta_resumo',
+            JSON.stringify({
+              ...parsed,
+              total_pedidos: (Number(parsed.total_pedidos) || 0) + 1,
+              ultimo_pedido: res.data.pedido,
+            })
+          );
+        }
+        localStorage.setItem('salv_sync_trigger', String(Date.now()));
       } catch {}
       window.dispatchEvent(new Event('salv-pedidos-atualizados'));
     } catch (err) {
@@ -703,8 +776,19 @@ export default function CheckoutPage() {
 
   // Fluxo Pós-Finalização: Aguardando Pagamento (PIX) vs. Em Análise (Cartão) vs. Pedido Confirmado
   if (pedidoConcluido) {
-    const aguardandoPix = metodoPagamento === 'pix' && pedidoConcluido.status === 'Pendente';
-    const emAnaliseCartao = metodoPagamento === 'cartao' && pedidoConcluido.status === 'Pendente';
+    const valorEmDinheiroPedido = Number(
+      pedidoConcluido.valor_pago_dinheiro ?? pedidoConcluido.valor_total ?? 0
+    );
+    const pagoIntegralmenteComBeneficios =
+      valorEmDinheiroPedido <= 0.009 || pedidoConcluido.metodo_pagamento === 'vale_compra';
+    const aguardandoPix =
+      !pagoIntegralmenteComBeneficios &&
+      metodoPagamento === 'pix' &&
+      pedidoConcluido.status === 'Pendente';
+    const emAnaliseCartao =
+      !pagoIntegralmenteComBeneficios &&
+      metodoPagamento === 'cartao' &&
+      pedidoConcluido.status === 'Pendente';
     const codigoPix =
       pedidoConcluido.pix_copia_e_cola ||
       `00020126580014br.gov.bcb.pix0120salvsacra2@gmail.com5204000053039865405${Number(pedidoConcluido.valor_total || totalFinal).toFixed(2)}5802BR5910SALV SACRA6007TUBARAO62140510PEDIDO${String(pedidoConcluido.id).padStart(4, '0')}6304B14F`;
@@ -1044,7 +1128,11 @@ export default function CheckoutPage() {
           /* ── TELA 2: PAGAMENTO CONFIRMADO / PEDIDO CONCLUÍDO COM SUCESSO ── */
           <div className="checkout-success-wrap">
             <div className="checkout-success-icon">✓</div>
-            <h2>Pagamento Confirmado!</h2>
+            <h2>
+              {pagoIntegralmenteComBeneficios
+                ? 'Pedido Confirmado com Benefícios!'
+                : 'Pagamento Confirmado!'}
+            </h2>
             <p style={{ marginTop: '8px', color: '#444', fontSize: '15px' }}>
               Seu Pedido <strong>#{pedidoConcluido.id}</strong> foi aprovado e já entrou para separação.
             </p>
@@ -1062,20 +1150,77 @@ export default function CheckoutPage() {
                 textAlign: 'left',
                 fontSize: '13px',
                 color: '#334155',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Status atual:</span>
-                <strong style={{ color: '#15803d' }}>{pedidoConcluido.status === 'Pendente' ? 'Pago' : pedidoConcluido.status}</strong>
+                <strong style={{ color: '#15803d' }}>
+                  {pedidoConcluido.status === 'Pendente' ? 'Pago' : pedidoConcluido.status}
+                </strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Modalidade de entrega:</span>
                 <strong>{pedidoConcluido.tipo_frete || tipoFreteNome}</strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Total pago:</span>
-                <strong>R$ {Number(pedidoConcluido.valor_total || totalFinal).toFixed(2).replace('.', ',')}</strong>
+              {Number(pedidoConcluido.valor_desconto_cupom || resumoBeneficiosConcluido?.descontoCupom || 0) > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#1e8449' }}>
+                  <span>
+                    Cupom ({pedidoConcluido.cupom_codigo || resumoBeneficiosConcluido?.cupomCodigo}):
+                  </span>
+                  <strong>
+                    − R${' '}
+                    {Number(
+                      pedidoConcluido.valor_desconto_cupom ||
+                        resumoBeneficiosConcluido?.descontoCupom ||
+                        0
+                    )
+                      .toFixed(2)
+                      .replace('.', ',')}
+                  </strong>
+                </div>
+              )}
+              {Number(pedidoConcluido.valor_vale_compra || resumoBeneficiosConcluido?.abatimentoVale || 0) > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#6b21a8' }}>
+                  <span>
+                    Vale-Compra ({pedidoConcluido.vale_compra_codigo || resumoBeneficiosConcluido?.valeCodigo}):
+                  </span>
+                  <strong>
+                    − R${' '}
+                    {Number(
+                      pedidoConcluido.valor_vale_compra ||
+                        resumoBeneficiosConcluido?.abatimentoVale ||
+                        0
+                    )
+                      .toFixed(2)
+                      .replace('.', ',')}
+                  </strong>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e8f0', paddingTop: '6px', marginTop: '2px' }}>
+                <span>Valor pago em dinheiro:</span>
+                <strong>
+                  R${' '}
+                  {Number(
+                    pedidoConcluido.valor_pago_dinheiro ??
+                      pedidoConcluido.valor_total ??
+                      totalFinal
+                  )
+                    .toFixed(2)
+                    .replace('.', ',')}
+                </strong>
               </div>
+              {Number(resumoBeneficiosConcluido?.saldoRestanteNoVale || 0) > 0 && (
+                <div style={{ marginTop: '4px', padding: '8px 10px', borderRadius: '6px', background: '#f3e8ff', color: '#5b21b6', fontSize: '12px', fontWeight: 600 }}>
+                  🎟 Seu vale-compra ({resumoBeneficiosConcluido.valeCodigo}) continua ATIVO com{' '}
+                  <strong>
+                    R$ {Number(resumoBeneficiosConcluido.saldoRestanteNoVale).toFixed(2).replace('.', ',')}
+                  </strong>{' '}
+                  de saldo para compras futuras!
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '24px' }}>
@@ -1494,9 +1639,70 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                {/* Formas de Pagamento Accordion */}
+                {/* Formas de Pagamento Accordion ou Confirmação Coberta por Benefícios */}
                 <h2 className="checkout-payment-heading">Forma de pagamento</h2>
 
+                {cobertoPorBeneficios ? (
+                  <div
+                    style={{
+                      background: 'linear-gradient(135deg, #faf5ff 0%, #ecf8f0 100%)',
+                      border: '1.5px solid #7e22ce',
+                      borderRadius: '10px',
+                      padding: '18px 20px',
+                      marginBottom: '18px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '22px' }}>🎟️</span>
+                      <div>
+                        <strong style={{ fontSize: '15px', color: '#1e1e1e', display: 'block' }}>
+                          Pedido 100% Coberto por Benefícios
+                        </strong>
+                        <span style={{ fontSize: '12px', color: '#15803d', fontWeight: 700 }}>
+                          Total a pagar em dinheiro: R$ 0,00 · Não é necessário cartão ou PIX
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.55, marginTop: '8px' }}>
+                      {descontoProdutoEfetivo + descontoFreteEfetivo > 0 && (
+                        <div>
+                          • Cupom <strong>{cupom?.codigo}</strong>: desconto de{' '}
+                          <strong>
+                            R$ {(descontoProdutoEfetivo + descontoFreteEfetivo).toFixed(2).replace('.', ',')}
+                          </strong>
+                        </div>
+                      )}
+                      {abatimentoVale > 0 && (
+                        <div>
+                          • Vale-Compra <strong>{valeCompra?.codigo}</strong>: abatimento de{' '}
+                          <strong>R$ {abatimentoVale.toFixed(2).replace('.', ',')}</strong> neste pedido
+                        </div>
+                      )}
+                    </div>
+
+                    {valeCompra && saldoRestanteNoVale > 0 && (
+                      <div
+                        style={{
+                          marginTop: '12px',
+                          background: '#fff',
+                          border: '1px solid #d8b4fe',
+                          borderRadius: '8px',
+                          padding: '10px 12px',
+                          fontSize: '12.5px',
+                          color: '#5b21b6',
+                          fontWeight: 600,
+                        }}
+                      >
+                        ✨ O seu vale-compra ({valeCompra.codigo}) possui{' '}
+                        <strong>R$ {saldoDisponivelVale.toFixed(2).replace('.', ',')}</strong>, abaterá{' '}
+                        <strong>R$ {abatimentoVale.toFixed(2).replace('.', ',')}</strong> agora e{' '}
+                        <strong>continuará ATIVO com R$ {saldoRestanteNoVale.toFixed(2).replace('.', ',')} de saldo</strong>{' '}
+                        para suas compras futuras!
+                      </div>
+                    )}
+                  </div>
+                ) : (
                 <div className="checkout-payment-options">
                   {/* Cartão de Crédito */}
                   <div className={`checkout-payment-card ${metodoPagamento === 'cartao' ? 'selected' : ''}`}>
@@ -1545,6 +1751,9 @@ export default function CheckoutPage() {
                                         titular: c.titular,
                                         validade: c.validade,
                                       }));
+                                      if (c.cpf) {
+                                        setCpfTitular(formatarCpfInput(c.cpf));
+                                      }
                                     }}
                                   >
                                     <div className="checkout-saved-card-left">
@@ -1660,9 +1869,9 @@ export default function CheckoutPage() {
                               </div>
                             </>
                           ) : (
-                            <div className="checkout-input-row" style={{ alignItems: 'flex-end' }}>
-                              <div className="checkout-input-group" style={{ flex: 1 }}>
-                                <label>CVV do Cartão Selecionado *</label>
+                            <div>
+                              <div className="checkout-input-group" style={{ maxWidth: '240px' }}>
+                                <label>CVV (Código de segurança) *</label>
                                 <input
                                   type="password"
                                   placeholder="Ex: 123"
@@ -1673,8 +1882,8 @@ export default function CheckoutPage() {
                                   required
                                 />
                               </div>
-                              <div style={{ fontSize: '11px', color: '#666', paddingBottom: '10px' }}>
-                                O CVV é solicitado apenas no momento do pagamento por motivos de segurança.
+                              <div style={{ fontSize: '11px', color: '#666', marginTop: '4px', marginBottom: '8px' }}>
+                                🔒 Por segurança, informe apenas o código CVV de 3 a 4 dígitos impresso no verso do cartão.
                               </div>
                             </div>
                           )}
@@ -1754,6 +1963,7 @@ export default function CheckoutPage() {
                     )}
                   </div>
                 </div>
+                )}
 
                 {/* Salvar dados da compra */}
                 <div className="checkout-save-data-card">
@@ -1778,7 +1988,13 @@ export default function CheckoutPage() {
                   disabled={loading}
                   onClick={handleFinalizarPedido}
                 >
-                  {loading ? 'PROCESSANDO...' : 'FAZER PEDIDO'}
+                  {loading
+                    ? 'PROCESSANDO...'
+                    : cobertoPorBeneficios
+                      ? valeCompra
+                        ? 'CONFIRMAR PEDIDO COM VALE-COMPRA'
+                        : 'CONFIRMAR PEDIDO GRATUITO'
+                      : 'FAZER PEDIDO'}
                 </button>
               </>
             )}
@@ -1826,8 +2042,8 @@ export default function CheckoutPage() {
             {/* Linhas de Valores */}
             <div className="checkout-totals-block">
               <div className="checkout-total-line">
-                <span>Subtotal</span>
-                <span>R${(subtotal || 79.9).toFixed(2).replace('.', ',')}</span>
+                <span>Subtotal dos produtos</span>
+                <span>R${subtotalBase.toFixed(2).replace('.', ',')}</span>
               </div>
               <div className="checkout-total-line">
                 <span>Custo de frete</span>
@@ -1836,17 +2052,47 @@ export default function CheckoutPage() {
                     ? 'Calculando...'
                     : freteValor > 0
                     ? `R$${freteValor.toFixed(2).replace('.', ',')}`
-                    : 'R$0,00'}
+                    : 'Grátis (R$0,00)'}
                 </span>
               </div>
-              {descontoCupom > 0 && (
-                <div className="checkout-total-line" style={{ color: '#1e8449', fontWeight: 'bold' }}>
-                  <span>Cupom {cupom?.codigo} ({Number(cupom?.percentual)}% {cupom?.tipo === 'frete' ? 'no frete' : 'nas peças'})</span>
-                  <span>- R${descontoCupom.toFixed(2).replace('.', ',')}</span>
+              {descontoProdutoEfetivo > 0 && (
+                <div className="checkout-total-line" style={{ color: '#1e8449', fontWeight: 700 }}>
+                  <span>Desconto de Produto ({cupom?.codigo} · {Number(cupom?.percentual)}%)</span>
+                  <span>− R${descontoProdutoEfetivo.toFixed(2).replace('.', ',')}</span>
+                </div>
+              )}
+              {descontoFreteEfetivo > 0 && (
+                <div className="checkout-total-line" style={{ color: '#1e8449', fontWeight: 700 }}>
+                  <span>Desconto de Frete ({cupom?.codigo} · {Number(cupom?.percentual)}%)</span>
+                  <span>− R${descontoFreteEfetivo.toFixed(2).replace('.', ',')}</span>
+                </div>
+              )}
+              {abatimentoVale > 0 && (
+                <div className="checkout-total-line" style={{ color: '#6b21a8', fontWeight: 700 }}>
+                  <span>Vale-Compra ({valeCompra?.codigo})</span>
+                  <span>− R${abatimentoVale.toFixed(2).replace('.', ',')}</span>
+                </div>
+              )}
+              {valeCompra && saldoRestanteNoVale > 0 && (
+                <div
+                  style={{
+                    background: '#faf5ff',
+                    border: '1px solid #e9d5ff',
+                    borderRadius: '6px',
+                    padding: '8px 10px',
+                    fontSize: '11.5px',
+                    color: '#5b21b6',
+                    fontWeight: 600,
+                    margin: '6px 0',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  Saldo do vale: R${saldoDisponivelVale.toFixed(2).replace('.', ',')} · Abatido: R${abatimentoVale.toFixed(2).replace('.', ',')} ·{' '}
+                  <strong>Restarão R${saldoRestanteNoVale.toFixed(2).replace('.', ',')} ativos</strong> para compras futuras.
                 </div>
               )}
               <div className="checkout-total-line final">
-                <span>Total</span>
+                <span>Total a pagar em dinheiro</span>
                 <span>R${totalFinal.toFixed(2).replace('.', ',')}</span>
               </div>
             </div>

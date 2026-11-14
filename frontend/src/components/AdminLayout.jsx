@@ -304,11 +304,25 @@ export default function AdminLayout() {
 
   useEffect(() => {
     carregarDadosAdmin();
-    const timer = setInterval(carregarDadosAdmin, 15000); // atualiza a cada 15s
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') carregarDadosAdmin();
+    }, 5000);
+    const handleStorage = (e) => {
+      if (e.key === 'salv_sync_trigger') carregarDadosAdmin();
+    };
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') carregarDadosAdmin();
+    };
     window.addEventListener('salv-pedidos-atualizados', carregarDadosAdmin);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
     return () => {
       clearInterval(timer);
       window.removeEventListener('salv-pedidos-atualizados', carregarDadosAdmin);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
     };
   }, []);
 

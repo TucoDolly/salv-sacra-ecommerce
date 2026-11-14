@@ -1,11 +1,26 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import api from '../services/api';
 import { listarEnderecos, obterUltimoEndereco } from '../services/contaService';
+import { listarCuponsDisponiveis, listarMeusVales } from '../services/cupomService';
 
 const CartContext = createContext({});
 
 // Cache em memória das cotações já calculadas para resposta instantânea (0ms) sem flash de valores
 const cacheCotacoesFrete = new Map();
+
+const ehValeCompraObj = (b) => {
+  if (!b) return false;
+  const cod = String(b.codigo || '').toUpperCase();
+  return (
+    Boolean(b.eh_vale_compra) ||
+    b.tipo === 'vale_compra' ||
+    b.tipo === 'troca' ||
+    cod.startsWith('VALE-') ||
+    cod.startsWith('TROCA-')
+  );
+};
+
+const arredondar2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 export function CartProvider({ children }) {
   const [items, setItems] = useState(() => {
@@ -155,8 +170,8 @@ export function CartProvider({ children }) {
     }
   }, [cep, totalItens, calcularFretePorCep]);
 
-  const addItem = (item) => {
-    const novos = [...items];
+  const processarItemNoArray = (lista, item) => {
+    const novos = [...lista];
     const modItem = item.modelo || 'Regular Fit';
     const index = novos.findIndex(
       (i) =>
@@ -187,9 +202,29 @@ export function CartProvider({ children }) {
         estoque: item.estoque !== undefined ? Number(item.estoque) : undefined,
       });
     }
+    return novos;
+  };
 
-    salvarCarrinho(novos);
+  const addItem = (item) => {
+    setItems((prev) => {
+      const atualizados = processarItemNoArray(prev, item);
+      salvarCarrinho(atualizados);
+      return atualizados;
+    });
     setIsCartOpen(true); // Abre a gaveta automaticamente ao adicionar
+  };
+
+  const addMultipleItems = (lista) => {
+    if (!Array.isArray(lista) || !lista.length) return;
+    setItems((prev) => {
+      let atualizados = [...prev];
+      lista.forEach((item) => {
+        atualizados = processarItemNoArray(atualizados, item);
+      });
+      salvarCarrinho(atualizados);
+      return atualizados;
+    });
+    setIsCartOpen(true);
   };
 
   const updateQuantity = (index, delta) => {
@@ -330,43 +365,198 @@ export function CartProvider({ children }) {
 
   const fretePreco = items.length > 0 ? (selectedShipping?.preco ?? 0) : 0;
 
-  // ── Cupom de desconto ──
+  // ── Cupom promocional (1 por pedido: 'produto' OU 'frete') + Vale-Compra (combinável) ──
   const [cupom, setCupom] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('@SalvSacra:cupom') || 'null'); } catch { return null; }
+    try {
+      const salvo = JSON.parse(localStorage.getItem('@SalvSacra:cupom') || 'null');
+      return salvo && !ehValeCompraObj(salvo) ? salvo : null;
+    } catch {
+      return null;
+    }
   });
 
-  const aplicarCupom = (c) => {
-    setCupom(c);
-    if (c) localStorage.setItem('@SalvSacra:cupom', JSON.stringify(c));
-    else localStorage.removeItem('@SalvSacra:cupom');
-  };
-  const removerCupom = () => aplicarCupom(null);
+  const [valeCompra, setValeCompra] = useState(() => {
+    try {
+      const valeSalvo = JSON.parse(localStorage.getItem('@SalvSacra:vale_compra') || 'null');
+      if (valeSalvo) return valeSalvo;
+      const cupomAntigo = JSON.parse(localStorage.getItem('@SalvSacra:cupom') || 'null');
+      if (cupomAntigo && ehValeCompraObj(cupomAntigo)) {
+        localStorage.removeItem('@SalvSacra:cupom');
+        localStorage.setItem('@SalvSacra:vale_compra', JSON.stringify(cupomAntigo));
+        return cupomAntigo;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
 
-  // Verifica se o cupom vale para algum item do carrinho e calcula o desconto
-  const calcularDescontoCupom = (c) => {
-    if (!c || items.length === 0) return 0;
-    const ids = (c.produto_ids || []).map(Number);
-    const validos = c.todos_produtos ? items : items.filter((i) => ids.includes(Number(i.produtoId)));
+  const aplicarValeCompra = useCallback((v) => {
+    setValeCompra(v);
+    try {
+      if (v) localStorage.setItem('@SalvSacra:vale_compra', JSON.stringify(v));
+      else localStorage.removeItem('@SalvSacra:vale_compra');
+    } catch {}
+  }, []);
+
+  const removerValeCompra = useCallback(() => aplicarValeCompra(null), [aplicarValeCompra]);
+
+  const aplicarCupom = useCallback((c) => {
+    if (c && ehValeCompraObj(c)) {
+      aplicarValeCompra(c);
+      return;
+    }
+    setCupom(c);
+    try {
+      if (c) localStorage.setItem('@SalvSacra:cupom', JSON.stringify(c));
+      else localStorage.removeItem('@SalvSacra:cupom');
+    } catch {}
+  }, [aplicarValeCompra]);
+
+  const removerCupom = useCallback(() => aplicarCupom(null), [aplicarCupom]);
+
+  const removerTodosBeneficios = useCallback(() => {
+    setCupom(null);
+    setValeCompra(null);
+    try {
+      localStorage.removeItem('@SalvSacra:cupom');
+      localStorage.removeItem('@SalvSacra:vale_compra');
+    } catch {}
+  }, []);
+
+  // Sincroniza cupom e vale-compra com a base ativa (atualiza saldo_atual e limpa benefícios inválidos/esgotados)
+  const sincronizarBeneficios = useCallback(async () => {
+    if (!cupom && !valeCompra) return;
+    try {
+      const { data: disponiveis } = await listarCuponsDisponiveis();
+      const lista = Array.isArray(disponiveis) ? disponiveis : [];
+
+      let meusVales = [];
+      const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
+      if (token && valeCompra) {
+        try {
+          const resVales = await listarMeusVales();
+          meusVales = Array.isArray(resVales.data) ? resVales.data : [];
+        } catch {
+          meusVales = [];
+        }
+      }
+
+      if (cupom) {
+        const encontrado = lista.find((b) => Number(b.id) === Number(cupom.id) || b.codigo === cupom.codigo);
+        if (encontrado) {
+          if (encontrado.status && encontrado.status !== 'ativo') {
+            aplicarCupom(null);
+          } else {
+            setCupom(encontrado);
+            try { localStorage.setItem('@SalvSacra:cupom', JSON.stringify(encontrado)); } catch {}
+          }
+        }
+      }
+
+      if (valeCompra) {
+        const encontradoVale =
+          meusVales.find((v) => Number(v.id) === Number(valeCompra.id) || v.codigo === valeCompra.codigo) ||
+          lista.find((v) => Number(v.id) === Number(valeCompra.id) || v.codigo === valeCompra.codigo);
+
+        if (encontradoVale) {
+          const saldoAtualizado = Number(encontradoVale.saldo_atual ?? encontradoVale.valor_fixo ?? 0);
+          if ((encontradoVale.status && encontradoVale.status !== 'ativo') || !encontradoVale.ativo || saldoAtualizado <= 0) {
+            aplicarValeCompra(null);
+          } else {
+            setValeCompra(encontradoVale);
+            try { localStorage.setItem('@SalvSacra:vale_compra', JSON.stringify(encontradoVale)); } catch {}
+          }
+        }
+      }
+    } catch {}
+  }, [cupom?.id, cupom?.codigo, valeCompra?.id, valeCompra?.codigo, aplicarCupom, aplicarValeCompra]);
+
+  useEffect(() => {
+    sincronizarBeneficios();
+  }, [sincronizarBeneficios]);
+
+  const calcularAbatimentoVale = (v, descontoPromo = 0) => {
+    if (!v || items.length === 0) return 0;
+    const minimo = Number(v.valor_minimo_pedido || 0);
+    if (minimo > 0 && subtotal < minimo) return 0;
+
+    const saldo = Number(v.saldo_atual ?? v.valor_inicial ?? v.valor_fixo ?? 0);
+    if (saldo <= 0) return 0;
+
+    const todosProdutos = v.todos_produtos !== false;
+    const ids = (v.produto_ids || []).map(Number);
+    const validos = todosProdutos ? items : items.filter((i) => ids.includes(Number(i.produtoId)));
     if (validos.length === 0) return 0;
 
-    // Cupom de frete: aplica ao valor do frete do carrinho inteiro
-    if (c.tipo === 'frete') {
-      const pctFrete = Math.min(100, Math.max(0, Number(c.percentual || 100))) / 100;
-      return Math.round(fretePreco * pctFrete * 100) / 100;
+    let teto = Math.max(0, arredondar2(subtotal + fretePreco - Number(descontoPromo || 0)));
+    if (!todosProdutos) {
+      const totalValidos = validos.reduce(
+        (acc, i) => acc + Number(i.preco || 0) * (Number(i.quantidade) || 1),
+        0
+      );
+      const tetoElegivel = Math.max(0, arredondar2(totalValidos + fretePreco - Number(descontoPromo || 0)));
+      teto = Math.min(teto, tetoElegivel);
     }
 
-    // Cupom de produto: válido para apenas 1 produto (o item válido de maior valor)
-    const maiorPreco = Math.max(...validos.map((i) => Number(i.preco || 0)));
-    if (c.valor_fixo && Number(c.valor_fixo) > 0) {
-      return Math.round(Math.min(maiorPreco, Number(c.valor_fixo)) * 100) / 100;
-    }
-
-    const pct = Math.min(100, Math.max(0, Number(c.percentual || 0))) / 100;
-    return Math.round(maiorPreco * pct * 100) / 100;
+    return arredondar2(Math.min(teto, saldo));
   };
 
-  const descontoCupom = calcularDescontoCupom(cupom);
-  const total = Math.max(0, subtotal + fretePreco - descontoCupom);
+  // Verifica se o benefício promocional vale para o carrinho e calcula o desconto
+  const calcularDescontoCupom = (c) => {
+    if (!c || items.length === 0) return 0;
+
+    if (ehValeCompraObj(c)) {
+      return calcularAbatimentoVale(c, 0);
+    }
+
+    const minimo = Number(c.valor_minimo_pedido || 0);
+    if (minimo > 0 && subtotal < minimo) return 0;
+
+    const todosProdutos = c.todos_produtos !== false;
+    const ids = (c.produto_ids || []).map(Number);
+    const validos = todosProdutos ? items : items.filter((i) => ids.includes(Number(i.produtoId)));
+    if (validos.length === 0) return 0;
+
+    // Cupom de frete: desconto percentual sobre o frete do pedido
+    if (c.tipo === 'frete') {
+      const pctFrete = Math.min(100, Math.max(0, Number(c.percentual ?? 100))) / 100;
+      return arredondar2(Math.max(0, fretePreco) * pctFrete);
+    }
+
+    // Cupom de produto: desconto percentual sobre todos os produtos elegíveis do carrinho
+    const totalValidos = validos.reduce(
+      (acc, i) => acc + Number(i.preco || 0) * (Number(i.quantidade) || 1),
+      0
+    );
+    const pct = Math.min(100, Math.max(0, Number(c.percentual || 0))) / 100;
+    if (pct > 0) {
+      return arredondar2(totalValidos * pct);
+    }
+
+    if (c.valor_fixo && Number(c.valor_fixo) > 0) {
+      return arredondar2(Math.min(totalValidos, Number(c.valor_fixo)));
+    }
+
+    return 0;
+  };
+
+  const descontoCupom = cupom ? calcularDescontoCupom(cupom) : 0;
+  const descontoProduto = cupom && cupom.tipo !== 'frete' ? descontoCupom : 0;
+  const descontoFrete = cupom && cupom.tipo === 'frete' ? Math.min(fretePreco, descontoCupom) : 0;
+  const freteEfetivo = arredondar2(Math.max(0, fretePreco - descontoFrete));
+  const totalAposCupom = arredondar2(Math.max(0, (subtotal - descontoProduto) + freteEfetivo));
+
+  const saldoDisponivelVale = valeCompra
+    ? Math.max(0, Number(valeCompra.saldo_atual ?? valeCompra.valor_inicial ?? valeCompra.valor_fixo ?? 0))
+    : 0;
+  const descontoVale = valeCompra ? calcularAbatimentoVale(valeCompra, descontoCupom) : 0;
+  const saldoRestanteVale = valeCompra
+    ? Math.max(0, arredondar2(saldoDisponivelVale - descontoVale))
+    : 0;
+
+  const desconto = arredondar2(descontoCupom + descontoVale);
+  const total = Math.max(0, arredondar2(totalAposCupom - descontoVale));
   const totalBoleto = total;
 
   return (
@@ -377,6 +567,7 @@ export function CartProvider({ children }) {
         openCart,
         closeCart,
         addItem,
+        addMultipleItems,
         updateQuantity,
         removeItem,
         clearCart,
@@ -394,10 +585,24 @@ export function CartProvider({ children }) {
         loadingFrete,
         calcularFretePorCep,
         cupom,
+        valeCompra,
         aplicarCupom,
         removerCupom,
+        aplicarValeCompra,
+        removerValeCompra,
+        removerTodosBeneficios,
+        desconto,
         descontoCupom,
+        descontoProduto,
+        descontoFrete,
+        freteEfetivo,
+        totalAposCupom,
+        descontoVale,
+        saldoDisponivelVale,
+        saldoRestanteVale,
         calcularDescontoCupom,
+        calcularAbatimentoVale,
+        sincronizarBeneficios,
         validarEstoqueCarrinho,
       }}
     >
